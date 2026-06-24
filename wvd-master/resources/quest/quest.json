@@ -1,0 +1,761 @@
+{
+
+    "Dist":{
+        "_TYPE":"dungeon",
+        "questName":"[宝箱]水路一号街",
+        "questName_en_US": "[Chest] Waterway 1st",
+        "questCategory": "主线前三章",
+        "questCategory_en_US": "Chapter 1,2 and 3",
+        "_TARGETINFOLIST":[
+            ["chest"],
+            ["harken"]
+        ],
+        "_EOT":[
+            ["press","TradeWaterway",["EdgeOfTown",[1,1]],1],
+            ["press","Dist","input swipe 650 250 650 900",1]
+        ]
+    },
+
+    "lounge":{
+        "_TYPE":"dungeon",
+        "questName":"[宝箱]水路船二lounge",
+        "questName_en_US": "[Chest] Waterway Lounge",
+        "questCategory": "主线前三章",
+        "questCategory_en_US": "Chapter 1,2 and 3",
+        "_TARGETINFOLIST":[
+            ["stair_lounge","左上",[292,394]],
+            ["chest_auto"],
+            ["stair_shiphold","左上",[292,394]],
+            ["harken",null,null]
+        ],
+        "_EOT":[
+            ["press","TradeWaterway",["EdgeOfTown",[1,1]],1],
+            ["press","shiphold",[1,1],1]
+        ]
+    },
+
+    "fortress-B1F":{
+        "_TYPE":"dungeon",
+        "questName":"[宝箱]要塞一层",
+        "questName_en_US": "[Chest] Fortress Zone 1",
+        "questCategory": "主线前三章",
+        "questCategory_en_US": "Chapter 1,2 and 3",
+        "_TARGETINFOLIST":[
+            ["chest","左下",[[0,305,900,965]]],
+            ["harken","左下",null]
+        ],
+        "_EOT":[
+            ["press","impregnableFortress",["EdgeOfTown",[1,1]],1],
+            ["press","fortressb1f","input swipe 650 250 650 900",1]
+        ]
+    },
+
+    "fortress-B8F_entrance":{
+        "_TYPE":"dungeon",
+        "questName":"[妖精]要塞八层门口",
+        "questName_en_US": "[Faerie] Fortress Zone 8",
+        "questCategory": "主线前三章",
+        "questCategory_en_US": "Chapter 1,2 and 3",
+        "_TARGETINFOLIST":[
+            ["stair_fortress1f","左上",[720,395]],
+            ["position","左下",[453,865]],
+            ["position","右下",[500,918]],
+            ["stair_fortressGate","左下", [720,1027]],
+            ["position","左下",[720,1241]]
+        ],
+        "_EOT":[
+            ["press","impregnableFortress",["EdgeOfTown",[1,1]],1],
+            ["press","fortressEntrance","input swipe 650 250 650 900",1]
+        ]
+    },
+
+    "fortress-B8F_trap":{
+        "_TYPE":"quest",
+        "questName":"[妖精]要塞八层陷阱",
+        "questName_en_US": "[Faerie] Fortress Zone 8 Trap",
+        "questCategory": "主线前三章",
+        "questCategory_en_US": "Chapter 1,2 and 3",
+        "_TIPS":"要塞8刷小精灵的准备流程:\n这是不回城的队伍, 因此推荐忍者盗贼面具+物理长矛/弓箭+王女或者夏莉莉奶.\n在\"设置setting\"\"自动移动auto-moving\"中关闭所有选项.\n然后不停刷新8f门口两个怪, 确保其中之一是3小恶魔+1小精灵.\n然后在该位置打上标记.\n然后开启脚本."
+    },
+    	
+    "fortress-10F":{
+        "_TYPE":"dungeon",
+        "questName":"[灯怪]要塞10层",
+        "questName_en_US": "[Lamp] Fortress Zone 10",
+        "questCategory": "主线前三章",
+        "questCategory_en_US": "Chapter 1,2 and 3",
+        "_TARGETINFOLIST":[
+            ["position","左下",[560,757]],
+            ["Bharken2","左下",null]
+        ],
+        "_EOT":[
+            ["press","impregnableFortress",["EdgeOfTown",[1,1]],1],
+            ["press","fortressb10f","input swipe 650 900 650 250",1]
+        ]
+    },
+
+
+    "DH-4f":{
+        "_TYPE":"dungeon",
+        "questName":"[刷怪]深雪R4",
+        "questName_en_US": "[Farm] Snow R4",
+        "questCategory": "主线第四章",
+        "questCategory_en_US": "Chapter 4",
+        "_TARGETINFOLIST":[
+            ["position","右上",[500,610]],
+            ["position","右上",[445,290]],
+            ["position","右上",[820,605]],
+            ["harken", "右上","stair_DH_R4"]
+        ],
+        "_EOT":[
+            ["press","DH",["EdgeOfTown",[1,1]],1],
+            ["press","DH-R4","input swipe 650 250 650 900",1]
+        ]
+    },
+
+    "DH-6f":{
+        "_TYPE":"dungeon",
+        "questName":"[宝箱+刷怪]深雪R6",
+        "questName_en_US": "[Farm] Snow R6",
+        "questCategory": "主线第四章",
+        "questCategory_en_US": "Chapter 4",
+        "_TARGETINFOLIST":[
+            ["stair_DH_R6","右上",[286,236]],
+            ["position","右下",[72,972]],
+            ["chest","右下",[[0,678,432,597]]],
+            ["stair_DH_R5", "右下",[73,1240]],
+            ["harken", "左上",null]
+        ],
+        "_EOT":[
+            ["press","DH",["EdgeOfTown",[1,1]],1],
+            ["press","DH-R5","input swipe 650 250 650 900",1]
+        ]
+    },
+
+    "DH-7f-right":{
+        "_TYPE":"dungeon",
+        "questName":"[宝箱+刷怪]深雪R7矿洞右",
+        "questName_en_US": "[Farm] Snow R7 right part",
+        "questCategory": "主线第四章",
+        "questCategory_en_US": "Chapter 4",
+        "_TARGETINFOLIST":[
+            ["position","右下",[770,600]],
+            ["position","右下",[770,1190]],
+            ["position","右下",[500,1025]],
+            ["chest","右下",[[420,305,480,1295]]],
+            ["position","右下",[450,545]],
+            ["position","左上",[610,1090]],
+            ["position","右上",[450,925]],
+            ["chest","右上",null],
+            ["harken", "右上",null]
+        ],
+        "_EOT":[
+            ["press","DH",["EdgeOfTown",[1,1]],1],
+            ["press","DH-R7","input swipe 650 900 650 250",1]
+        ]
+    },
+
+    "DH-7f-auto":{
+        "_TYPE":"dungeon",
+        "questName":"[宝箱+刷怪]深雪R7自动箱",
+        "questName_en_US": "[Farm] Snow R7 whole",
+        "questCategory": "主线第四章",
+        "questCategory_en_US": "Chapter 4",
+        "_TARGETINFOLIST":[
+            ["chest_auto"],
+            ["harken", "右上",null]
+        ],
+        "_EOT":[
+            ["press","DH",["EdgeOfTown",[1,1]],1],
+            ["press","DH-R7","input swipe 650 900 650 250",1]
+        ]
+    },
+
+    "DH-10f-test":{
+        "_TYPE":"dungeon",
+        "questName":"[宝箱+刷怪]深雪R10",
+        "questName_en_US": "[Farm] Snow R10 autochest",
+        "questCategory": "主线第四章",
+        "questCategory_en_US": "Chapter 4",
+        "_TARGETINFOLIST":[
+            ["stair_DH_R10","左上",[80,235]],
+            ["position","右下",[600,1240]],
+            ["position","右下",[820,865]],
+            ["position","左下",[825,1125]],
+            ["position","左下",[135,1030]],
+            ["position","左下",[665,545]],
+            ["chest","左下",[[530,460,270,220]]],
+            ["chest","左下",[[0,410,745,480],[320,520,425,370]]],
+            ["position","左下",[130,865]],
+            ["chest","左下",[[110,900,790,260]]],
+            ["chest","右下",[[100,790,800,490],[100,1185,350,95]]],
+            ["stair_DH_R9", "右下",[820,1240]],
+            ["harken", "左上",null]
+        ],
+        "_EOT":[
+            ["press","DH",["EdgeOfTown",[1,1]],1],
+            ["press","DH-R9","input swipe 650 900 650 250",1]
+        ]
+    },
+
+    "DH-10f-JR":{
+        "_TYPE":"dungeon",
+        "questName":"[刷怪]深雪R10巨人",
+        "questName_en_US": "[Farm] Snow R10 Giant",
+        "questCategory": "主线第四章",
+        "questCategory_en_US": "Chapter 4",
+        "_TARGETINFOLIST":[
+            ["stair_DH_R10","左上",[80,235]],
+            ["position","右下",[655,330]],
+            ["position","右下",[500,385]],
+            ["stair_DH_R9", "右下",[820,1240]],
+            ["harken", "左上",null]
+        ],
+        "_EOT":[
+            ["press","DH",["EdgeOfTown",[1,1]],1],
+            ["press","DH-R9","input swipe 650 900 650 250",1]
+        ]
+    },
+
+    "DH-Church-upper":{
+        "_TYPE":"dungeon",
+        "questName":"[宝箱]教会-自动宝箱上半",
+        "questName_en_US": "[Chest] Snow Church upper",
+        "questCategory": "主线第四章",
+        "questCategory_en_US": "Chapter 4",
+        "_TARGETINFOLIST":[
+            ["chest","左上",null],
+            ["chest","右上",null],
+            ["position","右上", [816,710]],
+            ["Bharken", "右上","stair_DH_Church"]
+        ],
+        "_EOT":[
+            ["press","DH",["EdgeOfTown",[1,1]],1],
+            ["press","DH-Church","input swipe 650 900 650 250",1]
+        ]
+    },
+    
+    "DH-Church-auto":{
+        "_TYPE":"dungeon",
+        "questName":"[宝箱]教会-全范围找箱",
+        "questName_en_US": "[Chest] Snow Church whole",
+        "questCategory": "主线第四章",
+        "questCategory_en_US": "Chapter 4",
+        "_TARGETINFOLIST":[
+            ["chest_auto"],
+            ["position","右上", [816,710]],
+            ["Bharken", "右上","stair_DH_Church"]
+        ],
+        "_EOT":[
+            ["press","DH",["EdgeOfTown",[1,1]],1],
+            ["press","DH-Church","input swipe 650 900 650 250",1]
+        ]
+    },
+
+    "White-G-v2":{
+        "_TYPE":"dungeon",
+        "questName":"[刷怪]教会白巨人 byXX",
+        "questName_en_US": "[Chest]Snow Church Giant[@XX] ",
+        "questCategory": "主线第四章",
+        "questCategory_en_US": "Chapter 4",
+        "_TARGETINFOLIST":[
+            ["Mark_auto"]
+        ],
+        "_EOT":[
+            ["press","DH",["EdgeOfTown",[1,1]],1],
+            ["press","DH-Church","input swipe 650 900 650 250",1]
+        ],
+        "_TIPS":"本任务作者[@XX](不出矮人王100意志好个体不改名)\n1. 进入雪地-“教会区域”，设置唯一标记点，位置为X=26, Y=6\n2. 该脚本需要较高练度，特定角色，特定技能，不解决装备，角色和配队导致的不稳定刷取流程。\n3. （可选）查看如何全自动挂机白巨人视频教程，现在马上三连关注该UP：\n【辟邪除妖】XX教你如何全自动无伤带走教会红色白巨人 思路分享 巫术 Wizardry Variants Daphne】 https://www.bilibili.com/video/BV1jqjw6CEWX/"},
+
+    "HSR-1F":{
+        "_TYPE":"dungeon",
+        "questName":"[宝箱]药师洞1f宝箱",
+        "questName_en_US": "[Chest] Healers' Settlement 1F",
+        "questCategory": "任务洞窟",
+        "questCategory_en_US": "Request Caves",
+        "_TARGETINFOLIST":[
+            ["chest_auto"],
+            ["position","左下",[720,1135]]
+        ],
+        "_preEOTcheck":"HSR/HSR",
+        "_EOT":
+        [
+            ["press","intoWorldMap",["HSR/HSR","input swipe 400 400 500 500"],1],
+            ["press","HSR/AGMM1F",[1,1],1]
+        ],
+        "_TIPS":"该任务从第四章出发. This quest departs from Deepsnow Hinterlands."
+    },
+
+    "IWO":{
+        "_TYPE":"dungeon",
+        "questName":"[宝箱]鬼洞1f 水路出发",
+        "questName_en_US": "[Chest] Oni Island 1F",
+        "questCategory": "任务洞窟",
+        "questCategory_en_US": "Request Caves",
+        "_TARGETINFOLIST":[
+            ["chest_auto"],
+            ["position","左下", [186,1028]]
+        ],
+        "_preEOTcheck":"IWO/IWO",
+        "_EOT":
+        [
+            ["press","intoWorldMap",["IWO/IWO","input swipe 700 1100 500 1100",[500,1100]],1],
+            ["press","IWO/IWOB1F",["IWO/IWO",[1,1]],1]
+        ],
+        "_RTT":
+        [
+            ["press","intoWorldMap",["City_portTownGrandLegion","input swipe 500 1100 700 700",[500,1100]],1]
+        ],
+        "_TIPS":"该任务从第二章水路出发.\nThis quest departs from Trade Waterway."
+    },
+    "IWO_2":{
+        "_TYPE":"dungeon",
+        "questName":"[宝箱]鬼洞2F",
+        "questName_en_US": "[Chest] Oni Island 2F",
+        "questCategory": "任务洞窟",
+        "questCategory_en_US": "Request Caves",
+        "_TARGETINFOLIST":[
+            ["chest_auto"],
+            ["position","右下", [500, 815]]
+        ],
+        "_preEOTcheck":"IWO/IWO",
+        "_EOT":
+        [
+            ["press","intoWorldMap",["IWO/IWO","input swipe 700 1100 500 1100",[500,1100]],1],
+            ["press","IWO/IWOB2F",["IWO/IWO",[1,1]],1]
+        ],
+        "_RTT":
+        [
+            ["press","intoWorldMap",["City_portTownGrandLegion","input swipe 500 1100 700 700",[500,1100]],1]
+        ],
+        "_TIPS":"该任务从第二章水路出发.\nThis quest departs from Trade Waterway."
+    },
+    "malice-B3F":{
+        "_TYPE":"dungeon",
+        "questName":"[刷怪]怨嗟洞窟三层",
+        "questName_en_US": "[Farm] Cave of Malice B3F",
+        "questCategory": "任务洞窟",
+        "questCategory_en_US": "Request Caves",
+        "_EOT":[
+            ["press","malice_malice",["EdgeOfTown",[1,1]],1],
+            ["press","malice_B3F",[1,1],1]
+        ],
+        "_TARGETINFOLIST":
+        [
+            ["position","右上",[715,290]],
+            ["harken2",null,null]
+        ]
+    },
+    "fordraig-B3F":{
+        "_TYPE":"dungeon",
+        "questName":"[宝箱]弗德莱戈的迷宫三层fordraigB3F",
+        "questName_en_US": "[Chest] Fordraig B3F",
+        "questCategory": "任务洞窟",
+        "questCategory_en_US": "Request Caves",
+        "_TARGETINFOLIST":[
+            ["chest_auto"],
+            ["harken",[[100,1200,700,100],[700,800,100,800],[400,100,400,1200],[100,800,700,800],[400,1200,400,100]]]
+        ],
+        "_preEOTcheck":"fordraig/B3F",
+        "_EOT":[
+            ["press","intoWorldMap",["fordraig/labyrinthOfFordraig","input swipe 450 150 500 150"],2],
+            ["press","fordraig/B3F",["fordraig/labyrinthOfFordraig",[1,1]],1]
+        ]
+    },
+
+    "SSC_chest":{
+        "_TYPE":"dungeon",
+        "questName":"[宝箱]忍洞一层",
+        "questName_en_US": "[Chest] Sand Shadow Cave 1F",
+        "questCategory": "任务洞窟",
+        "questCategory_en_US": "Request Caves",
+        "_TARGETINFOLIST":[
+	        ["chest_auto"],
+            ["SSC/SSC_quit","左下","default"]
+        ],
+        "_preEOTcheck":"SSC/SSC",
+        "_EOT":[
+            ["press","intoWorldMap",["SSC/SSC","input swipe 700 500 600 600"],1]
+        ]
+    },
+
+    "LBC":{
+        "_TYPE":"dungeon",
+        "questName":"[宝箱]卢比肯宝箱",
+        "questName_en_US": "[Chest] Le Bicken Cave",
+        "questCategory": "任务洞窟",
+        "questCategory_en_US": "Request Caves",
+        "_TARGETINFOLIST":[
+            ["chest"],
+            ["LBC/LBC_quit"]
+        ],
+        "_preEOTcheck":"LBC/LBC",
+        "_EOT":
+        [
+            ["press","intoWorldMap",["LBC/LBC","input swipe 400 400 400 500"],1]
+        ]
+    },
+
+    "AWD":{
+        "_TYPE":"dungeon",
+        "questName":"[宝箱]狼洞2f",
+        "questName_en_US": "[Chest] Alabster Wolf Den 2f",
+        "questCategory": "任务洞窟",
+        "questCategory_en_US": "Request Caves",
+        "_TARGETINFOLIST":[
+            ["chest_auto"],
+            ["position","右下",[766,974]]
+        ],
+        "_preEOTcheck":"AWD/AWD",
+        "_EOT":
+        [
+            ["press","intoWorldMap",["AWD/AWD","input swipe 400 400 500 500"],1],
+            ["press","AWD/AWD2F",[1,1],1]
+        ]
+    },
+    "AWD-noGorgon":{
+        "_TYPE":"dungeon",
+        "questName":"[宝箱]狼洞1f",
+        "questName_en_US": "[Chest] Alabster Wolf Den 1f",
+        "questCategory": "任务洞窟",
+        "questCategory_en_US": "Request Caves",
+        "_TARGETINFOLIST":[
+            ["chest_auto"],
+            ["position","右上",[766,930]]
+        ],
+        "_preEOTcheck":"AWD/AWD",
+        "_EOT":
+        [
+            ["press","intoWorldMap",["AWD/AWD","input swipe 400 400 500 500"],1],
+            ["press","AWD/AWD1F",[1,1],1]
+        ]
+    },
+
+
+    "GHB":{
+        "_TYPE":"dungeon",
+        "questName":"[宝箱]百花之庭固定怪",
+        "questCategory": "任务洞窟",
+        "questCategory_en_US": "Request Caves",
+        "_TARGETINFOLIST":[
+            ["position","左上",[80,450]],
+            ["position","右上",[340,450]],
+            ["position","右上",[550,290]],
+            ["position","右上",[230,1030]],
+            ["position","左下",[240,860]],
+            ["chest","左下",null],
+            ["chest","左上",null],
+            ["chest","右上",null],
+            ["chest","右下",null],
+            ["GHB/GHB_quit","左下","default"]
+        ],
+        "_preEOTcheck":"GHB/GHB",
+        "_EOT":[
+            ["press","intoWorldMap",["GHB/GHB","input swipe 400 500 450 550"],1]
+        ]
+    },
+
+    "COS_chest":{
+        "_TYPE":"dungeon",
+        "questName":"[宝箱]离别洞窟",
+        "questName_en_US": "[Chest] Separation whole",
+        "questCategory": "任务洞窟",
+        "questCategory_en_US": "Request Caves",
+        "_TARGETINFOLIST":[
+            ["chest","左上",null],
+            ["chest","右上",null],
+            ["stair_3","左上",[720,822]],
+            ["chest","左上",null],
+            ["chest","左下",null],
+            ["stair_2","左下",[827,547]],
+            ["harken","左下",null]
+        ],
+        "_EOT":[
+            ["press","COS/COS",["EdgeOfTown",[1,1]],1],
+            ["press","COS/COSB2F",[1,1],1]
+        ]
+    },
+
+    "COS_chest_short":{
+        "_TYPE":"dungeon",
+        "questName":"[宝箱]离别洞窟(只刷2f)",
+        "questName_en_US": "[Chest] Separation 2f",
+        "questCategory": "任务洞窟",
+        "questCategory_en_US": "Request Caves",
+        "_TARGETINFOLIST":[
+            ["chest_auto"],
+            ["harken","左下",null]
+        ],
+        "_EOT":[
+            ["press","COS/COS",["EdgeOfTown",[1,1]],1],
+            ["press","COS/COSB2F",[1,1],1]
+        ]
+    },
+
+    "DOE":{
+        "_TYPE":"dungeon",
+        "questName":"[矿石]土洞(中/次)",
+        "questName_en_US": "[Ore] Den of Earth",
+        "questCategory": "矿石",
+        "questCategory_en_US": "Ore",
+        "_EOT":[
+            ["press","DOE",["EdgeOfTown",[1,1]],1],
+            ["press","DOEB1F",[1,1],1]
+        ],
+        "_TARGETINFOLIST":
+        [
+            ["position", "右下", [713,1027]],
+            ["chest","右下",[[421,768,479,480]]],
+            ["DOE_quit"]
+        ]
+    },
+
+    "DOF": {
+        "_TYPE":"dungeon",
+        "questName":"[矿石]火洞(特/中/次)",
+        "questName_en_US": "[Ore] Den of Fire",
+        "questCategory": "矿石",
+        "questCategory_en_US": "Ore",
+        "_TARGETINFOLIST":[
+            ["position","左下",[347,866]],
+            ["position","左下",[400,1183]],
+            ["chest","左下",[[0,783,480,480],[371,888,127,118]]],
+            ["DOF_quit"]
+        ],
+        "_EOT":[
+            ["press","DOF",["EdgeOfTown","input swipe 650 250 650 900"],1],
+            ["press","DOFB1F",[1,1],1]
+        ]
+    },
+
+    "DOF_Plus": {
+        "_TYPE":"dungeon",
+        "questName":"[矿石]火洞plus-地图全开",
+        "questName_en_US": "[Ore] Den of Fire whole map",
+        "questCategory": "矿石",
+        "questCategory_en_US": "Ore",
+        "_TARGETINFOLIST":[
+            ["chest_auto"],
+            ["position","左上",[719,713]]
+        ],
+        "_EOT":[
+            ["press","DOF",["EdgeOfTown","input swipe 650 250 650 900"],1],
+            ["press","DOFB1F",[1,1],1]
+        ]
+    },
+
+    "DOW":{
+        "_TYPE":"dungeon",
+        "questName":"[矿石]风洞(特/上/中)",
+        "questName_en_US": "[Ore] Den of Wind",
+        "questCategory": "矿石",
+        "questCategory_en_US": "Ore",
+        "_TARGETINFOLIST":[
+        ["chest",[[700,1200,100,100]],[[0,780,900,500],[0,780,150,120]]],
+        ["DOW_quit",[[700,1200,100,100]],null]
+        ],
+        "_EOT":[
+            ["press","DOW",["EdgeOfTown",[1,1]],1],
+            ["press","DOWB1F",[1,1],1]
+        ]
+    },
+
+    "DOW_Plus":{
+        "_TYPE":"dungeon",
+        "questName":"[矿石]风洞plus-地图全开",
+        "questName_en_US": "[Ore] Den of Wind whole map",
+        "questCategory": "矿石",
+        "questCategory_en_US": "Ore",
+        "_TARGETINFOLIST":[
+            ["chest_auto"],
+            ["position","左上",[34,822]]
+        ],
+        "_EOT":[
+            ["press","DOW",["EdgeOfTown",[1,1]],1],
+            ["press","DOWB1F",[1,1],1]
+        ]
+    },
+    
+    "DOL":{
+        "_TYPE":"dungeon",
+        "questName":"[矿石]光洞(特/上/中)",
+        "questName_en_US": "[Ore] Den of Light",
+        "questCategory": "矿石",
+        "questCategory_en_US": "Ore",
+        "_EOT":[
+            ["press","DOL",["EdgeOfTown",[1,1]],1],
+            ["press","DOLB1F",[1,1],1]
+        ],
+        "_TARGETINFOLIST":
+        [
+            ["chest","右下",[[419,304,481,485]]],
+            ["position", "右下", [552,599]],
+            ["position", "右下", [662,546]],
+            ["position", "右下", [819,333]]
+        ]
+    },
+
+    "DOL_PLUS":{
+        "_TYPE":"dungeon",
+        "questName":"[矿石]光洞plus-地图全开",
+        "questName_en_US": "[Ore] Den of Light whole map",
+        "questCategory": "矿石",
+        "questCategory_en_US": "Ore",
+        "_EOT":[
+            ["press","DOL",["EdgeOfTown",[1,1]],1],
+            ["press","DOLB1F",[1,1],1]
+        ],
+        "_TARGETINFOLIST":
+        [
+            ["chest_auto"],
+            ["position", "左下", [26,1078]]
+        ]
+    },
+
+    "DOS":{
+        "_TYPE":"dungeon",
+        "questName":"[矿石]水洞(银/特/上)",
+        "questName_en_US": "[Ore] Den of Water",
+        "questCategory": "矿石",
+        "questCategory_en_US": "Ore",
+        "_EOT":[
+            ["press","DOS",["EdgeOfTown",[1,1]],1],
+            ["press","DOSB1F",[1,1],1]
+        ],
+        "_TARGETINFOLIST":
+        [
+            ["position", "左上", [455,875]],
+            ["position", "左上", [185,1085]],
+            ["chest","左上",[[0,690,481,485]]],
+            ["DOS_quit"]
+        ]
+    },
+    
+    "LMG-GT":{
+        "_TYPE":"dungeon",
+        "questName":"[骨头]炉壶灵庙(王都出发)",
+        "questName_en_US": "[Bone] Mausoleum Crucible",
+        "questCategory": "月常",
+        "questCategory_en_US": "Monthly Requests",
+        "_TARGETINFOLIST":[
+            ["position","右下",[393,545]],
+            ["position","右下",[657,755]],
+            ["position","右下",[555,1235]],
+            ["position","右下",[178,1240]]
+        ],
+        "_preEOTcheck":"LMG/LMG",
+        "_EOT":
+        [
+            ["press","intoWorldMap",["LMG/LMG","input swipe 690 590 690 690"],1],
+            ["press","LMG/LMG1F",[1,1],1]
+        ]
+    },
+    "LMG-FT":{
+        "_TYPE":"dungeon",
+        "questName":"[骨头]炉壶灵庙(战士骨)",
+        "questName_en_US": "[Bone] Mausoleum Fighter",
+        "questCategory": "月常",
+        "questCategory_en_US": "Monthly Requests",
+        "_TARGETINFOLIST":[
+            ["position","右下",[393,545]],
+            ["position","右下",[657,755]],
+            ["position","右下",[555,1235]],
+            ["position","右下",[178,1240]]
+        ],
+        "_preEOTcheck":"LMG/LMG",
+        "_EOT":
+        [
+            ["press","intoWorldMap",["LMG/LMG","input swipe 690 590 690 690"],1],
+            ["press","LMG/FTB1F",[1,1],1]
+        ]
+    },
+
+    "7000G":{
+        "questName":"[金币]7000G",
+        "questName_en_US": "[Gold] 7000G",
+        "questCategory": "其他",
+        "questCategory_en_US": "Other",
+        "_TYPE":"quest"
+    },
+
+    "manualSepDemon":{
+        "questName":"[装备]半自动大恶魔",
+        "questName_en_US": "[Equip.] Semi-Auto Demon",
+        "questCategory": "其他",
+        "questCategory_en_US": "Other",
+        "_TIPS":"启动脚本时, 如果位于副本内, 会自动退出副本. 然后该脚本会尝试重置并进入离别大恶魔所在房间后停止.\n固定跳跃到第四章结尾.",
+        "_TYPE":"quest"
+    },
+
+    "darkLight":{
+        "questName":"[装备]暗灯",
+        "questName_en_US": "[Equip.] Dark Light",
+        "questCategory": "其他",
+        "questCategory_en_US": "Other",
+        "_TYPE":"quest"
+    },
+
+    "LBC-oneGorgon":{
+        "questName":"[任务]卢比肯 三牛",
+        "questName_en_US": "[Quest] LBC 3 Gorgons",
+        "questCategory": "任务洞窟",
+        "questCategory_en_US": "Request Caves",
+        "_TYPE":"quest"
+    },
+
+    "SSC-goldenchest":{
+        "questName":"[任务]忍洞一层 金箱",
+        "questName_en_US": "[Quest] SSC golden chest",
+        "questCategory": "任务洞窟",
+        "questCategory_en_US": "Request Caves",
+        "_TYPE":"quest"
+    },
+
+    "jier":{
+        "questName":"[悬赏]吉尔",
+        "questName_en_US": "[Bounty] Jhael",
+        "questCategory": "月常",
+        "questCategory_en_US": "Monthly Requests",
+        "_TYPE":"quest"
+    },
+
+    "Scorpionesses":{
+        "questName":"[悬赏]蝎女",
+        "questName_en_US": "[Bounty] Scorps.",
+        "questCategory": "月常",
+        "questCategory_en_US": "Monthly Requests",
+        "_TYPE":"quest"
+    },
+
+    "Scorpionesses_plus_6_hands":{
+        "questName":"[悬赏]蝎女+风暴六手",
+        "questName_en_US": "[Bounty] Scorps. + Six-Limbed",
+        "questCategory": "月常",
+        "questCategory_en_US": "Monthly Requests",
+        "_TYPE":"quest"
+    },
+
+    "gaintKiller":{
+        "questName":"[刷怪]要塞7f刷巨人",
+        "questName_en_US": "[Farm] Fortress Zone 7 Giant",
+        "questCategory": "主线前三章",
+        "questCategory_en_US": "Chapter 1,2 and 3",
+        "_TYPE":"quest"
+    },
+    
+    "lovesleep":{
+        "questName":"[刷药]喜欢睡觉",
+        "questName_en_US": "[Draught & Elixir]  Just Sleep",
+        "questCategory": "其他",
+        "questCategory_en_US": "Other",
+        "_TYPE":"quest"
+    },
+
+    "retard_tapjoy":{
+        "questName":"mergeBlastNumber",
+        "questCategory": "其他",
+        "questCategory_en_US": "Other",
+        "_TYPE":"quest"
+    }
+
+}

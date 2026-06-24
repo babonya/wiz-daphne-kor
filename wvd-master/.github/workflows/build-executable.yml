@@ -1,0 +1,136 @@
+name: Build Executable and Create Release
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # Step 1: Extract version from source code and check if it's a pre-release.
+    - name: Extract SemVer version from src\main.py
+      id: extract-version
+      shell: pwsh
+      run: |
+        $filePath = ".\src\main.py"
+        if (-not (Test-Path -Path $filePath)) {
+          Write-Error "File $filePath not found!"
+          exit 1
+        }
+
+        # SemVer-compliant regex to find versions like '1.2.3' or '1.2.3-beta.1'
+        $match = Select-String -Path $filePath -Pattern '__version__\s*=\s*[''"](\d+\.\d+\.\d+(-[a-zA-Z0-9.-]*)?)[''"]'
+        
+        if ($match -and $match.Matches.Groups.Count -gt 1) {
+          $version = $match.Matches.Groups[1].Value
+          $is_prerelease = $version.Contains("-")
+          
+          Write-Output "Extracted version: $version"
+          Write-Output "Is pre-release: $is_prerelease"
+          
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "is_prerelease=$is_prerelease" >> $env:GITHUB_OUTPUT
+        } else {
+          Write-Error "SemVer version pattern not found in $filePath"
+          exit 1
+        }
+
+    # The following steps will now always run for every push to master.
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt pyinstaller
+
+    - name: Compile translation catalogs
+      run: |
+        python -m babel.messages.frontend compile -d locale -D messages
+
+    - name: Build with PyInstaller
+      run: |
+        pyinstaller --onedir --add-data "resources;resources/" --add-data "locale;locale/" src/main.py -n wvd
+        Write-Host "Build completed successfully."
+
+    - name: Compress build artifact to ZIP
+      shell: pwsh
+      run: |
+        $version = "${{ steps.extract-version.outputs.version }}"
+        # Copy changelog into the build directory before zipping
+        Copy-Item -Path './CHANGES_LOG.md' -Destination './dist/wvd/' -Force
+        Compress-Archive -Path ./dist/wvd/* -DestinationPath "./dist/wvd_$version.zip" -Force
+        Get-ChildItem "dist/wvd_$version.zip"
+
+    - name: Prepare Release Notes and Metadata
+      id: prepare-release-meta
+      shell: pwsh
+      run: |
+        $version = "${{ steps.extract-version.outputs.version }}"
+        $zipFileName = "wvd_$version.zip"
+        $zipPath = "dist/$zipFileName"
+        $md5 = (Get-FileHash -Path $zipPath -Algorithm MD5).Hash.ToLower()
+        echo "md5=$md5" >> $env:GITHUB_OUTPUT
+        echo "MD5: $md5"
+        
+        $date = Get-Date -Format "yyyy-MM-dd HH:mm:ss" -AsUTC
+
+        # 生成 release_notes.md (用于 GitHub Release)
+        $releaseContent = "**Version**: {0}`n**MD5**: ``{1}```n**Build Date**: {2}" -f $version, $md5, $date
+        $releaseContent | Out-File -FilePath dist/release_notes.md -Encoding utf8
+
+        # 生成 release.json (用于 GitHub Pages)
+        $releaseData = @{
+          version = $version
+          md5 = $md5
+          release_date = $date
+          download_url = "https://github.com/${{ github.repository }}/releases/download/$version/$zipFileName"
+          release_notes = "https://github.com/${{ github.repository }}/releases/tag/$version"
+        } | ConvertTo-Json
+
+        # 创建 gh-pages 目录并保存文件
+        New-Item -ItemType Directory -Path gh-pages -Force
+        $releaseData | Out-File -FilePath gh-pages/release.json -Encoding utf8
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ steps.extract-version.outputs.version }}
+        name: Release ${{ steps.extract-version.outputs.version }}
+        body_path: dist/release_notes.md
+        files: dist/wvd_${{ steps.extract-version.outputs.version }}.zip
+
+    - name: Force set as prerelease
+      if: ${{ steps.extract-version.outputs.is_prerelease == 'true' }}
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const release = await github.rest.repos.getReleaseByTag({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            tag: '${{ steps.extract-version.outputs.version }}'
+          });
+          
+          await github.rest.repos.updateRelease({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            release_id: release.data.id,
+            prerelease: true
+          });
+
+    # This step will only run for stable (non-prerelease) versions
+    - name: Deploy to GitHub Pages
+      if: ${{ steps.extract-version.outputs.is_prerelease == 'false' }}
+      uses: peaceiris/actions-gh-pages@v4
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./gh-pages
+        # This will overwrite the existing release.json with the new one
+        keep_files: false
