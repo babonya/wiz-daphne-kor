@@ -1,0 +1,5 @@
+# 배포판 업로드 시 무시할 불필요한 파일들
+Thumbs.db
+.DS_Store
+__pycache__/
+*.pyc
