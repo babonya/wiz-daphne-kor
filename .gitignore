@@ -17,3 +17,6 @@ chest_opener.py
 party_manager.py
 inn_manager.py
 history.log
+
+# 빌드 릴리즈 배포용 폴더 제외 (깃허브 Releases 탭 배포로 대체)
+releases/
