@@ -5,8 +5,8 @@ import time
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.11.8 (Stable)
-# - 최근 수정일: 2026-06-24 17:10
+# - 현재 버전: 1.11.10 (Stable)
+# - 최근 수정일: 2026-06-26 12:15
 # - 수정 기록:
 #   v18.00: 3시간 전 안정 버전 기반 롤백 (Base)
 #   v18.01: 메인 좌표 스팟 대응 동기화
@@ -28,6 +28,8 @@ import time
 #   18.11.6: 여권 만료 팝업에 의한 아웃게임 정체 해결용 이중 앵커 닫기 가드 탑재 (동기화)
 #   1.11.7: 로딩 암전 가드, 해상도 크래시 가드, 예외 트레이스백 실시간 로깅 및 Dimension Guard 탑재 (동기화)
 #   1.11.8: 4일 경과 로그 파일 자동 청소기 장착, 메인 루프 전체 이중 감시 예외 처리 보강 및 리드미 설명 개정 (동기화)
+#   1.11.9: 최초 기동/재시작 자동 스샷 촬영, 스샷 동기화 스레드, 다중 사용자 경로 탐색 가드 탑재 (동기화)
+#   1.11.10: 자동캡쳐 스샷 파일 네이밍 형식 개선(초단위 3자리 패딩 YYYY-MM-DD-HHMM-0SS), 기동/재시작/수동 캡쳐 접미사(start/restart/screenshot) 분기 및 중복 넘버링 처리 추가 (동기화)
 # ==============================================================================
 
 # ==============================================================================
@@ -125,12 +127,39 @@ def sync_screenshots_loop(session_start_ts, log_dir):
                         mtime = os.path.getmtime(item_path)
                         if mtime >= session_start_ts and item_path not in copied_files:
                             dt_shot = dt_class.fromtimestamp(mtime)
-                            time_str = dt_shot.strftime("%Y-%m-%d-%H%M%S")
                             
+                            # 날짜 및 시간 정보 분리
+                            date_str = dt_shot.strftime("%Y-%m-%d")
+                            hour_min = dt_shot.strftime("%H%M")
+                            sec_str = dt_shot.strftime("%S")
+                            
+                            # 파일명 분석을 통한 접미사(suffix) 설정
+                            item_lower = item.lower()
+                            if "screencap_start" in item_lower:
+                                suffix = "start"
+                            elif "screencap_restart" in item_lower:
+                                suffix = "restart"
+                            else:
+                                suffix = "screenshot"
+                                
                             _, ext = os.path.splitext(item.lower())
-                            clean_name = f"{time_str}_Screenshot{ext}"
+                            
+                            # 초 단위 앞에 0을 붙여 3자리로 맞춤 (0SS 형태)
+                            clean_name = f"{date_str}-{hour_min}-0{sec_str}_{suffix}{ext}"
                             dst_path = os.path.join(log_dir, clean_name)
                             
+                            # 동일 시간(초)에 파일이 겹칠 경우 넘버링 추가
+                            if os.path.exists(dst_path):
+                                counter = 1
+                                while True:
+                                    clean_name_numbered = f"{date_str}-{hour_min}-0{sec_str}_{suffix}_{counter}{ext}"
+                                    dst_path_numbered = os.path.join(log_dir, clean_name_numbered)
+                                    if not os.path.exists(dst_path_numbered):
+                                        clean_name = clean_name_numbered
+                                        dst_path = dst_path_numbered
+                                        break
+                                    counter += 1
+                                    
                             shutil.copy(item_path, dst_path)
                             copied_files.add(item_path)
                             print(f"📸 [스크린샷 동기화] 새 스크린샷이 감지되어 로그 폴더로 카피되었습니다: {clean_name}")
@@ -170,7 +199,7 @@ def init_main_logger():
     sys.stdout = DoubleWriter(log_filename)
     print(f"🚀 [사령탑 로그 엔진 가동] 초기 부팅부터 모든 대순환 루프 기록이 동시 백업됩니다: {log_filename}")
     
-    # [스크린샷 동기화 스레드 시작]
+    # [스크린샷 동기화 스레드 및 Watchdog 락 감시 스레드 시작]
     try:
         import threading
         session_start_ts = get_session_start_time()
@@ -179,8 +208,13 @@ def init_main_logger():
             args=(session_start_ts, log_dir), 
             daemon=True
         ).start()
+        
+        threading.Thread(
+            target=watchdog_monitor_loop,
+            daemon=True
+        ).start()
     except Exception as thread_err:
-        print(f"⚠️ [스크린샷 동기화 스레드 기동 실패] {thread_err}")
+        print(f"⚠️ [백그라운드 스레드 기동 실패] {thread_err}")
 
 def timestamped_print(*args, **kwargs):
     current_time = datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
@@ -238,24 +272,65 @@ sys.excepthook = handle_exception
 
 global_device = None
 
+# 🛡️ [Watchdog 락 감시 변수 및 함수 정의]
+last_heartbeat_time = time.time()
+
+def update_heartbeat():
+    global last_heartbeat_time
+    last_heartbeat_time = time.time()
+
+def watchdog_monitor_loop():
+    global last_heartbeat_time
+    print("🛡️ [Watchdog 감시자] 백그라운드 락(Lock) 감시 센서 기동 완료 (주기: 15초, 한계치: 120초)")
+    while True:
+        time.sleep(15)
+        try:
+            inactive_duration = time.time() - last_heartbeat_time
+            if inactive_duration > 120:
+                print(f"\n🚨🚨 [Watchdog 감시자 경보] 메인 스레드가 {int(inactive_duration)}초 동안 무반응 정체(락) 상태에 빠진 것을 인지했습니다.")
+                restart_process("Watchdog 감시자에 의한 메인 스레드 무반응(ADB 소켓 블로킹 등) 검출")
+        except Exception as watchdog_err:
+            print(f"⚠️ [Watchdog 오류] {watchdog_err}")
+
+def take_screencap_backup(device, prefix="start"):
+    try:
+        import datetime
+        # 안전하게 스크린샷 폴더 생성 가드
+        device.shell("mkdir -p /sdcard/Screenshots")
+        time_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"screencap_{prefix}_{time_str}.png"
+        print(f"📸 [{prefix.upper()} 스크린샷] 안드로이드 셸을 통해 화면을 백그라운드로 캡처합니다: {filename}")
+        device.shell(f"screencap -p /sdcard/Screenshots/{filename}")
+    except Exception as err:
+        print(f"⚠️ [{prefix.upper()} 스크린샷 실패] {err}")
+
 def restart_process(reason):
     print(f"\n🔄 [프로세스 자가 복구 가동] 사유: {reason}")
     
-    # 📸 [재시작 직전 자동 스샷] 오류 발생 시점의 화면 스냅샷 촬영
-    global global_device
-    if global_device:
-        try:
-            print("📸 [자가 복구 스크린샷] 리셋 직전 에뮬레이터 화면 캡처 F9 신호를 전송합니다.")
-            global_device.shell("input keyevent KEYCODE_F9")
-            time.sleep(1.5) # 에뮬레이터가 스샷 파일을 디스크에 다 쓸 때까지 1.5초 대기 마진
-        except Exception as f9_err:
-            print(f"⚠️ [자가 복구 스샷 실패] {f9_err}")
-            
-    print("      ➔ 🛠️ 윈도우 ADB 서버 리셋 후 5초 뒤 파이썬 프로세스를 전격 재시작합니다.")
+    print("      ➔ 🛠️ 윈도우 ADB 서버 리셋 후 연결 재수립을 개시합니다...")
     os.system("adb kill-server")
     time.sleep(1.0)
     os.system("adb start-server")
+    os.system("adb connect 127.0.0.1:16384")
+    os.system("adb connect 127.0.0.1:16385")
+    os.system("adb connect 127.0.0.1:5555")
     time.sleep(4.0)
+    
+    # 📸 [재시작 직전 자동 스샷] 정상 복구된 ADB 연결 상태에서 캡처 백업을 수행
+    try:
+        client = AdbClient(host="127.0.0.1", port=5037)
+        device = client.device("127.0.0.1:5555")
+        if not device: device = client.device("127.0.0.1:16384")
+        if not device: device = client.device("127.0.0.1:16385")
+        if device:
+            take_screencap_backup(device, "restart")
+            time.sleep(1.5) # 디스크 동기화 대기 마진
+        else:
+            print("⚠️ [자가 복구 스샷 실패] 리셋 후 디바이스 객체 획득 불가")
+    except Exception as f9_err:
+        print(f"⚠️ [자가 복구 스샷 실패] {f9_err}")
+            
+    print("      ➔ 🚀 파이썬 프로세스를 전격 재시작합니다.")
     os.execv(sys.executable, [sys.executable] + sys.argv)
 
 def connect_mumu():
@@ -384,11 +459,7 @@ def start_grand_orchestrator():
     if not device: return
     
     # 📸 [초기 구동 스샷 자동화] 수동 시작 시점의 화면 스크린샷 촬영
-    try:
-        print("📸 [초기 구동 스크린샷] 시작 화면 캡처 F9 신호를 에뮬레이터에 전송합니다.")
-        device.shell("input keyevent KEYCODE_F9")
-    except Exception as f9_err:
-        print(f"⚠️ [초기 구동 스샷 실패] {f9_err}")
+    take_screencap_backup(device, "start")
 
     print("\n=======================================")
     print("🎨 [마스터 마스킹] 대순환 루프 전용 모든 코어 도장들을 로드합니다...")
@@ -447,13 +518,14 @@ def start_grand_orchestrator():
     last_freeze_check_time = time.time()
 
     print("\n====================================================")
-    print("위저드리 다프네 [그랜드 마스터 순환 컨트롤러 v17.45 통판동결파쇄판] 가동")
+    print("위저드리 다프네 [그랜드 마스터 순환 컨트롤러 v1.11.9] 가동")
     print(f" -> 목표 주회 설정 수치: {LIMIT_DUNGEON_LOOPS}회 안전 고정")
     print(f" -> 숏컷기반 스킬 예약 시스템 가동 여부: {ENABLE_FIRST_COMBAT_SKILL}")
     print("====================================================")
 
     cap_fail_counter = 0
     while True:
+        update_heartbeat()
         try:
             raw_cap = device.screencap()
             if raw_cap is None:

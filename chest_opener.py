@@ -1,7 +1,7 @@
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.11.8 (Stable)
-# - 최근 수정일: 2026-06-24 17:10
+# - 현재 버전: 1.11.9 (Stable)
+# - 최근 수정일: 2026-06-24 18:15
 # - 수정 기록:
 #   v18.03: trap_minigame_anchor.png 및 해제 Y좌표 보정 적용 (최초 버전 주석 도입)
 #   v18.07: 따개 멀티 템플릿(disarmer_*.png) 자동 스왑 및 다이내믹 좌표 터치 시스템 도입
@@ -16,6 +16,7 @@
 #   18.11.6: 여권 만료 팝업 이중 앵커 가드에 맞춰 버전 동기화
 #   1.11.7: 로딩 암전 가드, 해상도 크래시 가드, 예외 트레이스백 실시간 로깅 및 Dimension Guard 탑재 (동기화)
 #   1.11.8: 4일 경과 로그 파일 자동 청소기 장착, 메인 루프 전체 이중 감시 예외 처리 보강 및 리드미 설명 개정 (동기화)
+#   1.11.9: 최초 기동/재시작 자동 스샷 촬영, 스샷 동기화 스레드, 다중 사용자 경로 탐색 가드 탑재 (동기화)
 # ==============================================================================
 import time
 import io
@@ -152,6 +153,13 @@ def open_and_disarm_chest(device, img_np, thresh_yeolda, thresh_milana):
     start_time = time.time()
     last_click_yeolda_time = time.time()
     while time.time() - start_time < 5.0:
+        try:
+            import sys
+            if '__main__' in sys.modules and hasattr(sys.modules['__main__'], 'update_heartbeat'):
+                sys.modules['__main__'].update_heartbeat()
+        except:
+            pass
+
         try:
             raw_cap = device.screencap()
             img_np_current = cv2.imdecode(np.frombuffer(raw_cap, np.uint8), cv2.IMREAD_COLOR)

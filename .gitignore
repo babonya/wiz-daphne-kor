@@ -3,3 +3,11 @@ Thumbs.db
 .DS_Store
 __pycache__/
 *.pyc
+
+# 원본 소스코드 (개인 정보 포함으로 깃 허브 업로드 제외)
+# main.py
+# dungeon_bot.py
+# chest_opener.py
+# party_manager.py
+# inn_manager.py
+# history.log

@@ -1,7 +1,7 @@
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.11.8 (Stable)
-# - 최근 수정일: 2026-06-24 17:10
+# - 현재 버전: 1.11.9 (Stable)
+# - 최근 수정일: 2026-06-24 18:20
 # - 수정 기록:
 #   v18.11.3: 여관 숙박 및 탭 동작 중 ADB 연결 장애 크래시 예외 전파 가드 탑재
 #   v18.11.4: 미니게임 화면 중 재시작 시 30초 정체 대기 없이 즉각 전이 복구 가드 추가 (동기화)
@@ -9,6 +9,7 @@
 #   v18.11.6: 여권 만료 팝업 이중 앵커 가드에 맞춰 버전 동기화
 #   v1.11.7: 로딩 암전 가드, 해상도 크래시 가드, 예외 트레이스백 실시간 로깅 및 Dimension Guard 탑재 (동기화)
 #   1.11.8: 4일 경과 로그 파일 자동 청소기 장착, 메인 루프 전체 이중 감시 예외 처리 보강 및 리드미 설명 개정 (동기화)
+#   1.11.9: 최초 기동/재시작 자동 스샷 촬영, 스샷 동기화 스레드, 다중 사용자 경로 탐색 가드 탑재 (동기화)
 # ==============================================================================
 import time
 import io
@@ -95,6 +96,13 @@ def run_inn_sleep_sequence(device):
     fail_safe_counter = 0
 
     while True:
+        try:
+            import sys
+            if '__main__' in sys.modules and hasattr(sys.modules['__main__'], 'update_heartbeat'):
+                sys.modules['__main__'].update_heartbeat()
+        except:
+            pass
+
         try:
             raw_cap = device.screencap()
             img_np = np.array(Image.open(io.BytesIO(raw_cap)))

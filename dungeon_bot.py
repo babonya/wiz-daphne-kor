@@ -14,8 +14,8 @@ import party_manager
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.11.8 (Stable)
-# - 최근 수정일: 2026-06-24 17:10
+# - 현재 버전: 1.11.9 (Stable)
+# - 최근 수정일: 2026-06-24 18:15
 # - 수정 기록:
 #   v18.00: 3시간 전 안정 버전 기반 롤백 (Base)
 #   v18.01: 메인 좌표 스팟 대응 동기화
@@ -37,6 +37,7 @@ import party_manager
 #   18.11.6: 여권 만료 팝업 이중 앵커 가드에 맞춰 버전 동기화
 #   1.11.7: 로딩 암전 가드, 해상도 크래시 가드, 예외 트레이스백 실시간 로깅 및 Dimension Guard 탑재 (동기화)
 #   1.11.8: 4일 경과 로그 파일 자동 청소기 장착, 메인 루프 전체 이중 감시 예외 처리 보강 및 리드미 설명 개정 (동기화)
+#   1.11.9: 최초 기동/재시작 자동 스샷 촬영, 스샷 동기화 스레드, 다중 사용자 경로 탐색 가드 탑재 (동기화)
 # ==============================================================================
 
 # ==============================================================================
@@ -425,6 +426,13 @@ def start_main_macro(device, run_skill_logic=False):
 
     cap_fail_counter = 0
     while True:
+        try:
+            import sys
+            if '__main__' in sys.modules and hasattr(sys.modules['__main__'], 'update_heartbeat'):
+                sys.modules['__main__'].update_heartbeat()
+        except:
+            pass
+
         try:
             raw_cap = device.screencap()
             if raw_cap is None: raise RuntimeError("Screencap returned None")
