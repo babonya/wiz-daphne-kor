@@ -1,0 +1,179 @@
+==============================================================================
+📋 [프로젝트: Daphne 매크로 통합 히스토리 로그]
+==============================================================================
+
+[1.11.10] 2026-06-26 12:45 - Screenshot Naming & Suffix Categorization & Collision Numbering
+- 내용: 자동캡쳐 스샷 파일 네이밍 형식 개선 및 기동/재시작/수동 캡쳐 접미사(start/restart/screenshot) 분기 및 중복 넘버링 처리 추가.
+- 상세:
+  1. 네이밍 자릿수 일치 및 정렬 통일: 초 단위를 `0SS` 형식(예: 26초 -> 026)으로 패딩하여 텍스트 로그 파일(YYYY-MM-DD-HHMM-000.txt)과의 자릿수 정렬 순서를 완벽하게 통일했습니다. 이를 통해 파일 이름순으로 정렬해도 로그와 스크린샷이 시간 순서대로 안전하게 배치됩니다.
+  2. 스샷 목적별 접미사(Suffix) 분기: 
+    - 최초 기동 시 촬영 파일: `_start`
+    - 프로세스 자가복구 재시작 시 촬영 파일: `_restart`
+    - 사용자가 F9 등으로 수동 캡쳐하여 복사된 파일: `_screenshot` (기존 명칭 유지)
+  3. 1초 내 다중 파일 중복 방지: 동일 시간(초) 내에 2개 이상의 캡처 이미지가 동기화될 경우, 파일 덮어쓰기가 일어나는 것을 방지하고자 접미사 뒤에 `_1`, `_2` 등 순차 번호를 붙이도록 보강했습니다.
+- 적용 파일: main.py, history.log, readme.txt, Daphne Antigravity.bat, run.bat
+
+[1.11.9] 2026-06-24 18:20 - Auto Capture & Path Guard & De-identification
+- 내용: 최초 기동 및 자가재시작 직전 자동 스샷 촬영, 백그라운드 스크린샷 동기화 스레드 및 다중 사용자 경로 탐색 가드 탑재.
+- 상세:
+  1. 기동 시점 스크린샷 촬영 자동화: 수동으로 매크로를 실행하거나, ADB 오류/정체로 인해 프로세스가 자가재시작(execv)되기 직전에 기기 셸(device.shell)을 통해 F9 캡처 신호를 송출하고 1.5초 지연 대기를 주입하여 당시 화면의 스크린샷이 무조건 백그라운드에 생성되도록 자동화했습니다.
+  2. 스크린샷 자동 복사 스레드: 30초마다 백그라운드에서 동작하는 Daemon Thread를 띄워, 에뮬레이터 캡처 폴더를 주기적으로 감시합니다. 세션 시작 시각(MACRO_SESSION_START 환경변수 기준) 이후 생성된 이미지 중 파일명에 `[YYYY-MM-DD-HHMMSS]_Screenshot.[ext]` 형태로 단순화하여 logs/ 폴더로 자동 이관/복사하고, 4일이 지난 구형 이미지 또한 4일 로그 청소기 로직에 병합하여 소거하도록 통합했습니다.
+  3. 다중 사용자 경로 자동 탐색: OneDrive 연동 여부 및 사용자 계정명 차이로 인해 경로 하드코딩 시 복사 에러가 발생하는 현상을 예방하기 위해, 사용자 홈 디렉토리(os.path.expanduser) 기반으로 OneDrive 문서 폴더를 포함한 4개 후보 경로를 자동 탐색하여 락 가드를 거는 `find_screenshot_dir()` 동적 스캔 기능을 도입했습니다.
+  4. 릴리즈 빌드 격리 보강: 기존 Releases 폴더 백업본의 훼손 방지를 위해 빌드 타깃 폴더명을 `WizDapKor_v1.11.9`로 강제 격리 조치했습니다.
+- 적용 파일: main.py, dungeon_bot.py, chest_opener.py, party_manager.py, inn_manager.py, README.txt, history.log
+
+[1.11.8] 2026-06-24 17:10 - Auto Log Cleaner & Exception Double Guard
+- 내용: 4일 경과 로그 파일 자동 청소기 장착, 메인 루프 전체 이중 감시 예외 처리 보강 및 리드미 설명 개정.
+- 상세:
+  1. 매크로 부팅 기동 시 logs/ 폴더 내 파일들 중 최종 수정된 시간이 4일(96시간)을 경과한 오래된 구형 로그 텍스트 파일(.txt)을 자동으로 진단하고 소거(os.remove)하는 디스크 클리너 시스템을 main.py에 탑재했습니다.
+  2. main.py 기동 진입부인 __main__ 호출부를 try-except 블록으로 견고하게 덮어써서, 서브모듈 구동 중 튕김을 유발하는 모든 Unhandled Exception(치명적 크래시)에 대해 예외 트레이스백(Traceback) 호출 스택 및 줄번호를 로그 파일에 안전하게 플러시(flush) 기록하고 종료되도록 이중 감시 락을 보강했습니다.
+  3. 일반 사용자의 불필요한 설정 탐색 노력을 방지하기 위해 README.txt 파일 내의 에뮬레이터 해상도(2560x1440, 360 DPI) 권장 세팅 문구를 "기본 표준 설정 유지" 지침으로 수정하고, 인게임 권장 세팅(속도우선, 30fps, 텍스트일괄 ON, 던전밝기 최소 등) 및 캐릭터 사망/빈사 시의 매칭 경고(백아의 동굴 지하 1층 한정 루프 작동)를 대대적으로 갱신했습니다.
+- 적용 파일: main.py, dungeon_bot.py, chest_opener.py, party_manager.py, inn_manager.py, README.txt, history.log
+
+[1.11.7] 2026-06-24 15:50 - Crash Guard & Loading Blackout Guard
+- 내용: 로딩 암전 가드, 해상도 크래시 가드, 예외 트레이스백 실시간 로깅 및 Dimension Guard 탑재.
+- 상세:
+  1. 에뮬레이터 로딩 렉이나 해상도 일시 찌그러짐 현상 시 템플릿 크기보다 캡처 화면이 작아질 때 matchTemplate에서 발생하는 Assertion failed 크래시 방지를 위해 Dimension Guard(가로/세로 매칭 템플릿 크기 비교 및 하한 가드)를 main.py, dungeon_bot.py, chest_opener.py of 모든 템플릿 매칭/크롭 헬퍼 함수에 장착.
+  2. 상자 해제 미니게임 진입 신뢰도 개선을 위해 trap_minigame_anchor.png 매칭 임계값을 0.55로 완화하고, 미니게임 화면의 주황색 게이지 라인을 실시간으로 분석하는 '3중 멀티스팟 RGB 센서 감지기'를 chest_opener.py에 추가하여 더블 가드 구축.
+  3. 전투 진입/퇴장 등 렉에 의한 화면 완전 암전 시 헛스윙 터치 방지를 위해 평균 밝기 5.0 미만 시 대기하도록 하는 'Black Screen Loading Guard(로딩 암전 가드)'를 main.py 및 dungeon_bot.py 루프 입구에 각각 장착.
+  4. 치명적 크래시 발생 시 디버그 정보를 유실하지 않도록 sys.excepthook 오버라이딩을 개선하여 logs/ 폴더 내 런타임 텍스트 로그 파일에 예외 트레이스백이 실시간 flush되도록 가드 엔진 완성.
+- 적용 파일: main.py, dungeon_bot.py, chest_opener.py, history.log
+
+[18.11.6] 2026-06-24 01:50 - Passport Popup Guard Fix
+- 내용: 여권 만료 안내 팝업에 의한 아웃게임 정체 해결 및 이중 앵커 검증 가드 탑재.
+- 상세:
+  1. 마을 진입 시 여권 만료 팝업이 발생하여 매크로가 아웃게임 정체(동결)를 일으키던 문제를 방어하기 위해 'X 닫기'를 누르는 가드를 main.py에 탑재.
+  2. 단순 'X 닫기' 매칭 시 전투 중 상세정보창이나 캐릭터 상세 정보창 하단의 'X 닫기'와 오탐될 우려가 크므로, 타이틀의 "여권 추가 구매" 앵커(anchor_passport_popup.png)와 하단의 "X 닫기" 앵커(close_passport_popup.png)가 화면에 동시에 존재할 때만 작동하는 이중 검증 필터를 이식하여 오탐 위험 원천 제거.
+- 적용 파일: main.py, inn_manager.py, dungeon_bot.py, party_manager.py, chest_opener.py, history.log
+
+[18.11.5] 2026-06-24 01:30 - Dialogue Arrow Sniper & Escape Logic Fix
+- 내용: 보물상자 선택창("열다") 지형 그래픽에 의한 대화창 저격 오탐 및 던전봇 오인 탈출 버그 수정.
+- 상세:
+  1. main.py 내 대화 화살표 저격 임계값을 0.70에서 0.82로 상향하여 우측 하단 지형 그래픽과의 오검출 방어.
+  2. 화면 상에 "열다"(t_yeolda) 앵커가 포착되는 상자 선택창 상태인 경우, 대화창 저격(스킵) 시도를 수행하지 않고 건너뛰는 예외 가드 장착.
+  3. dungeon_bot.py 내 탈출 판정(TRIGGER_EXIT) 중 필드 앵커(t_field)가 보이지 않더라도 "열다" 선택창이 활성화되어 있거나 미니게임이 진행 중이면, 탈출 성공 리턴을 취소하고 던전봇 루프를 유지하도록 조율.
+- 적용 파일: main.py, inn_manager.py, dungeon_bot.py, party_manager.py, chest_opener.py, history.log
+
+[18.11.4] 2026-06-22 18:15 - Minigame Quick Recovery Fix
+- 내용: 미니게임 해제 화면 상태에서 재시작 시 30초 정체 대기 없이 즉시 미니게임 돌입 복구 가드 탑재.
+- 상세:
+  1. 상자 해제 미니게임 도중 매크로가 재시작되어 던전봇(dungeon_bot.py)이 신규 기동되었을 때, 미니게임 상태를 대기 상태(FIELD_WAIT/AUTO_MOVING)에서 즉시 감지하여 PLAY_MINIGAME 상태로 전이시키는 가드가 없어 약 30초의 무동작 대기 지연(stuck_duration 만료 대기)이 발생하던 현상을 해결.
+  2. dungeon_bot.py 메인 루프에 미니게임 즉각 돌입 가드(is_minigame_screen)를 이식하여, 대기 상태에서 미니게임이 화면에 켜져 있음이 인지되는 즉시 30초 딜레이 없이 게이지 연타 플레이(PLAY_MINIGAME) 상태로 직행하도록 제어 구조 보완.
+- 적용 파일: main.py, inn_manager.py, dungeon_bot.py, party_manager.py, chest_opener.py, history.log
+
+[18.11.3] 2026-06-22 17:55 - Inn Sequence Socket Exception Fix
+- 내용: 여관 숙박 및 탭 동작 중 ADB 연결 장애 크래시 자가 복구 가드 탑재.
+- 상세:
+  1. 여관 루프 정비 동작 중 일시적 혹은 장기적인 ADB 소켓 통신 오류(ConnectionResetError 등)가 발생하면, 예외 처리가 유실된 inn_manager.py의 device.shell 호출 지점에서 예외가 상위로 터져 매크로 전체 프로세스가 완전 종료/크래시되던 현상을 해결.
+  2. inn_manager.py 내에 safe_device_shell 예외 전파용 헬퍼 함수를 신설하고 모든 device.shell 호출부에 적용하여 ADB 통신 오류 발생 시 명확하게 Exception을 던지도록 단일화.
+  3. main.py 내 inn_manager.run_inn_sleep_sequence(device) 호출 구문(2개소) 전체를 try-except 예외 감시 영역으로 전면 격리하고, 예외 포착 시 기존의 adb kill-server 및 os.execv를 활용한 프로세스 자동 재부팅 자가 복구(Self-Healing) 기어가 발동되도록 안전 조치.
+  4. 추가로 방 선택창 인식 실패를 예방하기 위해 inn_manager.py의 묵는다/스탠다드룸/나간다 등 로비 메뉴 매칭 임계값을 0.75에서 0.70으로 소폭 낮춰 안정성 보강.
+- 적용 파일: main.py, inn_manager.py, dungeon_bot.py, party_manager.py, chest_opener.py, history.log
+
+[18.11.2] 2026-06-21 05:05 - Character Select Stuck Fix
+- 내용: 부팅 및 재시작 시 캐릭터 선택창('누가 열 거야?') 정체 복구 패치.
+- 상세:
+  1. 매크로 부팅 혹은 재시작 시 게임 화면에 이미 캐릭터 선택창("누가 열 거야?")이 열려 있을 경우, 아웃게임 정체 판정(마을:0.43 등)으로 무반응 락이 유발되던 현상을 수정.
+  2. main.py 내 던전 내부 상태 판정 로직에 따개 템플릿(disarmer_*.png) 검출 가드(has_disarmer_visible)를 도입하여, 캐릭터 선택창이 띄워져 있을 시 즉시 '던전 내부' 상태로 강제 확정하고 던전봇(dungeon_bot.py)으로 통제권을 이양함.
+  3. dungeon_bot.py의 FIELD_WAIT/AUTO_MOVING 블록 선두에 따개 검출 가드를 이식하여, 이미 캐릭터 선택 카드가 보일 경우 '열다' 터치 단계를 스킵하고 화면 속 따개 좌표를 즉시 터치한 후 BRANCH_CHECK로 강제 스위칭하도록 대응.
+- 적용 파일: main.py, dungeon_bot.py, party_manager.py, chest_opener.py, history.log
+
+[18.11.1] 2026-06-17 10:15 - Chest Opener Touch Fix
+- 내용: 상자 해제 진입 시 '열다' 터치 씹힘 재시도 및 BRANCH_CHECK 갇힘 복구 패치.
+- 상세:
+  1. '열다' 버튼을 누른 후, 화면에서 '열다' 텍스트(`yeolda_clean.png`)가 완전히 소멸한 것이 검증되기 전까지는 따개 캐릭터 카드 탐색을 전면 중단/대기하는 소멸 검증 가드 구현. 이를 통해 최초 화면 배경에 의한 밀라나 도장 오탐 현상 100% 원천 차단.
+  2. '열다' 터치 후 1.5초 이상 화면이 전환되지 않고 '열다' 버튼이 계속 감지될 시, 터치가 씹힌 것으로 간주하여 '열다' 버튼을 재클릭하는 자동 재시도 루프 적용.
+  3. BRANCH_CHECK 정체(stuck_duration > 30.0) 감지 시, 화면에 여전히 '열다'가 보일 경우 '아무것도 안 한다' (width * 0.5, height * 0.855) 강제 터치를 주입하여 상자창을 안전하게 이스케이프(닫기)하고 FIELD_WAIT로 정합성 이행 보강.
+- 적용 파일: main.py, dungeon_bot.py, party_manager.py, chest_opener.py, history.log
+
+[18.11.0] 2026-06-15 17:10 - Exit Stuck Recovery & SemVer Adopt
+- 내용: 던전 탈출 정체 시 3번 체크포인트 단추를 활용한 회군/재탈출 복구 시스템 탑재 및 시맨틱 버전 표기(SemVer) 도입.
+- 상세:
+  1. TRIGGER_EXIT 상태에서 30초 이상 렉이나 네트워크 지연으로 탈출하지 못하고 정체되었을 때(stuck_duration > 30.0), 3번 체크포인트 단추(move_check.png)를 검출(실패 시 1215, 572 폴백 좌표)하여 터치.
+  2. 캐릭터가 문 앞에서 완전히 뒤로 돌아서 빠져나오기까지 4.0초간 연산 정지 대기.
+  3. 상태를 FIELD_WAIT로 초기화하여, 회군 후 처음부터 다시 행군(토스트 감지 및 출구 재진입)을 안전하게 재수행할 수 있도록 유도.
+  4. 3번 단추 전용 국소 영역 크롭 탐색 함수 find_checkpoint_button_coords(X: 1150~1280, Y: 530~630)을 신설하여 1번 및 4번 단추 오탐지를 물리적으로 100% 차단.
+  5. 기존 vXX.XX 표기에서 SemVer(시맨틱 버저닝, Major.Minor.Patch) 표기 규칙을 적용하여 버그 수정(Patch), 작은 기능 추가(Minor), 대규모 구조 변경(Major)으로 버전을 관리하기 위해 18.11.0 버전으로 재명명 완료.
+- 적용 파일: main.py, dungeon_bot.py, party_manager.py, chest_opener.py, history.log
+
+[v18.10] 2026-06-15 01:10 - Exclude System Files
+- 내용: 힐러 캐릭터 동적 매칭 시 healer_auto_btn.png 등 시스템 예약 파일 자동 제외 필터 도입.
+- 상세:
+  1. 힐러 캐릭터 이름 도장 검색을 위해 healer_*.png 로딩 시, 자동 힐 버튼(healer_auto_btn.png)과 레거시(healer_name.png)를 제외 목록(excluded_files)에 추가하여 루프에서 배제.
+  2. 이를 통해 캐릭터 정보창 진입을 위한 얼굴 단추 탐색 중 자동 힐 버튼이 오인 로딩 및 터치되는 현상을 방지.
+- 적용 파일: main.py, dungeon_bot.py, party_manager.py, chest_opener.py, history.log
+
+[v18.09] 2026-06-15 01:00 - Priority Sorting
+- 내용: 힐러 및 따개 캐릭터 템플릿 로드 시 sorted() 정렬 적용을 통한 우선순위 정책 지원.
+- 상세:
+  1. 기존 glob.glob() 리스트 반환 순서가 파일 시스템 환경에 따라 불규칙할 수 있는 부분을 sorted() 정렬로 정재.
+  2. 유저가 healer_1_ekaterina.png, healer_2_alice.png 와 같이 파일명 접두사(예: healer_숫자_이름)를 지정하여 힐러 진입 및 따개 선택에 대한 우선순위를 손쉽게 제어 가능.
+- 적용 파일: main.py, dungeon_bot.py, party_manager.py, chest_opener.py, history.log
+
+[v18.08] 2026-06-15 00:50 - Button Crop Segmentation
+- 내용: 우측 상단 2x2 격자의 2번(던전탈출) 단추와 4번(상자찾기) 단추의 매칭 영역 이중 분화.
+- 상세:
+  1. Y축 검색 범위를 각각의 실제 버튼 위치에 맞춰 완벽하게 분화.
+  2. 상자이동(Button 4): find_chest_button_coords (Y: 530~630 크롭) ➔ 1번(속도), 2번(지도) 오탐 차단.
+  3. 탈출이동(Button 2): find_exit_button_coords (Y: 410~520 크롭) ➔ 3번, 4번 오탐 차단 및 탈출 루프 락 해제.
+- 적용 파일: main.py, dungeon_bot.py, history.log
+
+[v18.07] 2026-06-15 00:40 - Multi-Template Auto-Swap
+- 내용: 힐러 및 따개 캐릭터 스왑을 위한 멀티 템플릿 로드 및 동적 좌표 타격 시스템 도입.
+- 상세:
+  1. 힐러: templates 디렉토리의 healer_*.png 로드 후 순차 매칭 (healer_alice.png, healer_ekaterina.png 등 자동 인식).
+  2. 따개: templates 디렉토리의 disarmer_*.png 로드 후 동적 좌표 계산 터치 (disarmer_milana.png 등 매칭 시 해당 격자 실좌표 타격).
+  3. 캐릭터 스왑 시 수동 이미지 교체 또는 코드 변경 없이 파일만 두면 알아서 찾는 스마트 구조 완성.
+  4. 구버전 하방 호환성(healer_name.png, milana_clean.png) 보존.
+- 적용 파일: main.py, dungeon_bot.py, party_manager.py, chest_opener.py, history.log
+
+[v18.06] 2026-06-15 00:25 - 4th Button Crop Match
+- 내용: 우측 상단 2x2 격자의 4번째 단추(상자이동/탈출단추) 전용 국소 매칭 적용.
+- 상세:
+  1. 캐릭터가 사망하여 대열이 꼬였을 때, 1번(속도) 및 2번(지도) 단추의 원형 형상을 탈출/상자 단추로 오검출하는 버그 해결.
+  2. 4번째 단추의 고정 영역(X: 1250~1440, Y: 530~630)만 잘라내어 매칭을 수행하는 find_button4_coords 헬퍼 도입.
+  3. t_chest_btn, t_exit_btn, t_exit_mag 매칭 시 해당 국소 검색 함수를 적용하여 오탐율을 0%로 통제.
+- 적용 파일: main.py, dungeon_bot.py, history.log
+
+[v18.05] 2026-06-14 10:00 - Poison Flash Threshold Upgrade
+- 내용: 독 감지 필터를 슬롯 전체 보라색 플래시 비율 스캔 방식으로 전환.
+- 상세:
+  1. 기존의 아이콘 매칭은 JPG 압축 노이즈(20~30px) 수준의 미세 오탐만으로도 무한 루프를 유발하는 치명적인 취약점이 식별됨.
+  2. 캐릭터 슬롯 전체 면적(192x120px) 대비 보라색 픽셀의 비율을 연산하는 방식으로 전격 변경.
+  3. 밀라나의 기본 암흑 다이아몬드(약 1.3%)와 JPG 노이즈를 완벽 차단하기 위해 15% 이상 면적이 보라색으로 덮였을 때만 진성 독 플래시로 판정.
+- 적용 파일: main.py, dungeon_bot.py, history.log
+
+[v18.04] 2026-06-14 09:45 - Poison Detection Upgrade
+- 내용: 6인 독 감지 필터 영역 국소화 및 해상도 비율 대응.
+- 상세:
+  1. 기존의 오동작하던 3D 화면 중앙 스캔 방식(Y:700~1024)을 캐릭터 슬롯별 독 아이콘 영역(X:slot_left+340~410, Y:slot_top+20~60) 국소 스캔으로 정밀화.
+  2. 타 속성 캐릭터(밀라나 암흑 속성 등)의 보라색 아이콘 간섭을 원천 차단.
+  3. 576x1024 해상도 비율 기준 10픽셀 이상 검출 시 즉시 힐러 정비 시퀀스가 발동되도록 조율.
+- 적용 파일: main.py, dungeon_bot.py, history.log
+
+[v18.03] 2026-06-13 18:55 - Trap Game Stabilize
+- 내용: 함정 해제 미니게임 판정 앵커화 및 해제 좌표 보정.
+- 상세:
+  1. 기존 1픽셀 RGB 판정에서 trap_minigame_anchor.png 템플릿 매칭 방식으로 감지 기계 개선.
+  2. 해제 터치 Y 좌표를 0.635에서 실해상도 61.1% 지점으로 정교화.
+  3. 인게임 렉 대비용 5초 안전 대기 마진은 기존과 동일하게 유지.
+  4. 탈출 행군(TRIGGER_EXIT) 도중 기습 전투가 터졌을 때 즉각 전투(IN_COMBAT) 모드로 전환되는 인터럽트 가드 추가.
+- 적용 파일: main.py, dungeon_bot.py, chest_opener.py, history.log
+
+[v18.02] 2026-06-13 18:30 - Self-Healing Hotfix
+- 내용: ADB 소켓 단절 시 자가 복구 메커니즘 도입
+- 상세:
+  1. dungeon_bot.py 내 통신 예외 발생 시 상위 main.py로 예외 전파(raise)하도록 단일화.
+  2. main.py에서 통신 오류 감지 시 adb 서버 kill/start 후 os.execv를 활용한 프로세스 강제 재시작 가드 구축.
+- 적용 파일: main.py, dungeon_bot.py, history.log
+
+[v18.01] 2026-06-07 17:35 - Hotfix
+- 내용: 뇌절 좌표 수정
+- 상세: 메인 루프 내 잘못된 좌표(950, 1900)를 안전한 공터 좌표(713, 273)로 수정.
+- 적용 파일: main.py
+
+[v18.00] 2026-06-07 17:30 - Stable Base
+- 내용: 3시간 전 가장 안정적으로 작동하던 코드 기준으로 완전 롤백.
+- 목적: 최근 발생한 잦은 에러 및 로직 꼬임 현상 해결을 위한 초기화.
+
+==============================================================================
