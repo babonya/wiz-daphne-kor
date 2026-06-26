@@ -5,9 +5,12 @@ import time
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.11.11 (Stable)
-# - 최근 수정일: 2026-06-26 13:45
+# - 현재 버전: 1.12.3
+# - 최근 수정일: 2026-06-27 00:25
 # - 수정 기록:
+#   1.12.3: 상자 자동 이동 완료 후 '열다' 발견 시 즉시 해제 함수 직접 호출하도록 정체 로직 버그 패치 및 버전업
+#   1.12.2: 4대 예외 패치, 자연 정렬(Natural Sort) 도입, 리드미 가이드 정정 및 버전 업그레이드
+#   1.12.1: 마이너 버전업 - 템플릿 디렉토리 구조 다각화(Worldmap, WolfCave, Vill_Isbelg, inn_sleep) 분리 및 동적 파일명 최적화
 #   v18.00: 3시간 전 안정 버전 기반 롤백 (Base)
 #   v18.01: 메인 좌표 스팟 대응 동기화
 #   v18.02: ADB 통신 장애 시 os.execv 프로세스 강제 재시작 가드 장착
@@ -31,6 +34,8 @@ import time
 #   1.11.9: 최초 기동/재시작 자동 스샷 촬영, 스샷 동기화 스레드, 다중 사용자 경로 탐색 가드 탑재 (동기화)
 #   1.11.10: 자동캡쳐 스샷 파일 네이밍 형식 개선(초단위 3자리 패딩 YYYY-MM-DD-HHMM-0SS), 기동/재시작/수동 캡쳐 접미사(start/restart/screenshot) 분기 및 중복 넘버링 처리 추가 (동기화)
 #   1.11.11: 프로젝트 구조 개편으로 인한 순수 소스코드 src/ 폴더 격리 이행 및 배치 파일 경로 고도화 (동기화)
+#   1.11.16: 미니게임 앵커 국소 크롭 스캔 범위(X: 57~187, Y: 227~317 마진 적용) 지정 및 임계값 0.70 상향 (동기화)
+#   1.11.16-hotfix1: 핫픽스 버전 동기화
 # ==============================================================================
 
 # ==============================================================================
@@ -464,16 +469,16 @@ def start_grand_orchestrator():
 
     print("\n=======================================")
     print("🎨 [마스터 마스킹] 대순환 루프 전용 모든 코어 도장들을 로드합니다...")
-    t_village = load_template("templates/village_anchor.png")
-    t_world_map = load_template("templates/world_map_anchor.png")
-    t_dungeon_sel = load_template("templates/dungeon_select_anchor.png")
-    t_inn_title = load_template("templates/inn_title.png")
+    t_village = load_template("templates/Vill_Isbelg/village_anchor.png")
+    t_world_map = load_template("templates/Worldmap/world_map_anchor.png")
+    t_dungeon_sel = load_template("templates/WolfCave/dungeon_select.png")
+    t_inn_title = load_template("templates/inn_sleep/inn_title.png")
     
-    t_enter_dungeon = load_template("templates/enter_dungeon_btn.png")
+    t_enter_dungeon = load_template("templates/WolfCave/Wolf_B1_btn.png")
     t_open_world = load_template("templates/open_world_map_btn.png")
-    t_go_village = load_template("templates/go_to_village_btn.png")
-    t_go_dungeon = load_template("templates/go_to_dungeon_btn.png")
-    t_village_to_inn = load_template("templates/village_to_inn_btn.png")
+    t_go_village = load_template("templates/Worldmap/Vill_isbelk_btn.png")
+    t_go_dungeon = load_template("templates/Worldmap/Cave_Wolf_btn.png")
+    t_village_to_inn = load_template("templates/Vill_Isbelg/village_to_inn_btn.png")
     
     t_field = load_template("templates/field_anchor.png")
     t_yeolda = load_template("templates/yeolda_clean.png")
@@ -485,23 +490,23 @@ def start_grand_orchestrator():
     t_exit_mag = load_template("templates/exit_mag_icon.png")
     t_cha_anchor = load_template("templates/cha_panel_anchor.png")
     
-    t_popup_levelup = load_template("templates/popup_levelup_title.png") 
-    t_popup_skill = load_template("templates/popup_skill_title.png")     
+    t_popup_levelup = load_template("templates/inn_sleep/popup_levelup_title.png") 
+    t_popup_skill = load_template("templates/inn_sleep/popup_skill_title.png")     
     t_skillget_anchor = load_template("templates/skillget_anchor.png")   
     
-    t_lvl_next = load_template("templates/levelup_next_btn.png")   
-    t_lvl_close = load_template("templates/levelup_close_btn.png") 
-    t_skill_close_btn = load_template("templates/skill_close_btn.png")
+    t_lvl_next = load_template("templates/inn_sleep/levelup_next_btn.png")   
+    t_lvl_close = load_template("templates/inn_sleep/levelup_close_btn.png") 
+    t_skill_close_btn = load_template("templates/inn_sleep/skill_close_btn.png")
     
     t_anchor_dead = load_dead_template("templates/anchor_dead_screen.png")
     t_btn_resurrect = load_dead_template("templates/btn_resurrect.png")
     
     t_net_error = load_template("templates/anchor_network_error.png")
     t_net_retry = load_template("templates/btn_network_retry.png")
-    t_arrow_clean = load_template("templates/arrow_clean.png")
+    t_arrow_clean = load_template("templates/inn_sleep/arrow_clean.png")
     t_passport_anchor = load_template("templates/anchor_passport_popup.png")
     t_passport_close = load_template("templates/close_passport_popup.png")
-    t_disarmer_templates = chest_opener.load_multiple_templates("templates", "disarmer_")
+    t_disarmer_templates = chest_opener.load_multiple_templates("templates/!!Character", "disarmer_")
     print("=======================================")
 
     dungeon_run_count = START_RUN_COUNT_OFFSET  
@@ -597,6 +602,7 @@ def start_grand_orchestrator():
         
         # 📦 [상자 조우 예외 가드] 화면에 '열다'가 감지되는 경우 대화창 저격을 하지 않고 건너뜁니다.
         is_box_menu_present = check_template_present(img_np, t_yeolda, 0.65)
+        is_get_item_present = check_template_present(img_np, t_get_item, 0.70)
         
         # [차원 안전 가드] dialogue_zone의 크기가 t_arrow_clean 템플릿 크기보다 작은 경우 매칭 생략
         has_dialogue_size_ok = True
@@ -606,7 +612,7 @@ def start_grand_orchestrator():
             if hz < ha or wz < wa:
                 has_dialogue_size_ok = False
         
-        if t_arrow_clean is not None and not is_box_menu_present and has_dialogue_size_ok:
+        if t_arrow_clean is not None and not is_box_menu_present and not is_get_item_present and has_dialogue_size_ok:
             gray_zone = cv2.cvtColor(dialogue_zone, cv2.COLOR_RGB2GRAY)
             _, thresh_zone = cv2.threshold(gray_zone, 160, 255, cv2.THRESH_BINARY)
             result_arrow = cv2.matchTemplate(thresh_zone, t_arrow_clean, cv2.TM_CCOEFF_NORMED)
@@ -772,7 +778,10 @@ def start_grand_orchestrator():
                     exit_by_user, skill_ok = dungeon_bot.start_main_macro(device, run_skill_logic)
                     if skill_ok:
                         global_skill_setup_completed = True  
-                    if exit_by_user: last_action_time = time.time() + 30.0 
+                    if exit_by_user: 
+                        last_action_time = time.time() + 30.0 
+                    else: 
+                        last_action_time = time.time()
                 except Exception as bot_err:
                     restart_process(f"던전 내부 동작 중 ADB 통신 치명적 예외 발생: {bot_err}")
                 continue

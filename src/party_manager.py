@@ -1,8 +1,11 @@
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.11.9 (Stable)
-# - 최근 수정일: 2026-06-24 18:20
+# - 현재 버전: 1.12.3
+# - 최근 수정일: 2026-06-27 00:25
 # - 수정 기록:
+#   1.12.3: 버전 동기화
+#   1.12.2: 힐러 로딩 자연 정렬(Natural Sort) 도입, 일괄 회복 예비 좌표 대응 및 버전 동기화
+#   1.12.1: 마이너 버전 동기화
 #   v18.07: 힐러 멀티 템플릿(healer_*.png) 자동 스왑 검출 시스템 도입
 #   v18.09: 힐러/따개 템플릿 로딩 시 sorted() 정렬 적용 (알파벳 정렬 우선순위 제공)
 #   v18.10: 힐러 도장 로드 시 healer_auto_btn.png 등 시스템 예약 파일 자동 제외 필터링 추가
@@ -11,11 +14,14 @@
 #   18.11.2: 캐릭터 선택창('누가 열 거야?') 정체 복구 가드 탑재 (동기화)
 #   18.11.3: 여관 정비 시퀀스 중 ADB 통신 장애 크래시 자가 복구 가드 추가 (동기화)
 #   18.11.4: 미니게임 화면 중 재시작 시 30초 정체 대기 없이 즉각 전이 복구 가드 추가 (동기화)
-#   18.11.5: 탈출 완료 판정 오판 방지 가드에 맞춰 버전 동기화
+#   18.11.5: 여권 만료 팝업 이중 앵커 가드에 맞춰 버전 동기화
 #   18.11.6: 여권 만료 팝업 이중 앵커 가드에 맞춰 버전 동기화
 #   1.11.7: 로딩 암전 가드, 해상도 크래시 가드, 예외 트레이스백 실시간 로깅 및 Dimension Guard 탑재 (동기화)
 #   1.11.8: 4일 경과 로그 파일 자동 청소기 장착, 메인 루프 전체 이중 감시 예외 처리 보강 및 리드미 설명 개정 (동기화)
 #   1.11.9: 최초 기동/재시작 자동 스샷 촬영, 스샷 동기화 스레드, 다중 사용자 경로 탐색 가드 탑재 (동기화)
+#   1.11.12: 힐러창 진입 전 안전지대 터치 및 대기 로직 추가
+#   1.11.16: 미니게임 앵커 국소 크롭 스캔 범위(X: 57~187, Y: 227~317 마진 적용) 지정 및 임계값 0.70 상향 (동기화)
+#   1.11.16-hotfix1: 핫픽스 버전 동기화
 # ==============================================================================
 import time
 import io
@@ -33,27 +39,21 @@ def load_grayscale_template(file_path):
         return gray
     except: return None
 
+def natural_sort_key(s):
+    import re
+    return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', s)]
+
+
 def load_multiple_grayscale_templates(directory, prefix):
     import glob
     import os
     templates = []
     pattern = os.path.join(directory, f"{prefix}*.png")
-    # healer_auto_btn.png와 healer_name.png는 시스템 예약 파일이므로 캐릭터 목록에서 제외
-    excluded_files = {"healer_auto_btn.png", "healer_name.png"}
-    for file_path in sorted(glob.glob(pattern)):
+    for file_path in sorted(glob.glob(pattern), key=natural_sort_key):
         filename = os.path.basename(file_path)
-        if filename in excluded_files:
-            continue
         temp = load_grayscale_template(file_path)
         if temp is not None:
             templates.append((filename, temp))
-            
-    # 하방 호환성
-    legacy_path = os.path.join(directory, "healer_name.png")
-    if os.path.exists(legacy_path) and not any(t[0] == "healer_name.png" for t in templates):
-        temp = load_grayscale_template(legacy_path)
-        if temp is not None:
-            templates.append(("healer_name.png", temp))
     return templates
 
 
@@ -74,10 +74,17 @@ def find_gray_coords(img_np, gray_temp, threshold_val=0.65):
         return max_loc[0] + int(w / 2), max_loc[1] + int(h / 2)
     return None
 
-def run_party_healing_sequence(device, t_healer_name, t_auto_btn, t_close_btn, dummy_var=None):
+def run_party_healing_sequence(device, t_auto_btn, t_close_btn):
     print("💊 [party_manager] 정비 레이더 가동... 주변 상황 교차 검증을 시작합니다.")
 
-    g_healer_name = load_grayscale_template("templates/healer_name.png")
+    # 💡 [안전지대 강제 정지 가드] 이동 중 캐릭터 터치 씹힘 차단을 위해 선제적으로 멈춤
+    print("💊 [party_manager] 안전지대 선제 터치(701, 333)로 캐릭터 정지를 유도합니다.")
+    try:
+        device.shell("input tap 701 333")
+        time.sleep(0.5)
+    except Exception as e:
+        print(f"⚠️ [party_manager] 안전지대 정지 터치 실패 (무시): {e}")
+
     g_auto_btn = load_grayscale_template("templates/healer_auto_btn.png")
     g_confirm_btn = load_grayscale_template("templates/confirm_recover.png")
     g_close_btn = load_grayscale_template("templates/close_panel.png")
@@ -111,7 +118,7 @@ def run_party_healing_sequence(device, t_healer_name, t_auto_btn, t_close_btn, d
             break
             
         # 등록된 힐러 도장 목록 중 하나라도 화면에 매칭되는지 동적 탐색
-        healer_templates = load_multiple_grayscale_templates("templates", "healer_")
+        healer_templates = load_multiple_grayscale_templates("templates/!!Character", "healer_")
         coords = None
         for file_name, g_healer in healer_templates:
             coords = find_gray_coords(img_np, g_healer, 0.72)
@@ -160,10 +167,10 @@ def run_party_healing_sequence(device, t_healer_name, t_auto_btn, t_close_btn, d
         print("⏳ 힐 연출 및 화면 암전 대기... 무조건 6초간 정지합니다.")
         time.sleep(6.0)
     else:
-        print("🔍 [party_manager 검증] '회복한다' 버튼 미포착. 실제 필드 복귀 유무 및 만피 상태를 재검증합니다...")
-        if check_gray_template_present(img_np, g_field, 0.65):
-            print("   ➔ ✨ 확인 결과: 이미 정상 필드입니다. 정비 시퀀스를 즉시 안전 종료합니다.")
-            return True
+        print("🔍 [party_manager 검증] '회복한다' 버튼 미포착. 예비 고정 좌표(975, 1891)로 승인을 강제 감행합니다.")
+        device.shell("input tap 975 1891")
+        print("⏳ 힐 연출 및 화면 암전 대기... 무조건 6초간 정지합니다.")
+        time.sleep(6.0)
 
     # [단계] 캐릭터 창 "닫기" 필드 복귀
     try: img_np = np.array(Image.open(io.BytesIO(device.screencap())))

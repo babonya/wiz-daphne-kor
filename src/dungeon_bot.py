@@ -14,9 +14,12 @@ import party_manager
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.11.9 (Stable)
-# - 최근 수정일: 2026-06-24 18:15
+# - 현재 버전: 1.12.3
+# - 최근 수정일: 2026-06-27 00:25
 # - 수정 기록:
+#   1.12.3: 상자 자동 이동 완료 후 '열다' 씹힘 정체 버그 수정
+#   1.12.2: 4대 예외 패치 반영에 따른 버전 동기화
+#   1.12.1: 마이너 버전업 - 템플릿 디렉토리 구조 다각화(Worldmap, WolfCave, Vill_Isbelg, inn_sleep) 분리 및 동적 파일명 최적화
 #   v18.00: 3시간 전 안정 버전 기반 롤백 (Base)
 #   v18.01: 메인 좌표 스팟 대응 동기화
 #   v18.02: ADB 통신 오류 시 main.py로 예외 throw 처리 (자가 복구 위임)
@@ -38,6 +41,9 @@ import party_manager
 #   1.11.7: 로딩 암전 가드, 해상도 크래시 가드, 예외 트레이스백 실시간 로깅 및 Dimension Guard 탑재 (동기화)
 #   1.11.8: 4일 경과 로그 파일 자동 청소기 장착, 메인 루프 전체 이중 감시 예외 처리 보강 및 리드미 설명 개정 (동기화)
 #   1.11.9: 최초 기동/재시작 자동 스샷 촬영, 스샷 동기화 스레드, 다중 사용자 경로 탐색 가드 탑재 (동기화)
+#   1.11.12: 미니맵 absdiff 기반 정체 판정 30->9초 단축, 상자/출구 1회 탭 반응형 변경 및 힐러 안전지대/즉시 재출발 연계 추가
+#   1.11.16: 미니게임 앵커 국소 크롭 스캔 범위(X: 57~187, Y: 227~317 마진 적용) 지정 및 임계값 0.70 상향 (동기화)
+#   1.11.16-hotfix1: CLEAR_CHECK 진입 시 정체 오판 방지(상태 전환 시 타이머 리셋) 및 아이템 획득(get_item.png) 감지 임계값 완화(0.70 -> 0.65)
 # ==============================================================================
 
 # ==============================================================================
@@ -240,6 +246,41 @@ def find_checkpoint_button_coords(img_np, template, threshold=0.70):
     return None
 
 
+def check_minimap_movement(device, duration=1.5, interval=0.5):
+    """
+    지정된 시간(duration) 동안 미니맵의 픽셀 변화가 있는지 체크합니다.
+    움직임이 감지되면 True, 멈춰 있으면 False를 반환합니다.
+    """
+    steps = int(duration / interval)
+    prev_map = None
+    
+    for step in range(steps + 1):
+        if step > 0:
+            time.sleep(interval)
+        try:
+            raw = device.screencap()
+            if raw is None: continue
+            img = np.array(Image.open(io.BytesIO(raw)))
+            h, w = img.shape[:2]
+            
+            # 해상도 스케일링 대응 (1440x2560 기준 Y: 115~315, X: 1117~1317)
+            scale_x = w / 1440.0
+            scale_y = h / 2560.0
+            y1, y2 = int(115 * scale_y), int(315 * scale_y)
+            x1, x2 = int(1117 * scale_x), int(1317 * scale_x)
+            
+            gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+            minimap = gray[y1:y2, x1:x2]
+            
+            if prev_map is not None:
+                diff = cv2.absdiff(minimap, prev_map)
+                mean_diff = np.mean(diff) / 255.0
+                if mean_diff >= 0.05:
+                    return True
+            prev_map = minimap
+        except:
+            continue
+    return False
 
 
 def find_and_click_template_in_bot(device, img_np, thresh_temp, threshold_val=0.68):
@@ -367,10 +408,8 @@ def start_main_macro(device, run_skill_logic=False):
     t_move_chk = load_template("templates/move_check.png")
     t_no_chest = load_template("templates/no_chest.png") 
     t_yeolda = load_template("templates/yeolda_clean.png")
-    t_milana = load_template("templates/milana_clean.png")
     t_get_item = load_template("templates/get_item.png")
     
-    t_healer_name = load_template("templates/healer_name.png")
     t_heal_auto = load_template("templates/healer_auto_btn.png")
     t_heal_confirm = load_template("templates/confirm_recover.png")
     t_heal_close = load_template("templates/close_panel.png")
@@ -380,7 +419,7 @@ def start_main_macro(device, run_skill_logic=False):
     t_auto_off = load_template("templates/auto_off.png")     
     t_auto_on = load_template("templates/auto_on.png")       
     t_exit_mag = load_template("templates/exit_mag_icon.png")
-    t_dungeon_sel = load_template("templates/dungeon_select_anchor.png")
+    t_dungeon_sel = load_template("templates/WolfCave/dungeon_select.png")
     
     t_anchor_dead = load_dead_template("templates/anchor_dead_screen.png")
     t_btn_resurrect = load_dead_template("templates/btn_resurrect.png")
@@ -397,11 +436,8 @@ def start_main_macro(device, run_skill_logic=False):
     
     t_next = load_template("templates/indicator_next.png")              
     t_arrow = load_template("templates/indicator_arrow.png")
-    t_disarmer_templates = chest_opener.load_multiple_templates("templates", "disarmer_")
+    t_disarmer_templates = chest_opener.load_multiple_templates("templates/!!Character", "disarmer_")
     print("=======================================")
-
-    print("⏳ [로딩 마진 확보] 던전 필드 스트리밍 안정화를 위해 3.0초간 제어를 홀딩합니다...")
-    time.sleep(3.0)
 
     state = "FIELD_WAIT"
     last_click_time = 0 
@@ -412,6 +448,11 @@ def start_main_macro(device, run_skill_logic=False):
     previous_state = "FIELD_WAIT"
     exit_start_time = 0
     prev_minimap_zone = None
+    
+    # 💡 [반응형 이동 및 즉시 복귀 상태 변수]
+    last_target_coords = None
+    exit_stuck_count = 0
+    exit_prev_minimap = None
 
     yuzuna_done = False
     milana_done = False
@@ -423,6 +464,8 @@ def start_main_macro(device, run_skill_logic=False):
     
     last_empty_shortcut_detected_time = 0
     continuous_heal_retry_count = 0
+    yeolda_stuck_retry_count = 0
+    exit_clicked_once = False
 
     cap_fail_counter = 0
     while True:
@@ -476,6 +519,9 @@ def start_main_macro(device, run_skill_logic=False):
         if state == previous_state:
             stuck_duration = time.time() - last_state_changed_time
             if stuck_duration > 30.0:
+                if state == "TRIGGER_EXIT":
+                    last_state_changed_time = time.time()
+                    continue
                 print(f"\n⚠️ [🚨 블랙박스 경고] 현재 던전봇이 '{state}' 상태로 정체 중...")
                 
                 if state == "TRIGGER_EXIT":
@@ -498,10 +544,14 @@ def start_main_macro(device, run_skill_logic=False):
                 
                 if (detect_orange_danger_hp(img_np) or is_poisoned) and (continuous_heal_retry_count < 2):
                     print("🚨 [블랙박스 긴급 구호] 검증된 파티원 진성 빈사/독 포착!! 제자리 치료를 단행합니다.")
-                    party_manager.run_party_healing_sequence(device, t_healer_name, t_heal_auto, t_heal_confirm, t_heal_close)
+                    heal_success = party_manager.run_party_healing_sequence(device, t_heal_auto, t_heal_close)
                     continuous_heal_retry_count += 1
                     event_counter = 0
                     last_state_changed_time = time.time()
+                    if heal_success and last_target_coords:
+                        print(f"⏭️ [즉각 이동 재개] 정비 직후 딜레이 파쇄! 이전 타겟 좌표 ({last_target_coords[0]}, {last_target_coords[1]}) 즉시 재사격")
+                        safe_device_shell(device, f"input tap {last_target_coords[0]} {last_target_coords[1]}")
+                        last_click_time = time.time()
                     continue
                 elif continuous_heal_retry_count >= 2:
                     print("⚠️⏰ [폭주 방지 안전 벨브 개방] 무한 루프를 파쇄하고 행군을 강제 허용합니다!")
@@ -531,13 +581,21 @@ def start_main_macro(device, run_skill_logic=False):
                     continue
 
                 if check_template_present_dynamic(img_np, t_yeolda, 0.65, 65 if is_low_hp_dark_mode else 160):
-                    print("⚠️ [블랙박스 상자 해제 갇힘 복구] '열다'가 보이나 진입 실패 상태입니다. '아무것도 안 한다' 강제 터치로 상자창을 탈출합니다.")
-                    safe_device_shell(device, f"input tap {int(width * 0.5)} {int(height * 0.855)}")
-                    time.sleep(1.0)
-                    state = "FIELD_WAIT"
+                    if yeolda_stuck_retry_count < 3:
+                        yeolda_stuck_retry_count += 1
+                        print(f"⚠️ [블랙박스 상자 해제 갇힘 복구] '열다'가 보이나 진입 실패 상태입니다. 상자 오프닝을 재시도합니다. ({yeolda_stuck_retry_count}/3)")
+                        if chest_opener.open_and_disarm_chest(device, img_np, t_yeolda):
+                            state = "BRANCH_CHECK"
+                        last_state_changed_time = time.time()
+                    else:
+                        print("⚠️ [블랙박스 상자 해제 갇힘 복구] '열다' 재시도 3회 초과! '아무것도 안 한다' 강제 터치로 상자창을 확실히 탈출합니다.")
+                        safe_device_shell(device, f"input tap {int(width * 0.5)} {int(height * 0.855)}")
+                        time.sleep(1.0)
+                        yeolda_stuck_retry_count = 0
+                        state = "FIELD_WAIT"
                 elif chest_opener.is_minigame_screen(img_np, height, width):
                     state = "PLAY_MINIGAME"
-                elif check_template_present(img_np, t_get_item, 0.80):
+                elif check_template_present(img_np, t_get_item, 0.65):
                     state = "CLEAR_CHECK"
                 elif check_template_present(img_np, t_field, 0.65):
                     state = "FIELD_WAIT"
@@ -552,6 +610,8 @@ def start_main_macro(device, run_skill_logic=False):
                 continue
         else:
             previous_state = state
+            last_state_changed_time = time.time()
+            yeolda_stuck_retry_count = 0
         # 🎮 [미니게임 즉각 돌입 가드] 화면이 미니게임 해제 창인 경우 30초 정체 대기 없이 즉시 전이
         if state in ["FIELD_WAIT", "AUTO_MOVING"] and chest_opener.is_minigame_screen(img_np, height, width):
             print("🎮 [dungeon_bot] 미니게임 화면 포착! 즉각 PLAY_MINIGAME 상태로 진입합니다.")
@@ -578,11 +638,15 @@ def start_main_macro(device, run_skill_logic=False):
         if is_poisoned and state in ["FIELD_WAIT", "AUTO_MOVING"]:
             if continuous_heal_retry_count < 2:
                 print(f"🔮🚨 [6인 총괄 독 레이더 포착!] 하단 슬롯 보라색 플래시 폭발 검출!! 제자리 즉각 치유를 전개합니다.")
-                heal_success = party_manager.run_party_healing_sequence(device, t_healer_name, t_heal_auto, t_heal_confirm, t_heal_close)
+                heal_success = party_manager.run_party_healing_sequence(device, t_heal_auto, t_heal_close)
                 continuous_heal_retry_count += 1
                 if heal_success:
-                    print("✅ 제자리 일괄 해독 성공!")
+                    print("✅ 제자리 일괄 해독 성공! 즉각 이동을 재개합니다.")
                     event_counter = 0
+                    if last_target_coords:
+                        print(f"⏭️ [즉각 이동 재개] 정비 직후 딜레이 파쇄! 이전 타겟 좌표 ({last_target_coords[0]}, {last_target_coords[1]}) 즉시 재사격")
+                        safe_device_shell(device, f"input tap {last_target_coords[0]} {last_target_coords[1]}")
+                        last_click_time = time.time()
                 state = "FIELD_WAIT"
                 continue
             else:
@@ -596,7 +660,7 @@ def start_main_macro(device, run_skill_logic=False):
                     print(f"🩸⚠️ [빈사형 암전상자 포착!] 현재 화면 평균 밝기 {mean_brightness:.1f} 야간 투시경 가동.")
                 else:
                     print("📦 [메인] '열다' 감지! 상자 해제 시퀀스로 진입.")
-                if chest_opener.open_and_disarm_chest(device, img_np, t_yeolda, t_milana):
+                if chest_opener.open_and_disarm_chest(device, img_np, t_yeolda):
                     state = "BRANCH_CHECK"
                 continue
 
@@ -617,10 +681,14 @@ def start_main_macro(device, run_skill_logic=False):
             if check_template_present(img_np, t_field, 0.62) or is_low_hp_dark_mode:
                 if detect_orange_danger_hp(img_np) and (continuous_heal_retry_count < 2):
                     print("🚨🚨 [철벽 빈사 레이더 발동] 파티원 중 핏빛 주황색 이름 발견!! 즉각 행군을 멈추고 강제 치유 시퀀스를 전개합니다.")
-                    heal_success = party_manager.run_party_healing_sequence(device, t_healer_name, t_heal_auto, t_heal_confirm, t_heal_close)
+                    heal_success = party_manager.run_party_healing_sequence(device, t_heal_auto, t_heal_close)
                     continuous_heal_retry_count += 1
                     if heal_success:
                         event_counter = 0
+                        if last_target_coords:
+                            print(f"⏭️ [즉각 이동 재개] 정비 직후 딜레이 파쇄! 이전 타겟 좌표 ({last_target_coords[0]}, {last_target_coords[1]}) 즉시 재사격")
+                            safe_device_shell(device, f"input tap {last_target_coords[0]} {last_target_coords[1]}")
+                            last_click_time = time.time()
                     continue 
                 elif continuous_heal_retry_count >= 2:
                     print("⚠️⏰ [치유 폭주 해제] 무한 루프를 깨고 강제 파밍 기어를 올립니다.")
@@ -628,8 +696,13 @@ def start_main_macro(device, run_skill_logic=False):
 
                 if is_low_hp_dark_mode and came_from_combat:
                     print(f"🩸🚨 [전투 직후 대위기!] 주인공 빈사 피안개 장막 감지. 제자리 긴급 치유 정비를 주입합니다!")
-                    heal_success = party_manager.run_party_healing_sequence(device, t_healer_name, t_heal_auto, t_heal_confirm, t_heal_close)
-                    if heal_success: event_counter = 0
+                    heal_success = party_manager.run_party_healing_sequence(device, t_heal_auto, t_heal_close)
+                    if heal_success:
+                        event_counter = 0
+                        if last_target_coords:
+                            print(f"⏭️ [즉각 이동 재개] 정비 직후 딜레이 파쇄! 이전 타겟 좌표 ({last_target_coords[0]}, {last_target_coords[1]}) 즉시 재사격")
+                            safe_device_shell(device, f"input tap {last_target_coords[0]} {last_target_coords[1]}")
+                            last_click_time = time.time()
                     came_from_combat = False
                     continue
                 
@@ -640,9 +713,15 @@ def start_main_macro(device, run_skill_logic=False):
                     event_counter += 1
                     print(f"🎉 [전투 일괄 정산 완료] 전투 종료 필드 복귀 성공! 현재 누적 순수 전투 수: ({event_counter}/{LIMIT_COMBAT_EVENTS})")
                     if event_counter >= LIMIT_COMBAT_EVENTS:
-                        heal_success = party_manager.run_party_healing_sequence(device, t_healer_name, t_heal_auto, t_heal_confirm, t_heal_close)
-                        if heal_success: event_counter = 0 
-                        else: event_counter = LIMIT_COMBAT_EVENTS
+                        heal_success = party_manager.run_party_healing_sequence(device, t_heal_auto, t_heal_close)
+                        if heal_success:
+                            event_counter = 0 
+                            if last_target_coords:
+                                print(f"⏭️ [즉각 이동 재개] 정비 직후 딜레이 파쇄! 이전 타겟 좌표 ({last_target_coords[0]}, {last_target_coords[1]}) 즉시 재사격")
+                                safe_device_shell(device, f"input tap {last_target_coords[0]} {last_target_coords[1]}")
+                                last_click_time = time.time()
+                        else:
+                            event_counter = LIMIT_COMBAT_EVENTS
                     came_from_combat = False 
                     continuous_heal_retry_count = 0
                     continue
@@ -651,31 +730,82 @@ def start_main_macro(device, run_skill_logic=False):
                     coords = find_chest_button_coords(img_np, t_chest_btn, 0.70)
                     if coords:
                         cx, cy = coords
-                        print(f"🔥 [인터리빙 탭] '상자 자동 이동' ({cx}, {cy}) 10연타 시전")
+                        print(f"📦 [상자 이동 시도] '상자 자동 이동' ({cx}, {cy}) 1회 터치합니다.")
+                        safe_device_shell(device, f"input tap {cx} {cy}")
+                        last_click_time = time.time()
+                        last_target_coords = (cx, cy)
+                        
+                        action_success = False
+                        opened = False
                         toast_detected = False
-                        for click_count in range(1, 11):
-                            safe_device_shell(device, f"input tap {cx} {cy}")
-                            time.sleep(0.2) 
-                            try: raw_cap_inter = device.screencap()
-                            except: continue
-                            img_np_inter = np.array(Image.open(io.BytesIO(raw_cap_inter)))
+                        
+                        for retry_cnt in range(2): # 최초 1회 + 씹힘 시 재시도 1회
+                            if retry_cnt > 0:
+                                print(f"🔄 [상자 터치 재시도] 터치 씹힘 감지되어 1회 다시 누릅니다. ({cx}, {cy})")
+                                safe_device_shell(device, f"input tap {cx} {cy}")
+                                last_click_time = time.time()
                             
-                            current_target_thresh = 65 if is_low_hp_dark_mode else 160
-                            if check_template_present_dynamic(img_np_inter, t_yeolda, 0.65, current_target_thresh):
-                                img_np = img_np_inter 
-                                break
-                            if check_template_present(img_np_inter, t_no_chest, 0.55):
-                                print(f"✨ 토스트 실시간 포착!")
-                                toast_detected = True
-                                img_np = img_np_inter
+                            time.sleep(0.5)
+                            prev_mini = None
+                            moved = False
+                            
+                            for step in range(3):
+                                try:
+                                    raw = device.screencap()
+                                    if raw is None: continue
+                                    img_np_sub = np.array(Image.open(io.BytesIO(raw)))
+                                except:
+                                    continue
+                                
+                                current_target_thresh = 65 if is_low_hp_dark_mode else 160
+                                if check_template_present_dynamic(img_np_sub, t_yeolda, 0.65, current_target_thresh):
+                                    opened = True
+                                    img_np = img_np_sub
+                                    break
+                                if check_template_present(img_np_sub, t_no_chest, 0.55):
+                                    toast_detected = True
+                                    img_np = img_np_sub
+                                    break
+                                
+                                # 미니맵 스크롤 감지
+                                h, w = img_np_sub.shape[:2]
+                                scale_x, scale_y = w / 1440.0, h / 2560.0
+                                gray_sub = cv2.cvtColor(img_np_sub, cv2.COLOR_RGB2GRAY)
+                                mini = gray_sub[int(115 * scale_y):int(315 * scale_y), int(1117 * scale_x):int(1317 * scale_x)]
+                                
+                                if prev_mini is not None:
+                                    diff = cv2.absdiff(mini, prev_mini)
+                                    if (np.mean(diff) / 255.0) >= 0.05:
+                                        moved = True
+                                        img_np = img_np_sub
+                                        break
+                                prev_mini = mini
+                                time.sleep(0.4)
+                            
+                            if opened or toast_detected or moved:
+                                action_success = True
                                 break
                         
-                        last_click_time = time.time()
-                        if toast_detected: 
+                        if opened:
+                            if chest_opener.open_and_disarm_chest(device, img_np, t_yeolda):
+                                state = "BRANCH_CHECK"
+                            else:
+                                state = "FIELD_WAIT"
+                        elif toast_detected:
+                            print("🎉 [상자 없음] 토스트 메시지를 확인하여 탈출 시퀀스로 이행합니다.")
                             state = "TRIGGER_EXIT"
                             exit_start_time = time.time()
-                            prev_minimap_zone = None
-                        else: state = "AUTO_MOVING"
+                            exit_stuck_count = 0
+                            exit_prev_minimap = None
+                        elif moved:
+                            print("🏃 [이동 시작 확인] 미니맵이 움직이기 시작했습니다. AUTO_MOVING으로 이행.")
+                            state = "AUTO_MOVING"
+                        else:
+                            print("📦🚫 [상자 없음 판정] 재시도 결과 미니맵 움직임과 '열다'가 모두 미검출되었습니다. 상자가 없는 것으로 논리적 판정하여 탈출로 전환합니다.")
+                            state = "TRIGGER_EXIT"
+                            exit_start_time = time.time()
+                            exit_stuck_count = 0
+                            exit_prev_minimap = None
 
         elif state == "AUTO_MOVING":
             toast_detected = False
@@ -693,6 +823,8 @@ def start_main_macro(device, run_skill_logic=False):
                 state = "TRIGGER_EXIT"
                 exit_start_time = time.time()
                 prev_minimap_zone = None
+                last_click_time = 0
+                exit_clicked_once = False
             else:
                 if time.time() - last_click_time > 4.0: state = "FIELD_WAIT"
 
@@ -709,45 +841,81 @@ def start_main_macro(device, run_skill_logic=False):
                 last_empty_shortcut_detected_time = 0 
                 continue
 
-            coords_exit = find_exit_button_coords(img_np, t_exit_btn, 0.70)
-            if coords_exit:
-                ex, ey = coords_exit
-                print(f"⏭️ [던전 탈출 시도] '출구 이동' 단추를 터치합니다. ({ex}, {ey})")
-                safe_device_shell(device, f"input tap {ex} {ey}")
-            
-            elapsed_exit_time = time.time() - exit_start_time
-            if elapsed_exit_time > 90.0:
-                print(f"🔍 [출구 락앤롤 모니터] 이동 시작 후 {elapsed_exit_time:.1f}초 경과. 우상단 미니맵 동결 상태 정밀 대조를 시작합니다...")
-                current_gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-                current_minimap = current_gray[0:170, 370:576]
+            exit_touched_this_loop = False
+            # 출구 버튼 터치 (최초 1회 터치이거나, 미니맵이 멈춰서 정체 스택이 쌓였을 때만 재시도 터치)
+            if (not exit_clicked_once) or (exit_stuck_count >= 1):
+                if time.time() - last_click_time > 3.0:
+                    coords_exit = find_exit_button_coords(img_np, t_exit_btn, 0.70)
+                    if coords_exit:
+                        ex, ey = coords_exit
+                        print(f"⏭️ [던전 탈출 시도] '출구 이동' 단추를 터치합니다. ({ex}, {ey})")
+                        safe_device_shell(device, f"input tap {ex} {ey}")
+                        last_click_time = time.time()
+                        last_target_coords = (ex, ey)
+                        exit_clicked_once = True
+                        
+                        # 터치 직후에는 캐릭터가 출발 연출을 수행하므로 미니맵 스턱 판정을 1턴 스킵
+                        exit_prev_minimap = None
+                        exit_stuck_count = 0
+                        exit_touched_this_loop = True
+
+            # 미니맵 정지 모니터링 (3초 간격 스캔 연계)
+            h, w = img_np.shape[:2]
+            scale_x, scale_y = w / 1440.0, h / 2560.0
+            gray_current = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+            # Y: 115~315, X: 1117~1317 화살표 관측 구역
+            current_mini = gray_current[int(115 * scale_y):int(315 * scale_y), int(1117 * scale_x):int(1317 * scale_x)]
+
+            is_real_field = check_template_present(img_np, t_field, 0.62) or is_low_hp_dark_mode
+            if exit_prev_minimap is not None and is_real_field:
+                diff = cv2.absdiff(current_mini, exit_prev_minimap)
+                mean_diff = np.mean(diff) / 255.0
+                print(f"📊 [탈출 스턱 분석기] 미니맵 미세 움직임 변동 값: {mean_diff:.4f}")
                 
-                if prev_minimap_zone is not None:
-                    diff = cv2.absdiff(current_minimap, prev_minimap_zone)
-                    non_zero_count = np.count_nonzero(diff > 25)
-                    print(f"📊 [스턱 분석기] 미니맵 미세 움직임 프레임 변동 값: {non_zero_count} 픽셀")
-                    
-                    if non_zero_count < 50:
-                        print("🚨💀 [문앞 물리 스턱 발생 검증 확정!!] 캐릭터가 제자리걸음 중입니다!")
+                if mean_diff < 0.05:
+                    exit_stuck_count += 1
+                    print(f"⚠️ [탈출 정체 스택] 미니맵 정지 감지 ({exit_stuck_count}/3 회)")
+                else:
+                    exit_stuck_count = 0
+                
+                if exit_stuck_count >= 3:
+                    print("🚪🚨 [탈출 정체 복구 시스템 작동] 출구 주변에서 9초간 누적 정체 감지! 즉시 회군을 단행합니다.")
+                    chk_coords = find_checkpoint_button_coords(img_np, t_move_chk, 0.70)
+                    if chk_coords:
+                        cx, cy = chk_coords
+                        print(f"📍 [체크포인트] 3번 버튼 검출 성공 ({cx}, {cy}) 터치하여 안전 지대로 회군합니다.")
+                        safe_device_shell(device, f"input tap {cx} {cy}")
+                    else:
+                        print("📍 [체크포인트] 3번 버튼 미검출. 물리 복구 스위프 및 고정 좌표 강제 사격.")
                         safe_device_shell(device, "input swipe 400 800 400 1200 600")
                         time.sleep(1.0)
                         safe_device_shell(device, "input swipe 1200 400 1200 800 600")
-                        exit_start_time = time.time() - 10.0 
-                        prev_minimap_zone = None
-                        time.sleep(2.5)
-                        continue
-                prev_minimap_zone = current_minimap
+                        time.sleep(1.5)
+                        safe_device_shell(device, "input tap 1215 572")
+                    
+                    print("⏳ 회군 연출 및 위치 재조정을 위해 4.0초간 제어를 홀딩합니다...")
+                    time.sleep(4.0)
+                    
+                    state = "FIELD_WAIT"
+                    last_click_time = time.time()
+                    exit_stuck_count = 0
+                    exit_prev_minimap = None
+                    continue
+            
+            exit_prev_minimap = current_mini
             
             if not check_template_present(img_np, t_field, 0.62) and not is_low_hp_dark_mode:
-                # 📦 [상자 조우 및 미니게임 기습 검사]
-                # 탈출 동작 중 템플릿(t_field)이 일시적으로 사라졌더라도, 화면에 '열다'가 보이고 있거나 미니게임 창이 뜬 상태라면 
-                # 던전을 나간 게 아니라 상자와 조우한 것이므로 복귀하지 않고 루프를 계속 돕니다.
                 current_target_thresh = 65 if is_low_hp_dark_mode else 160
                 if check_template_present_dynamic(img_np, t_yeolda, 0.65, current_target_thresh) or chest_opener.is_minigame_screen(img_np, height, width):
                     print("⚠️ [탈출 감시] 필드가 미검출되었으나, 상자 선택창('열다') 또는 미니게임 화면이 감지되었습니다. 탈출 복귀를 취소하고 상자 해제로 이행합니다.")
                 else:
                     print("🎉 [탈출 무결점 성공] 던전 필드 화면이 완전히 소멸되었습니다! 사령탑 무대로 복귀합니다.")
                     return True, skill_mission_success_this_combat
-            time.sleep(2.0)
+            
+            if exit_touched_this_loop or exit_clicked_once:
+                time.sleep(3.0)
+            else:
+                time.sleep(0.3)
             continue
 
         elif state == "IN_COMBAT":
@@ -894,7 +1062,7 @@ def start_main_macro(device, run_skill_logic=False):
 
         elif state == "BRANCH_CHECK":
             if chest_opener.is_minigame_screen(img_np, height, width): state = "PLAY_MINIGAME"
-            elif check_template_present(img_np, t_get_item, 0.80): state = "CLEAR_CHECK"
+            elif check_template_present(img_np, t_get_item, 0.65): state = "CLEAR_CHECK"
             else: time.sleep(0.2)
 
         elif state == "PLAY_MINIGAME":
@@ -906,13 +1074,13 @@ def start_main_macro(device, run_skill_logic=False):
             continue
 
         elif state == "CLEAR_CHECK":
-            if check_template_present(img_np, t_get_item, 0.80):
-                safe_device_shell(device, f"input tap {int(width * 0.5)} {int(height * 0.5)}")
+            if check_template_present(img_np, t_get_item, 0.65):
+                safe_device_shell(device, "input tap 701 333")
                 time.sleep(0.8)
             else:
                 if is_low_hp_dark_mode:
                     print("🩸🎁 [빈사형 상자깡 정산 완료] 즉각 피안개 장막 파쇄를 위해 힐러를 전격 소환합니다.")
-                    party_manager.run_party_healing_sequence(device, t_healer_name, t_heal_auto, t_heal_confirm, t_heal_close)
+                    party_manager.run_party_healing_sequence(device, t_heal_auto, t_heal_close)
                 print("✨ [상자 오프닝 완료] 다음 파밍 탐색으로 복귀합니다.")
                 state = "FIELD_WAIT" 
                 time.sleep(1.0)

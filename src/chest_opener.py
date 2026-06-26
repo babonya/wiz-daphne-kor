@@ -1,8 +1,12 @@
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.11.9 (Stable)
-# - 최근 수정일: 2026-06-24 18:15
+# - 현재 버전: 1.12.3
+# - 최근 수정일: 2026-06-27 00:25
 # - 수정 기록:
+#   1.12.3: 버전 동기화
+#   1.12.2: 템플릿 로딩 자연 정렬(Natural Sort) 도입 및 버전 동기화
+#   1.12.1: 마이너 버전 동기화
+#   1.11.16: 미니게임 앵커 국소 크롭 스캔 범위 지정 및 임계값 0.70 상향 (동기화)
 #   v18.03: trap_minigame_anchor.png 및 해제 Y좌표 보정 적용 (최초 버전 주석 도입)
 #   v18.07: 따개 멀티 템플릿(disarmer_*.png) 자동 스왑 및 다이내믹 좌표 터치 시스템 도입
 #   v18.09: 힐러/따개 템플릿 로딩 시 sorted() 정렬 적용 (알파벳 정렬 우선순위 제공)
@@ -71,21 +75,42 @@ def check_gray_template_present(img_np, gray_temp, threshold_val=0.70):
     return max_val > threshold_val
 
 def is_minigame_screen(img_np, height, width):
-    """ 미니게임 상단 붉은상자+해골마크 앵커 존재 여부 감지 (v18.11.7 개정판) """
-    # 1. 템플릿 매칭 검출 (임계값을 0.55로 하향하여 유연하게 감지)
+    """ 미니게임 상단 붉은상자+해골마크 앵커 존재 여부 감지 (v1.11.16) """
+    # 1. 템플릿 매칭 검출 (제보받은 X: 57~187, Y: 227~317에 20px 마진을 더해 크롭 매칭)
     t_trap_anchor = load_grayscale_template("templates/trap_minigame_anchor.png")
     if t_trap_anchor is not None and img_np is not None:
         h_img, w_img = img_np.shape[:2]
-        h_temp, w_temp = t_trap_anchor.shape[:2]
-        if h_img >= h_temp and w_img >= w_temp:
-            gray_img = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-            result = cv2.matchTemplate(gray_img, t_trap_anchor, cv2.TM_CCOEFF_NORMED)
-            _, max_val, _, _ = cv2.minMaxLoc(result)
+        
+        # 1440x2560 해상도 비례 스케일링 계산
+        scale_x = w_img / 1440.0
+        scale_y = h_img / 2560.0
+        
+        # X: 57~187 => 37~207, Y: 227~317 => 207~337 (마진 20px 적용)
+        x1, x2 = int(37 * scale_x), int(207 * scale_x)
+        y1, y2 = int(207 * scale_y), int(337 * scale_y)
+        
+        # 경계 처리
+        x1 = max(0, x1)
+        y1 = max(0, y1)
+        x2 = min(w_img, x2)
+        y2 = min(h_img, y2)
+        
+        if x1 < x2 and y1 < y2:
+            crop_img = img_np[y1:y2, x1:x2]
+            h_crop, w_crop = crop_img.shape[:2]
+            h_temp, w_temp = t_trap_anchor.shape[:2]
             
-            # 실시간 디버그 로그 기록
-            print(f"🔍 [디버그] 미니게임 앵커 로드 완료. 현재 매칭 신뢰도(score): {max_val:.4f} (기준치: 0.55)")
-            if max_val > 0.55:
-                return True
+            if h_crop >= h_temp and w_crop >= w_temp:
+                gray_crop = cv2.cvtColor(crop_img, cv2.COLOR_RGB2GRAY)
+                result = cv2.matchTemplate(gray_crop, t_trap_anchor, cv2.TM_CCOEFF_NORMED)
+                _, max_val, _, _ = cv2.minMaxLoc(result)
+                
+                # 매칭 점수가 0.50을 초과하는 진성 매칭이거나 성공 판정 시에만 디버그 출력
+                if max_val > 0.50:
+                    print(f"🔍 [디버그] 미니게임 앵커 로드 완료. 현재 매칭 신뢰도(score): {max_val:.4f} (기준치: 0.70)")
+                    
+                if max_val > 0.70:
+                    return True
                 
     # 2. RGB 색상 감지 멀티스팟 이중 가드 (11.4 방식 + 3중 스팟 교차 검증)
     # 주황색 게이지바가 상단 Y: 7% 근처에 위치하므로, X축 23%, 50%, 77% 총 3지점을 교차 스캔
@@ -106,12 +131,17 @@ def is_minigame_screen(img_np, height, width):
     return False
 
 
+def natural_sort_key(s):
+    import re
+    return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', s)]
+
+
 def load_multiple_templates(directory, prefix):
     import glob
     import os
     templates = []
     pattern = os.path.join(directory, f"{prefix}*.png")
-    for file_path in sorted(glob.glob(pattern)):
+    for file_path in sorted(glob.glob(pattern), key=natural_sort_key):
         temp = load_template(file_path)
         if temp is not None:
             templates.append((os.path.basename(file_path), temp))
@@ -132,7 +162,7 @@ def find_template_coords(img_np, thresh_temp, threshold_val=0.75):
         return max_loc[0] + int(w / 2), max_loc[1] + int(h / 2)
     return None
 
-def open_and_disarm_chest(device, img_np, thresh_yeolda, thresh_milana):
+def open_and_disarm_chest(device, img_np, thresh_yeolda):
     """
     [dungeon_bot 연동용 핵심 함수]
     '열다' 터치부터 따개 선택까지 한 번에 관통합니다.
@@ -147,7 +177,7 @@ def open_and_disarm_chest(device, img_np, thresh_yeolda, thresh_milana):
     time.sleep(1.2) # 캐릭터 선택창 애니메이션 대기
     
     # 디렉토리 내 모든 disarmer_*.png 템플릿 로드
-    disarmer_templates = load_multiple_templates("templates", "disarmer_")
+    disarmer_templates = load_multiple_templates("templates/!!Character", "disarmer_")
     
     # 선택창이 뜰 때까지 최대 5초간 화면 갱신하며 따개 추적
     start_time = time.time()
@@ -188,15 +218,7 @@ def open_and_disarm_chest(device, img_np, thresh_yeolda, thresh_milana):
                     device.shell(f"input tap {dx} {dy}")
                     time.sleep(1.5) # 미니게임 혹은 정산창 전환 대기
                     return True
-        else:
-            # 하방 호환용 폴백 (기존 6번 슬롯 강제 터치)
-            if check_text_by_user_template(img_np_current, thresh_milana, 0.75):
-                print("👤 [chest_opener] '밀라나' 도장 검출 완료! 카드를 터치합니다.")
-                milana_x = int(width * 0.76)
-                milana_y = int(height * 0.855)
-                device.shell(f"input tap {milana_x} {milana_y}")
-                time.sleep(1.5) # 미니게임 혹은 정산창 전환 대기
-                return True
+
             
         time.sleep(0.1)
         
@@ -222,6 +244,6 @@ def solve_trap_game(device, img_np):
         device.shell(f"input tap {release_x} {release_y}")
         time.sleep(0.1)
         
-    print("⏳ 15연타 난사 완료. 정산창 연출 진입을 위해 5.0초간 충분히 대기합니다...")
-    time.sleep(5.0)
+    print("⏳ 15연타 난사 완료. 정산창 연출 진입을 위해 1.0초간 충분히 대기합니다...")
+    time.sleep(1.0)
     return True

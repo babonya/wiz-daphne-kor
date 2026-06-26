@@ -1,8 +1,12 @@
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.11.9 (Stable)
-# - 최근 수정일: 2026-06-24 18:20
+# - 현재 버전: 1.12.3
+# - 최근 수정일: 2026-06-27 00:25
 # - 수정 기록:
+#   1.12.3: 버전 동기화
+#   1.12.2: 버전 동기화
+#   1.12.1: 마이너 버전업 - 템플릿 디렉토리 구조 다각화(Worldmap, WolfCave, Vill_Isbelg, inn_sleep) 분리 및 동적 파일명 최적화
+#   1.11.16-hotfix1: 핫픽스 버전 동기화
 #   v18.11.3: 여관 숙박 및 탭 동작 중 ADB 연결 장애 크래시 예외 전파 가드 탑재
 #   v18.11.4: 미니게임 화면 중 재시작 시 30초 정체 대기 없이 즉각 전이 복구 가드 추가 (동기화)
 #   v18.11.5: 탈출 완료 판정 오판 방지 가드에 맞춰 버전 동기화
@@ -10,6 +14,7 @@
 #   v1.11.7: 로딩 암전 가드, 해상도 크래시 가드, 예외 트레이스백 실시간 로깅 및 Dimension Guard 탑재 (동기화)
 #   1.11.8: 4일 경과 로그 파일 자동 청소기 장착, 메인 루프 전체 이중 감시 예외 처리 보강 및 리드미 설명 개정 (동기화)
 #   1.11.9: 최초 기동/재시작 자동 스샷 촬영, 스샷 동기화 스레드, 다중 사용자 경로 탐색 가드 탑재 (동기화)
+#   1.11.16: 미니게임 앵커 국소 크롭 스캔 범위(X: 57~187, Y: 227~317 마진 적용) 지정 및 임계값 0.70 상향 (동기화)
 # ==============================================================================
 import time
 import io
@@ -75,22 +80,22 @@ def run_inn_sleep_sequence(device):
     print("\n💤 [inn_manager] 여관 자동 숙박 시퀀스를 가동합니다.")
     
     # 도장 로드
-    t_inn_title = load_template("templates/inn_title.png")
-    t_menu_stay = load_template("templates/menu_stay.png")
-    t_menu_leave = load_template("templates/menu_leave.png")
-    t_menu_standard = load_template("templates/menu_standard.png")
-    t_inn_confirm = load_template("templates/inn_confirm_btn.png")
-    t_inn_inv = load_template("templates/inn_inventory_popup.png")
-    t_arrow = load_template("templates/arrow_clean.png")
-    t_village = load_template("templates/village_anchor.png")
+    t_inn_title = load_template("templates/inn_sleep/inn_title.png")
+    t_menu_stay = load_template("templates/inn_sleep/menu_stay.png")
+    t_menu_leave = load_template("templates/inn_sleep/menu_leave.png")
+    t_menu_standard = load_template("templates/inn_sleep/menu_standard.png")
+    t_inn_confirm = load_template("templates/inn_sleep/inn_confirm_btn.png")
+    t_inn_inv = load_template("templates/inn_sleep/inn_inventory_popup.png")
+    t_arrow = load_template("templates/inn_sleep/arrow_clean.png")
+    t_village = load_template("templates/Vill_Isbelg/village_anchor.png")
 
-    # 레벨업 및 스킬 팝업 관련 도장
-    t_pop_levelup = load_template("templates/popup_levelup_title.png")
-    t_pop_skill = load_template("templates/popup_skill_title.png")
-    t_btn_skill = load_template("templates/skill_close_btn.png")
+    # - 레벨업 및 스킬 팝업 관련 도장
+    t_pop_levelup = load_template("templates/inn_sleep/popup_levelup_title.png")
+    t_pop_skill = load_template("templates/inn_sleep/popup_skill_title.png")
+    t_btn_skill = load_template("templates/inn_sleep/skill_close_btn.png")
     
     # 💡 [구조 교정] Daphne 팩트체크: 레벨업 창은 우하단 '다음'이 아니라 좌하단 '닫기' 버튼이 주범!
-    t_btn_levelup_close = load_template("templates/levelup_close_btn.png")
+    t_btn_levelup_close = load_template("templates/inn_sleep/levelup_close_btn.png")
 
     is_fully_healed = False
     fail_safe_counter = 0

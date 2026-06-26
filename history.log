@@ -1,6 +1,61 @@
 ==============================================================================
 📋 [프로젝트: Daphne 매크로 통합 히스토리 로그]
-==============================================================================
+=============================================================================
+
+[1.12.3] 2026-06-27 00:25 - Chest Autofollow 'Yeolda' Stuck Bug Fix
+- 내용: 상자 자동 이동 완료 후 화면에 '열다' 버튼이 표시되어 있음에도 불구하고 정체 복구 타이머(30초)가 만료될 때까지 멍 때리던 로직 에러 해결.
+- 상세:
+  1. 즉각적인 오프닝 연계 호출: 상자 자동 이동 완료 단계에서 '열다'(`t_yeolda`)가 검출되면 단순히 상태만 `BRANCH_CHECK`로 변경하던 설계를, `chest_opener.open_and_disarm_chest`를 다이렉트로 즉시 호출하여 정체 시간(30초) 없이 바로 상자 해제 루틴을 실행하도록 조치했습니다.
+  2. 해제 시퀀스 진입 반응 속도 대폭 개선: 이를 통해 캐릭터가 상자 앞에 도달하고 '열다'가 뜨는 찰나의 순간에 딜레이 없이 따개 캐릭터를 지정하고 해제 미니게임 또는 아이템 정산창으로 즉시 진입하도록 수정했습니다.
+- 적용 파일: main.py, dungeon_bot.py, chest_opener.py, party_manager.py, inn_manager.py, history.log, Daphne Antigravity.bat
+
+[1.12.2] 2026-06-26 23:55 - Dungeon Bot 4 Exceptions Patch & Natural Sort Integration
+- 내용: 던전 봇 구동 시 식별된 4대 예외(기습 시 스턱 오판, 상자 갇힘, 힐러 최종 승인 불가, 탈출 정체) 조치, 템플릿 자연 정렬 도입 및 설명서 경로 정보 갱신.
+- 상세:
+  1. 탈출 30초 강제 회군 열외: 던전 탈출 상태(`TRIGGER_EXIT`)인 경우, 30초 이상 정체되었어도 강제 체크포인트 회군 동작을 주입하지 않고 타이머만 리셋하도록 예외 처리하여 오인 복구를 방지했습니다.
+  2. 상자 정체 시 오프너 직접 연계: '열다' 버튼을 식별하고도 진입하지 못하는 경우 단순 좌표 클릭 대신 `chest_opener.open_and_disarm_chest`를 직접 즉시 재실행하여 따개 선택 루틴으로의 신속한 전이를 보장했습니다.
+  3. 기습 전투 시 미니맵 정지 모니터링 가드: 미니맵 정지 여부를 판단하기 전에 화면에 필드 앵커(`t_field`)가 실시간으로 노출되어 있는지 확인하여, 기습 인카운터 로딩 및 암전 컷신 도중에 정지 카운트가 쌓여 스턱으로 오판되는 오류를 차단했습니다.
+  4. '회복한다' 승인 예비 좌표 폴백: 파티 일괄 회복 시 '회복한다' 승인 팝업 도장 인식에 실패하는 기기 지연 상황이 발생해도, 가르쳐주신 예비 좌표 `(975, 1891)`로 강제 승인 클릭을 하도록 폴백 로직을 탑재했습니다.
+  5. 템플릿 자연 정렬(Natural Sort) 도입: 힐러 및 따개 캐릭터 템플릿 로딩 시 단순 사전식 정렬(1 -> 10 -> 2) 문제를 자연적인 숫자 크기 정렬(1 -> 2 -> 10)로 개선하는 `natural_sort_key`를 `chest_opener.py` 및 `party_manager.py`에 전면 적용했습니다.
+  6. 가이드 및 설명서 현행화: `README.txt` 가이드의 힐러/따개 캐릭터 등록 경로를 최신 구조인 `templates/!!Character`로 정정하고, 주인공 빈사 시 대처를 위해 `healer_99_skelton_red.png`로 배치하도록 설명을 대폭 정정 및 보강했습니다.
+- 적용 파일: main.py, dungeon_bot.py, chest_opener.py, party_manager.py, inn_manager.py, README.txt, Daphne Antigravity.bat, history.log
+
+[1.12.1] 2026-06-26 21:20 - Template Folder Restructuring & Path Optimization for Multi-Dungeon
+- 내용: 추가 던전/마을 확장(트리 구조 설계)을 대비하여 아웃게임 및 이동 관련 템플릿 폴더 구조 재조정 및 소스코드 일괄 갱신.
+- 상세:
+  1. 템플릿 폴더 격리화: templates/ 하위에 Worldmap/, WolfCave/, Vill_Isbelg/, inn_sleep/ 서브폴더를 각각 생성하여 지형이나 조명이 비치는 아웃게임 템플릿들을 완벽히 분리 격리했습니다.
+  2. 템플릿 파일명 표준화 및 교체:
+     - go_to_dungeon_btn.png ➔ Worldmap/Cave_Wolf_btn.png
+     - go_to_village_btn.png ➔ Worldmap/Vill_isbelk_btn.png
+     - enter_dungeon_btn.png ➔ WolfCave/Wolf_B1_btn.png
+     - dungeon_select_anchor.png ➔ 새로운 dungeon_select.png (WolfCave/dungeon_select.png) 교체 적용하여 타 던전과의 중복 텍스트 앵커 문제 해결.
+  3. 로드 경로 일괄 리팩토링: main.py, dungeon_bot.py, inn_manager.py의 모든 load_template 구문을 새로 배치된 서브폴더 경로로 갱신하여 누락이나 유실 없이 정상 매칭되도록 연동 처리를 완료했습니다.
+- 적용 파일: main.py, dungeon_bot.py, inn_manager.py, chest_opener.py, party_manager.py, README.txt, Daphne Antigravity.bat, history.log
+
+[1.11.16-hotfix1] 2026-06-26 20:00 - State Transition Timer Reset & Get Item Threshold Optimization
+- 내용: CLEAR_CHECK 정체 오판 방지(상태 전환 시 타이머 리셋) 및 아이템 획득(get_item.png) 감지 임계값 완화.
+- 상세:
+  1. 상태 전환 시 정체 타이머 자동 리셋: 던전봇 메인 루프 아래의 상태 전이 감지 로직(else: 블록)에 last_state_changed_time = time.time()을 추가하여, 상자 오픈 및 미니게임(15연타 + 5초 대기) 과정에서 누적 소요된 시간 때문에 CLEAR_CHECK에 도달하자마자 억울하게 발생하던 가짜 블랙박스 정체 경고(False Positive)를 완전히 제거했습니다.
+  2. 아이템 획득 감지 신뢰도 완화: get_item.png 대조 기준 임계값(Threshold)을 0.70에서 0.65로 하향하여, 화면 렉이나 미세한 색감/해상도 변화 속에서도 확실하고 빠르게 아이템 정산창을 포착하고 닫도록 조율했습니다.
+- 적용 파일: dungeon_bot.py, chest_opener.py, main.py, party_manager.py, inn_manager.py, README.txt, Daphne Antigravity.bat, history.log
+
+[1.11.16] 2026-06-26 19:45 - Trap Minigame Anchor Area Restriction & Match Threshold Tuning
+- 내용: 함정 해제 미니게임 화면 판정용 해골 상자 앵커 감지 성능 최적화 및 오탐 차단.
+- 상세:
+  1. 미니게임 앵커 감지 범위 국소화: 전체 화면을 돌며 matchTemplate 하던 연산을 제보받은 위치(1440x2560 기준 X: 57~187, Y: 227~317)에 상하좌우 안전 마진 20px을 반영한 국소 범위(X: 37~207, Y: 207~337)로 제한하여 탐색 연산 속도를 획기적으로 개선하고 타 영역의 노이즈 패턴 오진을 원천 배제했습니다.
+  2. 판정 임계값(Threshold) 상향 조정: 탐색 구역을 최적화함에 따라 기존 0.55 완화 기준치에서 발생할 수 있는 오동작을 예방하기 위해, 판정 기준 임계값을 0.70으로 상향하여 미니게임 돌입 판정 신뢰도를 높였습니다.
+  3. 디버그 모니터링 로그 도출 조건 필터링: 평상시 던전 이동 중 주기적으로 돌던 스캔 점수가 무조건 콘솔에 출력되던 부분에 필터(Score 0.50 초과 시만 출력)를 걸어 로그 도배 현상을 해소했습니다.
+  4. 다중 배치 관리 일원화: 병행 유지되던 run.bat 파일을 프로젝트에서 최종 삭제하고 Daphne Antigravity.bat 파일로 기동 배치를 영구 일원화했습니다.
+- 적용 파일: chest_opener.py, main.py, dungeon_bot.py, party_manager.py, inn_manager.py, history.log, README.txt, run.bat (삭제)
+
+[1.11.12] 2026-06-26 14:45 - Minimap Stuck Detection & Reactive Clicking & Healing Sequence Optimization
+- 내용: 미니맵 absdiff 기반 정체(stuck) 감지 단축(30초 -> 9초), 상자/출구 1회 반응형 탭 구조 전환 및 힐러 정비 시퀀스 전후 안전지대 정지 및 즉각 이동 복구 연계.
+- 상세:
+  1. 안전지대 선제 터치 가드: 힐러창 진입 직전에 선제적으로 안전지대(701, 333)를 터치하여 캐릭터를 멈추게 한 뒤 대기 시간을 주입합니다. 이를 통해 이동 중 캐릭터 슬롯 터치 시 발생하는 터치 씹힘 및 딜레이 현상을 완전히 해결했습니다.
+  2. 힐링 복귀 직후 즉시 이동 연계: 힐링 시퀀스 완료 성공 즉시, 이전 루프에서 탭했던 목적지 좌표(last_target_coords)를 즉각 터치하여 이동 상태로 바로 돌려놓고 쿨타임을 초기화합니다. 이로써 정비 종료 직후 멍하니 서 있는 딜레이를 파쇄하여 몬스터에게 기습당하는 취약점을 제거했습니다.
+  3. 상자 이동 1회 반응형 탭: 상자 단추 터치를 기존 10연타에서 1회 터치로 변경하고, 1.5초 동안 미니맵 변동률(check_minimap_movement, Y:115~315, X:1117~1317)과 화면 상태를 동적 감시합니다. 터치 씹힘 시 1회에 한해 재시도를 거치며, 재시도 후에도 변화가 없으면 상자가 없는 것으로 자동 확정 판정하여 탈출로 전환함으로써 토스트 인식 실패 오류를 극복했습니다.
+  4. 탈출 정체 감지 시간 대폭 단축: 던전 탈출(TRIGGER_EXIT) 중 미니맵이 계속 정지(absdiff 평균 0.05 미만) 상태인 횟수가 연속 3회(9초) 누적되면 즉각 스턱으로 판정합니다. 기존 90초 타이머를 기다릴 필요 없이 9초 만에 3번 체크포인트 탭 또는 후진/시점 회전 스위프를 발동하여 정체를 해소시킵니다.
+- 적용 파일: dungeon_bot.py, party_manager.py, README.txt, history.log
 
 [1.11.11] 2026-06-26 13:45 - Code Restructuring & Src Folder Isolation
 - 내용: 프로젝트 최상위 폴더 구조 개편 및 순수 소스코드 src/ 폴더로의 격리 이행.
