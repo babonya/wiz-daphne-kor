@@ -1,55 +1,26 @@
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.13.20-hotfix1
-# - 최근 수정일: 2026-07-05 01:50
+# - 현재 버전: 1.15.0
+# - 최근 수정일: 2026-07-28 01:28
 # - 수정 기록:
-#   1.13.20-hotfix1: 버전 동기화
-#   1.13.20: 버전 동기화
-#   1.13.19-hotfix2: 버전 동기화
-#   1.13.19-hotfix1: 버전 동기화
-#   1.13.19: 버전 동기화
-#   1.13.18: 버전 동기화
-#   1.13.17: 버전 동기화
-#   1.13.16: 버전 동기화
-#   1.13.7: 버전 동기화
-#   1.13.6: 버전 동기화
-#   1.13.5: 버전 동기화
-#   1.13.4: 버전 동기화
-#   1.13.3: 버전 동기화
-#   1.13.2: 버전 동기화
-#   1.13.1: 버전 동기화
-#   1.13.0-hotfix4: 핫픽스 버전 동기화
-#   1.13.0-hotfix3: 핫픽스 버전 동기화
-#   1.13.0-hotfix2: 핫픽스 버전 동기화
-#   1.13.0-hotfix1: 핫픽스 버전 동기화
-#   1.13.0: 마이너 버전 동기화
-#   1.12.6: 여관 정비 시 멀티 레벨업 '다음' 팝업 처리 구현 및 실시간 타임스탬프 로깅 래퍼 함수 도입
-#   1.12.5: 탈출 정체 복구 카운트 리셋 오류 패치, 블랙박스 및 탈출 정지 최초 정체 시각 표기 추가 및 버전업
-#   1.12.4: 힐러방 딸피 암전 시 BLIND 고정좌표 힐 시퀀스 핫픽스 적용 및 버전 동기화
-#   1.12.3: 버전 동기화
-#   1.12.2: 템플릿 로딩 자연 정렬(Natural Sort) 도입 및 버전 동기화
-#   1.12.1: 마이너 버전 동기화
-#   1.11.16: 미니게임 앵커 국소 크롭 스캔 범위 지정 및 임계값 0.70 상향 (동기화)
-#   v18.03: trap_minigame_anchor.png 및 해제 Y좌표 보정 적용 (최초 버전 주석 도입)
-#   v18.07: 따개 멀티 템플릿(disarmer_*.png) 자동 스왑 및 다이내믹 좌표 터치 시스템 도입
-#   v18.09: 힐러/따개 템플릿 로딩 시 sorted() 정렬 적용 (알파벳 정렬 우선순위 제공)
-#   v18.10: 힐러 시스템 예약 파일 차단 필터 적용 대응 (동기화)
-#   18.11.0: 던전 탈출 정체 시 3번 체크포인트 복구 대응 및 SemVer 시맨틱 버전 표기 도입
-#   18.11.1: '열다' 터치 씹힘 재시도 및 따개 오탐 방지 소멸 가드 장착
-#   18.11.2: 캐릭터 선택창('누가 열 거야?') 정체 복구 가드 탑재 (동기화)
-#   18.11.3: 여관 정비 시퀀스 중 ADB 통신 장애 크래시 자가 복구 가드 추가 (동기화)
-#   18.11.4: 미니게임 화면 중 재시작 시 30초 정체 대기 없이 즉각 전이 복구 가드 추가 (동기화)
-#   18.11.5: 탈출 완료 판정 오판 방지 가드에 맞춰 버전 동기화
-#   18.11.6: 여권 만료 팝업 이중 앵커 가드에 맞춰 버전 동기화
-#   1.11.7: 로딩 암전 가드, 해상도 크래시 가드, 예외 트레이스백 실시간 로깅 및 Dimension Guard 탑재 (동기화)
-#   1.11.8: 4일 경과 로그 파일 자동 청소기 장착, 메인 루프 전체 이중 감시 예외 처리 보강 및 리드미 설명 개정 (동기화)
-#   1.11.9: 최초 기동/재시작 자동 스샷 촬영, 스샷 동기화 스레드, 다중 사용자 경로 탐색 가드 탑재 (동기화)
+#   1.15.0: 지정 슬롯 따개 선택 도입, 상자공포(chestfear) 그레이스케일/컬러 감지 및 우회 알고리즘 추가
+#           (whowillopenit 템플릿 의존성 제거 및 '열다' 버튼 소멸 기반 진입 판정 전격 전환)
 # ==============================================================================
 import time
 import io
 import cv2
 import numpy as np
 from PIL import Image
+
+# 1440x2560 기준 정밀 카드 ROI 영역 (좌상X, 좌상Y, 우하X, 우하Y)
+SLOT_ROIS = {
+    1: (107, 1727, 507, 1992),
+    2: (527, 1727, 927, 1992),
+    3: (947, 1727, 1347, 1992),
+    4: (107, 2020, 507, 2285),
+    5: (527, 2020, 927, 2285),
+    6: (947, 2020, 1347, 2285)
+}
 
 def load_template(file_path):
     import os
@@ -71,6 +42,18 @@ def load_grayscale_template(file_path):
         gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
         return gray
     except: return None
+
+def load_color_template(file_path):
+    """ RGB 채널 싱크를 맞춘 컬러 템플릿 로드 함수 """
+    import os
+    if not os.path.exists(file_path): return None
+    try:
+        # cv2.imread는 BGR로 읽으므로 RGB로 강제 변환하여 screencap 포맷과 통일
+        img = cv2.imread(file_path)
+        if img is None: return None
+        return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    except:
+        return None
 
 def check_text_by_user_template(img_np, thresh_temp, threshold_val=0.68):
     """ 도장 뼈대 대조 공통 함수 """
@@ -97,98 +80,85 @@ def check_gray_template_present(img_np, gray_temp, threshold_val=0.70):
     _, max_val, _, _ = cv2.minMaxLoc(result)
     return max_val > threshold_val
 
+def check_color_template_present_in_roi(img_np, color_temp, x1, y1, x2, y2, threshold_val=0.80):
+    """ 지정된 ROI(카드 영역) 안에서 컬러 템플릿(상자공포 등) 매칭 수행 """
+    if color_temp is None or img_np is None: return False
+    h_img, w_img = img_np.shape[:2]
+    
+    # Boundary Guard (경계 보호)
+    x1 = max(0, min(x1, w_img))
+    y1 = max(0, min(y1, h_img))
+    x2 = max(0, min(x2, w_img))
+    y2 = max(0, min(y2, h_img))
+    
+    if x2 <= x1 or y2 <= y1: return False
+    
+    # ROI 크롭
+    crop = img_np[y1:y2, x1:x2]
+    h_crop, w_crop = crop.shape[:2]
+    h_temp, w_temp = color_temp.shape[:2]
+    if h_crop < h_temp or w_crop < w_temp: return False
+    
+    result = cv2.matchTemplate(crop, color_temp, cv2.TM_CCOEFF_NORMED)
+    _, max_val, _, _ = cv2.minMaxLoc(result)
+    return max_val > threshold_val
+
+def get_slot_center(slot_idx):
+    """ 슬롯 번호(1~6)에 매칭되는 카드의 정밀 중심 터치 좌표 반환 """
+    roi = SLOT_ROIS.get(slot_idx)
+    if not roi:
+        return (733, 2390)  # 기본값
+    x1, y1, x2, y2 = roi
+    return (x1 + x2) // 2, (y1 + y2) // 2
+
 def is_minigame_screen(img_np, height, width):
-    """ 미니게임 상단 붉은상자+해골마크 앵커 존재 여부 감지 (v1.11.16) """
-    # 1. 템플릿 매칭 검출 (제보받은 X: 57~187, Y: 227~317에 20px 마진을 더해 크롭 매칭)
+    """ 미니게임 상단 붉은상자+해골마크 앵커 존재 여부 감지 """
     t_trap_anchor = load_grayscale_template("templates/trap_minigame_anchor.png")
     if t_trap_anchor is not None and img_np is not None:
         h_img, w_img = img_np.shape[:2]
         
-        # 1440x2560 해상도 비례 스케일링 계산
         scale_x = w_img / 1440.0
         scale_y = h_img / 2560.0
         
-        # X: 57~187 => 37~207, Y: 227~317 => 207~337 (마진 20px 적용)
         x1, x2 = int(37 * scale_x), int(207 * scale_x)
         y1, y2 = int(207 * scale_y), int(337 * scale_y)
         
-        # 경계 처리
         x1 = max(0, x1)
         y1 = max(0, y1)
         x2 = min(w_img, x2)
         y2 = min(h_img, y2)
         
-        if x1 < x2 and y1 < y2:
-            crop_img = img_np[y1:y2, x1:x2]
-            h_crop, w_crop = crop_img.shape[:2]
-            h_temp, w_temp = t_trap_anchor.shape[:2]
-            
-            if h_crop >= h_temp and w_crop >= w_temp:
-                gray_crop = cv2.cvtColor(crop_img, cv2.COLOR_RGB2GRAY)
-                result = cv2.matchTemplate(gray_crop, t_trap_anchor, cv2.TM_CCOEFF_NORMED)
-                _, max_val, _, _ = cv2.minMaxLoc(result)
-                
-                # 매칭 점수가 0.50을 초과하는 진성 매칭이거나 성공 판정 시에만 디버그 출력
-                if max_val > 0.50:
-                    print(f"🔍 [디버그] 미니게임 앵커 로드 완료. 현재 매칭 신뢰도(score): {max_val:.4f} (기준치: 0.70)")
-                    
-                if max_val > 0.70:
-                    return True
-                
-    # 2. RGB 색상 감지 멀티스팟 이중 가드 (11.4 방식 + 3중 스팟 교차 검증)
-    # 주황색 게이지바가 상단 Y: 7% 근처에 위치하므로, X축 23%, 50%, 77% 총 3지점을 교차 스캔
-    orange_y = int(height * 0.07)
-    orange_spots = [int(width * 0.23), int(width * 0.50), int(width * 0.77)]
-    orange_count = 0
-    for ox in orange_spots:
-        if orange_y < height and ox < width:
-            r, g, b = img_np[orange_y, ox][:3]
-            # 주황/노란색 계열 게이지 바 색상 판정
-            if r > 160 and g > 75 and b < 60:
-                orange_count += 1
-                
-    if orange_count >= 2:
-        print(f"🎮 [디버그] 미니게임 앵커 미검출 되었으나, RGB 게이지 색상 3중 가드 감지 성공! (포착 수: {orange_count}/3)")
-        return True
+        crop = img_np[y1:y2, x1:x2]
+        h_crop, w_crop = crop.shape[:2]
+        h_temp, w_temp = t_trap_anchor.shape[:2]
+        if h_crop < h_temp or w_crop < w_temp: return False
         
+        gray_crop = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY)
+        result = cv2.matchTemplate(gray_crop, t_trap_anchor, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, _ = cv2.minMaxLoc(result)
+        return max_val > 0.65
     return False
 
-
-def natural_sort_key(s):
-    import re
-    return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', s)]
-
-
-def load_multiple_templates(directory, prefix):
-    import glob
-    import os
-    templates = []
-    pattern = os.path.join(directory, f"{prefix}*.png")
-    for file_path in sorted(glob.glob(pattern), key=natural_sort_key):
-        temp = load_template(file_path)
-        if temp is not None:
-            templates.append((os.path.basename(file_path), temp))
-    return templates
-
-def find_template_coords(img_np, thresh_temp, threshold_val=0.75):
-    if thresh_temp is None or img_np is None: return None
-    h_img, w_img = img_np.shape[:2]
-    h_temp, w_temp = thresh_temp.shape[:2]
-    if h_img < h_temp or w_img < w_temp: return None
+def solve_trap_game(device, img_np):
+    """ 미니게임 정중앙 하단 해제 난사 """
+    print("🔮 [chest_opener] 미니게임 인카운터! 게이트 스캔을 스킵하고 0.1초 간격 15연타 초고속 폭격을 주입합니다.")
+    height, width = img_np.shape[:2]
     
-    gray_img = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-    _, thresh_img = cv2.threshold(gray_img, 160, 255, cv2.THRESH_BINARY)
-    result = cv2.matchTemplate(thresh_img, thresh_temp, cv2.TM_CCOEFF_NORMED)
-    _, max_val, _, max_loc = cv2.minMaxLoc(result)
-    if max_val > threshold_val:
-        h, w = thresh_temp.shape[:2]
-        return max_loc[0] + int(w / 2), max_loc[1] + int(h / 2)
-    return None
+    release_x = int(width * 0.503)
+    release_y = int(height * 0.611)
+    
+    for _ in range(15):
+        device.shell(f"input tap {release_x} {release_y}")
+        time.sleep(0.1)
+        
+    print("⏳ 15연타 난사 완료. 정산창 연출 진입을 위해 1.0초간 충분히 대기합니다...")
+    time.sleep(1.0)
+    return True
 
-def open_and_disarm_chest(device, img_np, thresh_yeolda):
+def open_and_disarm_chest(device, img_np, thresh_yeolda, chest_opener_slot=6, masked_adventurer_slot=4):
     """
     [dungeon_bot 연동용 핵심 함수]
-    '열다' 터치부터 따개 선택까지 한 번에 관통합니다.
+    '열다' 터치부터 상자공포 상태이상 회피 및 지정 슬롯 클릭까지 진행합니다.
     """
     height, width = img_np.shape[:2]
     
@@ -197,12 +167,12 @@ def open_and_disarm_chest(device, img_np, thresh_yeolda):
     open_x = int(width * 0.5)
     open_y = int(height * 0.795) 
     device.shell(f"input tap {open_x} {open_y}")
-    time.sleep(1.2) # 캐릭터 선택창 애니메이션 대기
+    time.sleep(1.0) # 캐릭터 선택창 애니메이션 대기
     
-    # 디렉토리 내 모든 disarmer_*.png 템플릿 로드
-    disarmer_templates = load_multiple_templates("templates/!!Character", "disarmer_")
-    
-    # 선택창이 뜰 때까지 최대 5초간 화면 갱신하며 따개 추적
+    # 템플릿 로딩
+    t_chestfear = load_color_template("templates/chestfear.png")
+        
+    # '열다' 버튼이 사라질 때까지 최대 5초간 대기하며 진입 판정 진행
     start_time = time.time()
     last_click_yeolda_time = time.time()
     while time.time() - start_time < 5.0:
@@ -217,13 +187,13 @@ def open_and_disarm_chest(device, img_np, thresh_yeolda):
             raw_cap = device.screencap()
             img_np_current = cv2.imdecode(np.frombuffer(raw_cap, np.uint8), cv2.IMREAD_COLOR)
             img_np_current = cv2.cvtColor(img_np_current, cv2.COLOR_BGR2RGB)
-        except:
+        except Exception as cap_err:
+            print(f"⚠️ [chest_opener] Screencap 버퍼 렉 감지: {cap_err}")
             time.sleep(0.1)
             continue
             
-        # [가드] 화면에 '열다' 버튼이 아직 보인다면 캐릭터 선택창에 못 들어온 상태임
+        # 여전히 '열다' 버튼이 보인다면 터치 씹힘 재시도
         if check_text_by_user_template(img_np_current, thresh_yeolda, 0.70):
-            # 1.5초 이상 화면이 머무르면 터치가 씹힌 것이므로 재시도 주입
             if time.time() - last_click_yeolda_time > 1.5:
                 print("⚠️ [chest_opener] '열다' 터치 씹힘 감지! 재클릭을 주입합니다.")
                 device.shell(f"input tap {open_x} {open_y}")
@@ -231,42 +201,56 @@ def open_and_disarm_chest(device, img_np, thresh_yeolda):
             time.sleep(0.1)
             continue
             
-        # [2단계] 등록된 따개 이름 도장 매칭 및 다이내믹 클릭
-        if len(disarmer_templates) > 0:
-            for file_name, thresh_disarmer in disarmer_templates:
-                coords = find_template_coords(img_np_current, thresh_disarmer, 0.75)
-                if coords:
-                    dx, dy = coords
-                    print(f"👤 [chest_opener] '{file_name}' 도장 검출 완료! 좌표 ({dx}, {dy}) 터치합니다.")
-                    device.shell(f"input tap {dx} {dy}")
-                    time.sleep(1.5) # 미니게임 혹은 정산창 전환 대기
-                    return True
-
+        # [2단계] '열다' 버튼이 화면에서 사라졌으므로 캐릭터 선택창 진입 완료로 판정!
+        print("👤 [chest_opener] '열다' 버튼 소멸 확인! 캐릭터 선택창 진입 확정 판정 진행.")
+        
+        chosen_slot = None
+        fear_on_primary = False
+        
+        # 1. 1순위: 지정 따개 슬롯에 상자공포 상태이상 검사
+        if t_chestfear is not None:
+            x1, y1, x2, y2 = SLOT_ROIS[chest_opener_slot]
+            if check_color_template_present_in_roi(img_np_current, t_chestfear, x1, y1, x2, y2, 0.78):
+                print(f"⚠️ [chest_opener] 1순위 따개({chest_opener_slot}번)에 '상자 공포' 상태이상이 발견되었습니다!")
+                fear_on_primary = True
+            else:
+                print(f"✅ [chest_opener] 1순위 따개({chest_opener_slot}번) 상태 정상.")
+                chosen_slot = chest_opener_slot
+        else:
+            print("⚠️ [chest_opener] templates/chestfear.png 파일이 없어 상태이상 검사를 생략하고 1순위 따개를 선택합니다.")
+            chosen_slot = chest_opener_slot
+            
+        # 2. 2순위: 지정 따개에 공포가 걸렸고 주인공 슬롯 검사
+        if fear_on_primary:
+            x1, y1, x2, y2 = SLOT_ROIS[masked_adventurer_slot]
+            if check_color_template_present_in_roi(img_np_current, t_chestfear, x1, y1, x2, y2, 0.78):
+                print(f"⚠️ [chest_opener] 2순위 주인공({masked_adventurer_slot}번) 역시 '상자 공포'가 검출되었습니다!")
+                
+                # 3. 3순위: 1~6번 슬롯 순차 스캔하여 공포가 없는 캐릭터 찾기
+                for slot in [1, 2, 3, 4, 5, 6]:
+                    sx1, sy1, sx2, sy2 = SLOT_ROIS[slot]
+                    if not check_color_template_present_in_roi(img_np_current, t_chestfear, sx1, sy1, sx2, sy2, 0.78):
+                        print(f"🔄 [chest_opener] 대체 슬롯 발견: {slot}번 캐릭터로 상자 개방을 결정합니다.")
+                        chosen_slot = slot
+                        break
+                        
+                # 만약 전원이 다 공포라면 최후의 수단으로 주인공 강제 선택
+                if chosen_slot is None:
+                    print("🚨 [chest_opener] 모든 캐릭터가 상자 공포 상태입니다! 최후의 보루로 주인공을 터치합니다.")
+                    chosen_slot = masked_adventurer_slot
+            else:
+                print(f"🔄 [chest_opener] 대체 슬롯 발견: 주인공({masked_adventurer_slot}번)으로 상자를 개방합니다.")
+                chosen_slot = masked_adventurer_slot
+        
+        # 최종 계산된 좌표 클릭
+        if chosen_slot is not None:
+            tx, ty = get_slot_center(chosen_slot)
+            print(f"👉 [chest_opener] 최종 결정: {chosen_slot}번 카드 슬롯 ({tx}, {ty}) 터치를 주입합니다.")
+            device.shell(f"input tap {tx} {ty}")
+            time.sleep(1.5)
+            return True
             
         time.sleep(0.1)
         
-    print("⚠️ [chest_opener] 따개 선택창 진입에 실패했습니다.")
+    print("⚠️ [chest_opener] 캐릭터 선택창 진입 또는 판정에 실패했습니다.")
     return False
-
-
-def solve_trap_game(device, img_np):
-    """ 
-    [에러 1 완벽 정복 - 무지성 고속 연타 사양]
-    타이밍 게이트 분석을 생략하고, 화면 하단 정중앙 '해제' 구역을
-    0.1초 간격으로 15연타 무지성 폭격한 뒤 안전 연출 시간을 벌어줍니다.
-    """
-    print("🔮 [chest_opener] 미니게임 인카운터! 게이트 스캔을 스킵하고 0.1초 간격 15연타 초고속 폭격을 주입합니다.")
-    height, width = img_np.shape[:2]
-    
-    # 해제/터치 버튼이 위치한 화면 정중앙 하단 고정 좌표 (실해상도 725/1440, 1565/2560 반영)
-    release_x = int(width * 0.503)
-    release_y = int(height * 0.611)
-    
-    # 0.1초 간격으로 무지성 15연타 난사
-    for _ in range(15):
-        device.shell(f"input tap {release_x} {release_y}")
-        time.sleep(0.1)
-        
-    print("⏳ 15연타 난사 완료. 정산창 연출 진입을 위해 1.0초간 충분히 대기합니다...")
-    time.sleep(1.0)
-    return True

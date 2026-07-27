@@ -7,7 +7,7 @@ import time
 # ⚙️ [Daphne 마스터 글로벌 제어 세팅 변수 구역 - 진짜 최상단 제어판]
 # ==============================================================================
 # 💡 앞으로 주행 설정을 바꾸실 때는 오직 여기 "최상단 제어판"의 설정값만 수정하시면 됩니다!
-CURRENT_VERSION = "1.14.1-hotfix10"         # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
+CURRENT_VERSION = "1.15.0"         # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
 LIMIT_DUNGEON_LOOPS = 2             # 🔄 [마을 회군 기준] 던전을 몇 바퀴 돌고 마을(여관)로 복귀할지 설정
 START_RUN_COUNT_OFFSET = 2          # 🚀 [초기 부팅 주회 카운트] 매크로 시작 시 초기 주회 offset 수치 (초기값=던전루프와 같은 수치, 던전에서 시작하면 해당 주회 후 복귀, 마을이면 숙박 후 주회 시작)
 ENABLE_FIRST_COMBAT_SKILL = 0       # ⚔️ [초기 전투 스킬 제어] (⚠️ 현재 미구현으로 추후 구현 예정이니 무조건 0으로 고정해 주세요) (0: Off, 1: On)
@@ -23,6 +23,7 @@ DUNGEON_FLOOR = 1                       # 🪜 [진입할 던전 층수 지정] 
 # 🏥 [힐러 및 주인공 슬롯 설정]
 HEALER_SLOT = 5                         # 💊 [힐러 캐릭터 슬롯 번호] 1번~6번 슬롯 중 주 힐러(스켈톤 등)의 배치 슬롯
 MASKED_ADVENTURER_SLOT = 4              # 👤 [주인공 캐릭터 슬롯 번호] 1번~6번 슬롯 중 주인공의 배치 슬롯 (2번 사망 시 주인공이 앞으로 밀릴 수 있음)
+CHEST_OPENER_SLOT = 6                   # 🔑 [상자 해제 따개 슬롯] 1번~6번 슬롯 중 상자 따기(함정 해제)를 기본 담당할 캐릭터 슬롯
 
 # 🖥️ [MuMu 에뮬레이터 콜드 리부트 자동 제어 세팅]
 ENABLE_EMULATOR_REBOOT = True       # 🔄 [에뮬레이터 리부트] 디바이스 오프라인/5분 정체 지속 시 에뮬레이터 자체를 강제 재시작할지 설정
@@ -32,9 +33,10 @@ MUMU_VM_INDEX = "0"                  # 실행할 가상머신 번호 인덱스 (
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.14.1-hotfix10
-# - 최근 수정일: 2026-07-26 22:45
+# - 현재 버전: 1.15.0
+# - 최근 수정일: 2026-07-28 01:40
 # - 수정 기록:
+#   1.15.0: 지정 슬롯 따개(CHEST_OPENER_SLOT) 터치 개편, 상자공포 상태이상(chestfear.png) 자동 감지 및 주인공/타 슬롯 우회 회피 시퀀스 추가, whowillopenit 템플릿 의존성 제거 및 '열다' 버튼 소멸 기반 진입 판정 최적화
 #   1.14.1-hotfix10: 전투 중 배속/자동 8초 가드 단일 블록 통합(상하단 동일 타이머 충돌로 인한 자동전투 8초 감지 영구 스킵 결함 완치), 정비 즉시 재사격 및 상자 없음 인지 시 터치 쿨타임(last_click_time = 0) 파쇄(정비 직후 7초 지연 및 출구 탭 3초 지연 제거)
 #   1.14.1-hotfix9: 상자깡 완료 연출 마진 sleep(1.0초) 탈거를 통한 딜레이 차감, 전투 중 배속/자동 켜기 가드 8초 쿨타임 주기 검사 도입, 화면 과도기 대기 한계 상향(5회 ➔ 10회)으로 연출 대기 stuck 복구 안정화
 #   1.14.1-hotfix8: 전투 중 딸피 피장막 상황 앵커 소실 버그 완치(배속/자동 앵커 그레이스케일 매치 전환 및 컬러 픽셀 R-B 가드 결합으로 핑퐁 연타 박멸), 백아 던전 층수 분기 제어(DUNGEON_FLOOR 추가 및 2층 활성화 유무에 따른 물리 좌표 분기 적용)
@@ -1007,7 +1009,7 @@ def start_grand_orchestrator():
     t_arrow_clean = load_template("templates/inn_sleep/arrow_clean.png")
     t_passport_anchor = load_template("templates/anchor_passport_popup.png")
     t_passport_close = load_template("templates/close_passport_popup.png")
-    t_disarmer_templates = chest_opener.load_multiple_templates("templates/!!Character", "disarmer_")
+
     print("=======================================")
 
     dungeon_run_count = START_RUN_COUNT_OFFSET  
@@ -1300,23 +1302,13 @@ def start_grand_orchestrator():
                 last_action_time = time.time()
                 continue
 
-            # 👤 [따개 강제 검출 가드] 캐릭터 선택창("누가 열 거야?")이 이미 열려 있는 경우 던전 판정 보정
-            has_disarmer_visible = False
-            if len(t_disarmer_templates) > 0:
-                for file_name, thresh_disarmer in t_disarmer_templates:
-                    coords = chest_opener.find_template_coords(img_np, thresh_disarmer, 0.75)
-                    if coords:
-                        has_disarmer_visible = True
-                        print(f"   ➔ 👤 [사령탑 캐릭터 감지] '{file_name}' 캐릭터 따개 도장 검출로 던전 진입 판정 보정!")
-                        break
-
-            if is_mini_screen or score_loot > 0.65 or score_field > 0.60 or score_yeolda > 0.65 or score_heal_close > 0.65 or score_combat > 0.80 or has_disarmer_visible:
+            if is_mini_screen or score_loot > 0.65 or score_field > 0.60 or score_yeolda > 0.65 or score_heal_close > 0.65 or score_combat > 0.80:
                 print(f"   ➔ 🤖 [엔진 최종 판정] 아웃게임 부재 및 던전 조건 충족, '던전 내부' 상태로 확정합니다.")
                 last_action_time = time.time()
                 
                 run_skill_logic = ENABLE_FIRST_COMBAT_SKILL and (not global_skill_setup_completed)
                 try:
-                    exit_by_user, skill_ok = dungeon_bot.start_main_macro(device, run_skill_logic, HEALING_LOOPS, bool(ENABLE_HEAL_AFTER_CHEST), healer_slot=HEALER_SLOT, masked_adventurer_slot=MASKED_ADVENTURER_SLOT)
+                    exit_by_user, skill_ok = dungeon_bot.start_main_macro(device, run_skill_logic, HEALING_LOOPS, bool(ENABLE_HEAL_AFTER_CHEST), healer_slot=HEALER_SLOT, masked_adventurer_slot=MASKED_ADVENTURER_SLOT, chest_opener_slot=CHEST_OPENER_SLOT)
                     if skill_ok:
                         global_skill_setup_completed = True  
                     if exit_by_user: 
@@ -1369,7 +1361,7 @@ def start_grand_orchestrator():
                     time.sleep(5.0)
                     run_skill_logic = ENABLE_FIRST_COMBAT_SKILL and (not global_skill_setup_completed)
                     try:
-                        exit_by_user, skill_ok = dungeon_bot.start_main_macro(device, run_skill_logic, HEALING_LOOPS, bool(ENABLE_HEAL_AFTER_CHEST), healer_slot=HEALER_SLOT, masked_adventurer_slot=MASKED_ADVENTURER_SLOT)
+                        exit_by_user, skill_ok = dungeon_bot.start_main_macro(device, run_skill_logic, HEALING_LOOPS, bool(ENABLE_HEAL_AFTER_CHEST), healer_slot=HEALER_SLOT, masked_adventurer_slot=MASKED_ADVENTURER_SLOT, chest_opener_slot=CHEST_OPENER_SLOT)
                         if skill_ok: global_skill_setup_completed = True
                         if exit_by_user: last_action_time = time.time() - 20.0
                         else: last_action_time = time.time() 

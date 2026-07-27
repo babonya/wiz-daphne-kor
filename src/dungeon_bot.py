@@ -18,9 +18,10 @@ came_from_chest = False
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.14.1-hotfix10
-# - 최근 수정일: 2026-07-26 22:45
+# - 현재 버전: 1.15.0
+# - 최근 수정일: 2026-07-28 01:40
 # - 수정 기록:
+#   1.15.0: 지정 슬롯 따개 터치 개편, 상자공포 자동 감지 및 주인공/타 슬롯 우회 회피 시퀀스 추가, whowillopenit 템플릿 의존성 제거 및 '열다' 버튼 소멸 기반 진입 판정 최적화에 따른 버전 동기화
 #   1.14.1-hotfix10: 전투 중 배속/자동 8초 가드 단일 블록 통합(상하단 동일 타이머 충돌로 인한 자동전투 8초 감지 영구 스킵 결함 완치), 정비 즉시 재사격 및 상자 없음 인지 시 터치 쿨타임(last_click_time = 0) 파쇄(정비 직후 7초 지연 및 출구 탭 3초 지연 제거)에 따른 버전 동기화
 #   1.14.1-hotfix9: 상자깡 완료 연출 마진 sleep(1.0초) 탈거, 전투 중 배속/자동 켜기 가드 8초 쿨타임 주기 검사 도입, 화면 과도기 대기 한계 상향(5회 ➔ 10회)에 따른 버전 동기화
 #   1.14.1-hotfix8: 전투 중 딸피 피장막 상황 앵커 소실 버그 해결(배속 앵커 판정을 그레이스케일로 전향하여 피장막 노이즈 우회), 백아 던전 층수 분기 제어(DUNGEON_FLOOR 추가 및 지하 2층 버튼 존재 유무에 따른 고정 좌표 분기 터치 적용)에 따른 버전 동기화
@@ -491,7 +492,7 @@ def fire_target_monster_body(device, img_np, t_next, t_arrow):
 
 
 
-def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_chest=True, healer_slot=5, masked_adventurer_slot=5):
+def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_chest=True, healer_slot=5, masked_adventurer_slot=5, chest_opener_slot=6):
     if not device: return False, False
 
     print("\n=======================================")
@@ -552,7 +553,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     
     t_next = load_template("templates/indicator_next.png")              
     t_arrow = load_template("templates/indicator_arrow.png")
-    t_disarmer_templates = chest_opener.load_multiple_templates("templates/!!Character", "disarmer_")
+
     print("=======================================")
 
     transition_delay_count = 0
@@ -799,7 +800,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     if yeolda_stuck_retry_count < 3:
                         yeolda_stuck_retry_count += 1
                         print(f"⚠️ [블랙박스 상자 해제 갇힘 복구] '열다'가 보이나 진입 실패 상태입니다. 상자 오프닝을 재시도합니다. ({yeolda_stuck_retry_count}/3)")
-                        if chest_opener.open_and_disarm_chest(device, img_np, t_yeolda):
+                        if chest_opener.open_and_disarm_chest(device, img_np, t_yeolda, chest_opener_slot=chest_opener_slot, masked_adventurer_slot=masked_adventurer_slot):
                             state = "BRANCH_CHECK"
                         last_state_changed_time = time.time()
                     else:
@@ -855,21 +856,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
             last_state_changed_time = time.time()
             continue
 
-        # 👤 [따개 강제 검출 가드] 캐릭터 선택창("누가 열 거야?")이 이미 열려 있는 경우
-        if state in ["FIELD_WAIT", "AUTO_MOVING"] and len(t_disarmer_templates) > 0:
-            found_disarmer = False
-            for file_name, thresh_disarmer in t_disarmer_templates:
-                coords = chest_opener.find_template_coords(img_np, thresh_disarmer, 0.75)
-                if coords:
-                    dx, dy = coords
-                    print(f"👤 [dungeon_bot] 갇힘 복구 가드 작동: '{file_name}' 도장 검출! 좌표 ({dx}, {dy}) 터치합니다.")
-                    safe_device_shell(device, f"input tap {dx} {dy}")
-                    time.sleep(1.5) # 미니게임 혹은 정산창 전환 대기
-                    state = "BRANCH_CHECK"
-                    found_disarmer = True
-                    break
-            if found_disarmer:
-                continue
+
 
         # [메인 루프 독 치료 가드는 1.14.1-hotfix7에서 탈거되었습니다]
 
@@ -913,7 +900,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
         if state in ["FIELD_WAIT", "AUTO_MOVING"]:
             if check_template_present_dynamic(img_np, t_yeolda, 0.65, 160):
                 print("📦 [메인] '열다' 감지! 상자 해제 시퀀스로 진입.")
-                if chest_opener.open_and_disarm_chest(device, img_np, t_yeolda):
+                if chest_opener.open_and_disarm_chest(device, img_np, t_yeolda, chest_opener_slot=chest_opener_slot, masked_adventurer_slot=masked_adventurer_slot):
                     state = "BRANCH_CHECK"
                 continue
 
@@ -1039,7 +1026,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                 break
                         
                         if opened:
-                            if chest_opener.open_and_disarm_chest(device, img_np, t_yeolda):
+                            if chest_opener.open_and_disarm_chest(device, img_np, t_yeolda, chest_opener_slot=chest_opener_slot, masked_adventurer_slot=masked_adventurer_slot):
                                 state = "BRANCH_CHECK"
                             else:
                                 state = "FIELD_WAIT"
