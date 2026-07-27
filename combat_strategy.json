@@ -1,0 +1,20 @@
+{
+  "overall_strategy": "yuzu_first",
+  "strategies": {
+    "yuzu_first": [
+      {
+        "character": "유즈나미키",
+        "skill_slot": 1,
+        "level": 1,
+        "target": "enemy"
+      },
+      {
+        "character": "밀라나",
+        "skill_slot": 1,
+        "level": 1,
+        "target": "enemy"
+      }
+    ],
+    "full_auto": []
+  }
+}

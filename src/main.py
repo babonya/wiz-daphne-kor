@@ -4,10 +4,84 @@ import datetime
 import time
 
 # ==============================================================================
+# ⚙️ [Daphne 마스터 글로벌 제어 세팅 변수 구역 - 진짜 최상단 제어판]
+# ==============================================================================
+# 💡 앞으로 주행 설정을 바꾸실 때는 오직 여기 "최상단 제어판"의 설정값만 수정하시면 됩니다!
+CURRENT_VERSION = "1.14.1-hotfix10"         # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
+LIMIT_DUNGEON_LOOPS = 2             # 🔄 [마을 회군 기준] 던전을 몇 바퀴 돌고 마을(여관)로 복귀할지 설정
+START_RUN_COUNT_OFFSET = 2          # 🚀 [초기 부팅 주회 카운트] 매크로 시작 시 초기 주회 offset 수치 (초기값=던전루프와 같은 수치, 던전에서 시작하면 해당 주회 후 복귀, 마을이면 숙박 후 주회 시작)
+ENABLE_FIRST_COMBAT_SKILL = 0       # ⚔️ [초기 전투 스킬 제어] (⚠️ 현재 미구현으로 추후 구현 예정이니 무조건 0으로 고정해 주세요) (0: Off, 1: On)
+ENABLE_HEAL_AFTER_CHEST = 1         # 📦 [상자 개방 후 힐링] 상자 해제/개방 성공 후 긴급 파티 치료(정비)를 작동할지 설정 (0: Off, 1: On)
+HEALING_LOOPS = 1                   # 💊 [전투 후 정비 주기] 몇 회의 전투마다 파티 힐링 정비를 수행할지 설정
+                                    #    - 1: 매 전투 종료 시 필드 복귀 직후 즉시 힐링 시퀀스 실행
+                                    #    - 2: 2회 전투 치를 때마다 힐링 시퀀스 실행 (누적 카운트 기준)
+                                    #    - 0: 전투 후 자동 힐링 정비 비활성화 (체력 소진 시까지 계속 전투 진행)
+
+# 🗺️ [던전 층수 설정 (백아/철광산 한정)]
+DUNGEON_FLOOR = 1                       # 🪜 [진입할 던전 층수 지정] 1: 지하 1층 진입, 2: 지하 2층 진입
+
+# 🏥 [힐러 및 주인공 슬롯 설정]
+HEALER_SLOT = 5                         # 💊 [힐러 캐릭터 슬롯 번호] 1번~6번 슬롯 중 주 힐러(스켈톤 등)의 배치 슬롯
+MASKED_ADVENTURER_SLOT = 4              # 👤 [주인공 캐릭터 슬롯 번호] 1번~6번 슬롯 중 주인공의 배치 슬롯 (2번 사망 시 주인공이 앞으로 밀릴 수 있음)
+
+# 🖥️ [MuMu 에뮬레이터 콜드 리부트 자동 제어 세팅]
+ENABLE_EMULATOR_REBOOT = True       # 🔄 [에뮬레이터 리부트] 디바이스 오프라인/5분 정체 지속 시 에뮬레이터 자체를 강제 재시작할지 설정
+MUMU_EXECUTABLE_PATH = r"C:\Program Files\Netease\MuMuPlayer\nx_main\MuMuNxMain.exe"  # 뮤뮤 실행 파일 경로
+MUMU_VM_INDEX = "0"                  # 실행할 가상머신 번호 인덱스 (기본값 "0")
+# ==============================================================================
+
+# ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.12.3
-# - 최근 수정일: 2026-06-27 00:25
+# - 현재 버전: 1.14.1-hotfix10
+# - 최근 수정일: 2026-07-26 22:45
 # - 수정 기록:
+#   1.14.1-hotfix10: 전투 중 배속/자동 8초 가드 단일 블록 통합(상하단 동일 타이머 충돌로 인한 자동전투 8초 감지 영구 스킵 결함 완치), 정비 즉시 재사격 및 상자 없음 인지 시 터치 쿨타임(last_click_time = 0) 파쇄(정비 직후 7초 지연 및 출구 탭 3초 지연 제거)
+#   1.14.1-hotfix9: 상자깡 완료 연출 마진 sleep(1.0초) 탈거를 통한 딜레이 차감, 전투 중 배속/자동 켜기 가드 8초 쿨타임 주기 검사 도입, 화면 과도기 대기 한계 상향(5회 ➔ 10회)으로 연출 대기 stuck 복구 안정화
+#   1.14.1-hotfix8: 전투 중 딸피 피장막 상황 앵커 소실 버그 완치(배속/자동 앵커 그레이스케일 매치 전환 및 컬러 픽셀 R-B 가드 결합으로 핑퐁 연타 박멸), 백아 던전 층수 분기 제어(DUNGEON_FLOOR 추가 및 2층 활성화 유무에 따른 물리 좌표 분기 적용)
+#   1.14.1-hotfix7: 고비용 독 감지 모니터링(HSV 변환 및 6개 슬롯 픽셀 감지) 함수 및 분기 완전 삭제 (CPU 사용량 대폭 경감 및 프레임 렉 근절 최적화)
+#   1.14.1-hotfix6: 힐러 도장 이진화 매칭/캐싱 최적화, 스캔 하단 ROI(2000~2540) 지정 및 1차 정상/2차 red 분리 이중 격리 검출 패치, red 진입 렉 대기(1.5초) 주입, 전투/상자 종료 후 힐링 누수 버그 완치
+#   1.14.1-hotfix5: 여관 루프 정체 방지 45초 Watchdog 가드 탑재 및 1:1 이진화 매치 적용
+#   1.14.1-hotfix4: OpenCV 픽셀 번짐 방지를 위해 동적 리사이저 배제 및 원본 1:1 그레이스케일 매칭 롤백, dungeon_bot 내 load_grayscale_template 정의 유실 NameError 수정 완료
+#   1.14.1-hotfix3: 템플릿 크기 및 ROI 정밀 분석 대조를 통한 여백 마진 보강, 그레이스케일 매칭 및 동적 템플릿 축소 스케일러 적용
+#   1.14.1: 신규 필드 템플릿 연동, 미니맵 오토-오픈 가드 구축 및 전투/자동전투 앵커 ROI 한정 이식
+#   1.14.0-hotfix4: 탈출 복구 드래그 동작에 의한 타이머 오초기화 방지 (최초 정체 시점 타이머 보존 및 5분 절대 Watchdog 가드 이식)
+#   1.14.0-hotfix3: 바탕화면 튕김/가로 화면 30초 정체 시 예외 격발 및 에뮬레이터 자동 2단계 리부팅 복구 가드 탑재
+#   1.14.0-hotfix2: 탈출 5분 리셋 누적 버그/출구 클릭 건너뜀 수정 및 정체 1~2회 시점 예비 연타 기능 이식 (동기화)
+#   1.14.0-hotfix1: README 안내 보강에 따른 핫픽스 빌드 반영 (동기화)
+#   1.14.0: 스크린샷 동기화 디스크 캐시(.copied_screenshots.json) 및 60초 정체 완화 임계값(0.45) 힐링 연동 가드 추가
+#   1.13.20-hotfix3: 전투 진행 중 필드 앵커 오검출 및 과도기 감지 대기(else: continue)에 갇혀 자동전투 버튼 클릭이 무산되던 결함 수정
+#   1.13.20-hotfix2: 2배속 전환 이후 무한 루프에 갇혀 자동전투 버튼 클릭이 유실되던 인덴트 오류(continue 제어문) 해결
+#   1.13.20-hotfix1: 탈출 정지 감지 5회 상향 및 백스텝 후 출구 이동 단추 0.1초 간격 2회 탭핑 복구 시퀀스 도입
+#   1.13.20: 자동전투 켜기 씹힘 방지(auto_combat_paused_for_skill 가드 우회) 보완
+#   1.13.19-hotfix2: 최상단 전투 가드 변수 리셋, 렉 보호 가드 주입, 탈출 앵커 임계치 상향 및 안전지대(700, 150) 터치 조율
+#   1.13.19-hotfix1: 던전 최초 탈출 시 출구 이동 버튼 0.2초 간격 2회 터치(더블 탭) 보완
+#   1.13.19: WVD 기반 사망/부활(InCombat_dead, btn_resurrect) 흐름 및 기동 복구(recover_app_startup) 연동 고도화
+#   1.13.18: 통합 힐링 플래그 need_heal 도입, 상자 완료 필드 앵커 2차 검증 가드 주입, 임의 빈사 힐링 제거 및 임계치 완화
+#   1.13.17: 전투 후 상자 획득 시 중복 힐링 충돌 차단
+#   1.13.16: 상자 탐색 무한 루프 방어, On/Off 1/0 치환, 버전 전역 변수화 및 상자 개방 정비 추가
+#   1.13.15: dungeon_bot.py 주행 실행 차단 continue 구문 제거 및 통상 주행/토스트 인식 복원
+#   1.13.14: 던전 상태 감지 코드 인덴트 교정 및 실시간 전투/필드 인식 복원
+#   1.13.13: 전투(IN_COMBAT) 상태 정체 시간 리셋 결함 해결 및 최상단 예외 크래시 복구 가드 탑재
+#   1.13.12: 화면 분석 실패 예외 탭핑 분기(else) 내부의 무의미한 last_action_time 업데이트 제거 핫픽스
+#   1.13.11: 최초 기동 경고 화면 자동 돌파 및 최초 가동 무인 안심 가드(recover_app_startup 선행 실행) 탑재
+#   1.13.10: 기동 중 공지사항 팝업 감지 시 자동 닫기 타격 가드 보강
+#   1.13.9: 상자 자동 이동 터치 및 씹힘 재시도 시 0.25초 텀 2회 더블 탭 연사 기법 주입
+#   1.13.8: 복구 로직 사령탑(main.py) 이관 및 에뮬레이터 최초 기동/리부트 직후 인게임 로딩 완전 돌파 연동
+#   1.13.7: 최초 실행 시 에뮬레이터 미기동 감지 및 자동 콜드 기동 무인화 피처 추가
+#   1.13.6: 에뮬레이터 콜드 리부트(Emulator Reboot) 기능 및 디스크 파일 연동 연속 오류 방지 가드 도입
+#   1.13.5: 일반 필드 상태 정체 시간 리셋 버그 수정 및 5분 필드 정체 시 앱 리셋 재시작 가드 장착
+#   1.13.4: 프로세스 자가 복구 시 게임 앱 강제 종료 및 Relaunch 세이프티 가드 도입
+#   1.13.3: 5분 타임아웃 세이프티 가드 도입 및 백스텝-전진/2번단추 사격 무한 교대식 복구 시퀀스 개편
+#   1.13.2: 범용 탈출 물리 백스텝-전진 복구 도입, 최후의 5회차 앱 리셋 가드 탑재, 최초 탈출 시간 누적 보존 패치
+#   1.13.1: 정식 릴리즈 - watchdog_monitor_loop 선언부 NameError 버그 해결 및 1.13.1 버전 일괄 동기화
+#   1.13.0-hotfix4: 핫픽스 적용 - 글로벌 제어판에 HEALING_LOOPS 변수 추가 및 제어판 최상단 이동, 상자 발견 시 힐링 유예 가드 장착
+#   1.13.0-hotfix3: 핫픽스 적용 - 던전 탈출 복귀 시 지연시간을 60초에서 안전 마진 10초로 최적화 단축
+#   1.13.0-hotfix2: 핫픽스 적용 - 기동 복구 진입 조건 판정에 상자, 여관, 세계지도, 마을 광장 앵커 보강
+#   1.13.0-hotfix1: 핫픽스 적용 - 로딩 정체 뒤로가기 생략 및 에러 팝업 시 클릭 스킵 후 즉각 재시작
+#   1.13.0: 마이너 버전업 - 게임 앱 자동 재시작 및 로딩/점검 복구 피처(restart_game_app, recover_app_startup) 구현 완료
+#   1.12.6: 여관 정비 시 멀티 레벨업 '다음' 팝업 처리 구현 및 실시간 타임스탬프 로깅 래퍼 함수 도입
+#   1.12.5: 탈출 정체 복구 카운트 리셋 오류 패치, 블랙박스 및 탈출 정지 최초 정체 시각 표기 추가 및 버전업
+#   1.12.4: 힐러방 딸피 암전 시 블라인드 고정좌표 힐 시퀀스 핫픽스 적용 및 버전 동기화
 #   1.12.3: 상자 자동 이동 완료 후 '열다' 발견 시 즉시 해제 함수 직접 호출하도록 정체 로직 버그 패치 및 버전업
 #   1.12.2: 4대 예외 패치, 자연 정렬(Natural Sort) 도입, 리드미 가이드 정정 및 버전 업그레이드
 #   1.12.1: 마이너 버전업 - 템플릿 디렉토리 구조 다각화(Worldmap, WolfCave, Vill_Isbelg, inn_sleep) 분리 및 동적 파일명 최적화
@@ -36,15 +110,6 @@ import time
 #   1.11.11: 프로젝트 구조 개편으로 인한 순수 소스코드 src/ 폴더 격리 이행 및 배치 파일 경로 고도화 (동기화)
 #   1.11.16: 미니게임 앵커 국소 크롭 스캔 범위(X: 57~187, Y: 227~317 마진 적용) 지정 및 임계값 0.70 상향 (동기화)
 #   1.11.16-hotfix1: 핫픽스 버전 동기화
-# ==============================================================================
-
-# ==============================================================================
-# ⚙️ [Daphne 마스터 글로벌 제어 세팅 변수 구역 - 진짜 최상단 제어판]
-# ==============================================================================
-# 💡 앞으로 주행 설정을 바꾸실 때는 오직 여기 "최상단 마디 1"의 숫자만 수정하시면 됩니다!
-LIMIT_DUNGEON_LOOPS = 2             # 🔄 [마을 회군 기준] 던전을 몇 바퀴 돌지 설정
-START_RUN_COUNT_OFFSET = 2          # 🚀 [초기 부팅 주회 카운트] 
-ENABLE_FIRST_COMBAT_SKILL = False   # ⚔️ [초기 전투 스킬 제어] (⚠️ 현재 미구현으로 추후 구현 예정이니 무조건 False로 고정해 주세요)
 # ==============================================================================
 
 # ==============================================================================
@@ -113,6 +178,7 @@ def find_screenshot_dir():
 
 def sync_screenshots_loop(session_start_ts, log_dir):
     import shutil
+    import json
     from datetime import datetime as dt_class
     
     screenshot_dir = find_screenshot_dir()
@@ -123,7 +189,15 @@ def sync_screenshots_loop(session_start_ts, log_dir):
     print(f"📸 [스크린샷 동기화] 백그라운드 동기화 감시 스레드 기동 완료 (경로: {screenshot_dir}, 주기: 30초)")
     
     copied_files = set()
-    
+    cache_file = os.path.join(log_dir, ".copied_screenshots.json")
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, "r", encoding="utf-8") as f:
+                copied_files = set(json.load(f))
+            print(f"📸 [스크린샷 동기화] 디스크 캐시에서 기존 복사 이력 {len(copied_files)}건 복원 완료.")
+        except Exception as e:
+            print(f"⚠️ [스크린샷 동기화] 캐시 로드 실패 (새로 생성): {e}")
+            
     while True:
         try:
             if os.path.exists(screenshot_dir):
@@ -168,10 +242,35 @@ def sync_screenshots_loop(session_start_ts, log_dir):
                                     
                             shutil.copy(item_path, dst_path)
                             copied_files.add(item_path)
+                            try:
+                                with open(cache_file, "w", encoding="utf-8") as f:
+                                    json.dump(list(copied_files), f, ensure_ascii=False, indent=2)
+                            except Exception as cache_err:
+                                pass
                             print(f"📸 [스크린샷 동기화] 새 스크린샷이 감지되어 로그 폴더로 카피되었습니다: {clean_name}")
         except Exception:
             pass
         time.sleep(30)
+
+# 🛡️ [Watchdog 락 감시 변수 및 함수 정의]
+last_heartbeat_time = time.time()
+
+def update_heartbeat():
+    global last_heartbeat_time
+    last_heartbeat_time = time.time()
+
+def watchdog_monitor_loop():
+    global last_heartbeat_time
+    print("🛡️ [Watchdog 감시자] 백그라운드 락(Lock) 감시 센서 기동 완료 (주기: 15초, 한계치: 120초)")
+    while True:
+        time.sleep(15)
+        try:
+            inactive_duration = time.time() - last_heartbeat_time
+            if inactive_duration > 120:
+                print(f"\n🚨🚨 [Watchdog 감시자 경보] 메인 스레드가 {int(inactive_duration)}초 동안 무반응 정체(락) 상태에 빠진 것을 인지했습니다.")
+                restart_process("Watchdog 감시자에 의한 메인 스레드 무반응(ADB 소켓 블로킹 등) 검출")
+        except Exception as watchdog_err:
+            print(f"⚠️ [Watchdog 오류] {watchdog_err}")
 
 def init_main_logger():
     log_dir = "logs"
@@ -203,6 +302,12 @@ def init_main_logger():
         sequence_num += 1
         
     sys.stdout = DoubleWriter(log_filename)
+    if sys.stdout.log:
+        sys.stdout.log.write("====================================================\n")
+        sys.stdout.log.write(f" Wizardry Daphne Antigravity Bot - Version {CURRENT_VERSION}\n")
+        sys.stdout.log.write(f" Log Created: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        sys.stdout.log.write("====================================================\n\n")
+        sys.stdout.log.flush()
     print(f"🚀 [사령탑 로그 엔진 가동] 초기 부팅부터 모든 대순환 루프 기록이 동시 백업됩니다: {log_filename}")
     
     # [스크린샷 동기화 스레드 및 Watchdog 락 감시 스레드 시작]
@@ -241,7 +346,8 @@ def print_daphne_global_settings():
     print("====================================================")
     print("⚙️ [Daphne 마스터 글로벌 제어 세팅 변수 구역 - 최상단 제어판 연동 완료]")
     print(f" -> 목표 주회 설정 수치: {LIMIT_DUNGEON_LOOPS}회 안전 고정")
-    print(f" -> 숏컷기반 스킬 예약 시스템 가동 여부: {ENABLE_FIRST_COMBAT_SKILL}")
+    print(f" -> 숏컷기반 스킬 예약 시스템 가동 여부: {bool(ENABLE_FIRST_COMBAT_SKILL)}")
+    print(f" -> 상자 개방 후 긴급 힐링 가동 여부: {bool(ENABLE_HEAL_AFTER_CHEST)}")
     print("====================================================")
 
 print_daphne_global_settings()
@@ -276,27 +382,270 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 
 sys.excepthook = handle_exception
 
-global_device = None
+def read_restart_counter():
+    flag_path = "restart_counter.txt"
+    if not os.path.exists(flag_path):
+        return 0
+    try:
+        with open(flag_path, "r", encoding="utf-8") as f:
+            return int(f.read().strip())
+    except:
+        return 0
 
-# 🛡️ [Watchdog 락 감시 변수 및 함수 정의]
-last_heartbeat_time = time.time()
+def write_restart_counter(val):
+    flag_path = "restart_counter.txt"
+    try:
+        with open(flag_path, "w", encoding="utf-8") as f:
+            f.write(str(val))
+    except:
+        pass
 
-def update_heartbeat():
-    global last_heartbeat_time
-    last_heartbeat_time = time.time()
-
-def watchdog_monitor_loop():
-    global last_heartbeat_time
-    print("🛡️ [Watchdog 감시자] 백그라운드 락(Lock) 감시 센서 기동 완료 (주기: 15초, 한계치: 120초)")
-    while True:
-        time.sleep(15)
+def clear_restart_counter():
+    flag_path = "restart_counter.txt"
+    if os.path.exists(flag_path):
         try:
-            inactive_duration = time.time() - last_heartbeat_time
-            if inactive_duration > 120:
-                print(f"\n🚨🚨 [Watchdog 감시자 경보] 메인 스레드가 {int(inactive_duration)}초 동안 무반응 정체(락) 상태에 빠진 것을 인지했습니다.")
-                restart_process("Watchdog 감시자에 의한 메인 스레드 무반응(ADB 소켓 블로킹 등) 검출")
-        except Exception as watchdog_err:
-            print(f"⚠️ [Watchdog 오류] {watchdog_err}")
+            os.remove(flag_path)
+            print("💾 [카운터 클리어] 정상 주행 돌입으로 연속 재시작 카운터 플래그 파일이 삭제되었습니다.")
+        except:
+            pass
+
+def reboot_emulator():
+    print("\n🖥️🚨 [에뮬레이터 콜드 리부트 작동] MuMu Player가 정지했거나 오프라인 상태입니다. 완전 리셋을 수행합니다!")
+    # 1. 윈도우 taskkill을 통해 모든 뮤뮤 플레이어 프로세스 강제 킬
+    print("      ➔ 🛑 MuMu Player 프로세스를 윈도우 상에서 강제 종료합니다...")
+    os.system("taskkill /f /im MuMuPlayer.exe")
+    os.system("taskkill /f /im MuMuNxMain.exe")
+    os.system("taskkill /f /im MuMuNxDevice.exe")
+    time.sleep(3.0)
+    
+    # 2. 윈도우 ADB 서버 리셋
+    os.system("adb kill-server")
+    time.sleep(1.0)
+    os.system("adb start-server")
+    
+    # 3. 뮤뮤 실행 파일 백그라운드로 실행
+    print(f"      ➔ 🚀 MuMu Player를 백그라운드 구동합니다: \"{MUMU_EXECUTABLE_PATH}\" -v {MUMU_VM_INDEX}")
+    try:
+        import subprocess
+        # 백그라운드로 실행하여 파이썬 스레드가 블락되지 않게 처리
+        subprocess.Popen([MUMU_EXECUTABLE_PATH, "-v", MUMU_VM_INDEX])
+    except Exception as ex_err:
+        print(f"❌ [에뮬레이터 실행 실패] {ex_err}")
+        
+    # 4. ADB 포트 연결 및 대기 루프 (최대 60초)
+    print("      ➔ ⏳ 에뮬레이터 부팅 및 ADB 포트 활성화를 대기합니다 (최대 60초)...")
+    start_wait = time.time()
+    connected = False
+    target_ports = ["16384", "16385", "5555"]
+    
+    while time.time() - start_wait < 60.0:
+        for port in target_ports:
+            os.system(f"adb connect 127.0.0.1:{port} > nul 2>&1")
+        time.sleep(5.0)
+        
+        try:
+            from ppadb.client import Client as AdbClient
+            client = AdbClient(host="127.0.0.1", port=5037)
+            devices = client.devices()
+            valid_device = None
+            for d in devices:
+                if d.get_state() == "device":
+                    valid_device = d
+                    break
+            if valid_device:
+                print(f"      ✅ ADB 연결 수립 완료! 디바이스 부팅 상태: {valid_device.get_state()}")
+                connected = True
+                break
+        except:
+            pass
+        print(f"      ⏳ 대기 중... ({int(time.time() - start_wait)}초 경과)")
+        
+    if not connected:
+        print("⚠️ [에뮬레이터 리부트 경고] 60초 내에 디바이스가 온라인 상태로 전환되지 않았습니다. 자가 재시작으로 제어를 계속합니다.")
+    else:
+        # 5. 게임 앱 Relaunch 격발
+        try:
+            from ppadb.client import Client as AdbClient
+            client = AdbClient(host="127.0.0.1", port=5037)
+            devices = client.devices()
+            valid_device = None
+            for d in devices:
+                if d.get_state() == "device":
+                    valid_device = d
+                    break
+            if valid_device:
+                print("      ➔ 🛑 jp.co.drecom.wizardry.daphne 게임 앱 강제 종료 및 Relaunch를 실행합니다.")
+                valid_device.shell("am force-stop jp.co.drecom.wizardry.daphne")
+                time.sleep(2.0)
+                valid_device.shell("monkey -p jp.co.drecom.wizardry.daphne -c android.intent.category.LAUNCHER 1")
+                time.sleep(5.0)
+        except Exception as app_err:
+            print(f"⚠️ [에뮬레이터 리부트 앱 실행 실패] {app_err}")
+
+def recover_app_startup(device):
+    print("🔮 [앱 기동 복구 시스템 작동] 로딩 및 인트로 팝업 극복 절차를 시작합니다.")
+    
+    t_re_retry = load_template("templates/reboot/retry.png")
+    t_re_download = load_template("templates/reboot/start_download.png")
+    t_re_maintenance = load_template("templates/reboot/maintenance.png")
+    t_re_maintain_title = load_template("templates/reboot/maintain_to_title.png")
+    t_title_notice = load_template("templates/reboot/title_notice.png")
+    t_title_notice_close = load_template("templates/reboot/title_notice_close.png")
+    t_title_warning = load_template("templates/reboot/title_warning.png")
+
+    t_yeolda = load_template("templates/yeolda_clean.png")
+    t_combat_in = load_template("templates/combat_in.png")
+    t_combat_slow = load_template("templates/combat_slow.png")
+    t_net_error = load_template("templates/anchor_network_error.png")
+    t_net_retry = load_template("templates/btn_network_retry.png")
+    t_error_to_title = load_template("templates/Error_to_title.png")
+    
+    t_btn_resurrect = load_dead_template("templates/btn_resurrect.png")
+    t_incombat_dead = load_template("templates/InCombat_dead.png")
+    t_anchor_dead = load_dead_template("templates/anchor_dead_screen.png")
+    
+    t_inn_title = load_template("templates/inn_sleep/inn_title.png")
+    t_village_anchor = load_template("templates/Vill_Isbelg/village_anchor.png")
+    t_world_map = load_template("templates/Worldmap/world_map_anchor.png")
+    t_dungeon_sel = load_template("templates/WolfCave/dungeon_select.png")
+    t_field = load_grayscale_template("templates/Field/field_anchor.png")
+    t_get_item = load_template("templates/get_item.png")
+    
+    counter = 0
+    max_try = 35
+    
+    while counter < max_try:
+        try:
+            raw_cap = device.screencap()
+            if raw_cap is None:
+                time.sleep(0.5)
+                continue
+            img_np = np.array(Image.open(io.BytesIO(raw_cap)))
+        except:
+            time.sleep(0.5)
+            continue
+            
+        # 💀 [주인공 사망 부활 복구]
+        if check_template_present(img_np, t_btn_resurrect, 0.60) or (check_template_present(img_np, t_anchor_dead, 0.65) if t_anchor_dead is not None else False):
+            print("💀 [기동 복구 가드] 전멸/주인공 사망 화면이 식별되었습니다. 부활을 집도합니다.")
+            if find_and_click_template(device, img_np, t_btn_resurrect, 0.60):
+                time.sleep(1.0)
+            else:
+                device.shell("input tap 720 1200")
+                time.sleep(1.0)
+            device.shell("input tap 705 1241")
+            print("⏳ 부활 암전 연출 대기... 무조건 10초간 제어를 홀딩합니다.")
+            time.sleep(10.0)
+            
+            try:
+                import dungeon_bot
+                dungeon_bot.need_heal = True
+                print("💊 [기동 복구 가드] 부활 성공. dungeon_bot.need_heal = True 설정 완료.")
+            except Exception as e:
+                print(f"⚠️ [기동 복구 가드] need_heal 설정 실패: {e}")
+            continue
+
+        # 💀 [아군 사망 부활 복구]
+        if check_template_present(img_np, t_incombat_dead, 0.75):
+            print("💀 [기동 복구 가드] 아군 사망 앵커가 포착되었습니다. 1초 간격 5회 부활 연타를 주입합니다.")
+            time.sleep(1.0)
+            import random
+            for i in range(5):
+                rx = 640 + random.randint(0, 160)
+                ry = 1200 + random.randint(0, 160)
+                print(f"  👉 부활 시도 ({i+1}/5) - 터치 좌표: ({rx}, {ry})")
+                device.shell(f"input tap {rx} {ry}")
+                time.sleep(1.0)
+                
+            try:
+                import dungeon_bot
+                dungeon_bot.need_heal = True
+                print("💊 [기동 복구 가드] 부활 성공. dungeon_bot.need_heal = True 설정 완료.")
+            except Exception as e:
+                print(f"⚠️ [기동 복구 가드] need_heal 설정 실패: {e}")
+            continue
+            
+        if (check_field_anchor_present(img_np, t_field, 0.62) or 
+            check_template_present(img_np, t_dungeon_sel, 0.70) or 
+            get_combat_match_score(img_np, t_combat_in) > 0.80 or 
+            get_combat_match_score(img_np, t_combat_slow) > 0.80 or
+            check_template_present(img_np, t_yeolda, 0.65) or
+            check_template_present(img_np, t_get_item, 0.65) or
+            check_template_present(img_np, t_inn_title, 0.83) or
+            check_template_present(img_np, t_world_map, 0.75) or
+            check_template_present(img_np, t_village_anchor, 0.70)):
+            print("✨ [앱 기동 복구 성공] 인게임 화면(필드/전투/던전선택/상자/여관/세계지도/마을 등) 진입 성공! 매크로를 복구합니다.")
+            return True
+            
+        if check_template_present(img_np, t_re_maintenance, 0.70):
+            print("🚨 [점검 경고] 점검 메시지 감지! 5분(300초) 대기 모드로 돌입합니다.")
+            time.sleep(300.0)
+            print("⏳ 5분 대기 완료. 타이틀 이동 버튼 터치를 시도합니다.")
+            find_and_click_template(device, img_np, t_re_maintain_title, 0.70)
+            time.sleep(5.0)
+            counter = 0
+            continue
+            
+        if check_template_present(img_np, t_re_maintain_title, 0.70):
+            print("👉 [점검 경고] 타이틀 이동(점검) 버튼 감지! 즉시 클릭합니다.")
+            find_and_click_template(device, img_np, t_re_maintain_title, 0.70)
+            time.sleep(3.0)
+            continue
+            
+        if check_template_present(img_np, t_re_download, 0.70):
+            print("📥 [리소스 다운로드] 다운로드 확인 버튼 감지! 즉시 터치합니다.")
+            find_and_click_template(device, img_np, t_re_download, 0.70)
+            time.sleep(5.0)
+            continue
+            
+        if check_template_present(img_np, t_re_retry, 0.70):
+            print("🌐 [네트워크 재시도] 에러 재시도 버튼 감지! 즉시 터치합니다.")
+            find_and_click_template(device, img_np, t_re_retry, 0.70)
+            time.sleep(3.0)
+            continue
+
+        if check_template_present(img_np, t_title_notice, 0.75):
+            print("📢 [공지 가드] 기동 중 공지사항 팝업 포착! '닫기' 단추를 터치합니다.")
+            if find_and_click_template(device, img_np, t_title_notice_close, 0.70):
+                print("      🎯 'title_notice_close' 앵커 좌표 조준 타격 성공.")
+            else:
+                device.shell("input tap 540 2360")
+            time.sleep(3.0)
+            continue
+
+        if check_template_present(img_np, t_title_warning, 0.75):
+            print("⚠️ [주의 가드] 게임 최초 기동 '주의' 경고 화면 포착! 구석 터치로 진행을 격발합니다.")
+            device.shell("input tap 10 10")
+            time.sleep(3.0)
+            continue
+
+        if check_template_present(img_np, t_error_to_title, 0.70):
+            print("👉 [타이틀 복귀 확인] 'Error_to_title.png' 감지! 즉시 탭합니다.")
+            find_and_click_template(device, img_np, t_error_to_title, 0.70)
+            time.sleep(3.0)
+            continue
+
+        if check_template_present(img_np, t_net_error, 0.75):
+            print("🌐 [인게임 통신 에러] 기존 네트워크 에러 감지! 재시도 클릭.")
+            net_coords = find_and_get_coords_main(img_np, t_net_retry, 0.70)
+            if net_coords: device.shell(f"input tap {net_coords[0]} {net_coords[1]}")
+            else: device.shell("input tap 1380 1720")
+            time.sleep(4.0)
+            continue
+
+        if counter >= 4:
+            print(f"💤 [스킵 가드] 로딩/타이틀 정체 감지 ({counter}/{max_try}). [1, 1] 터치를 주입합니다.")
+            device.shell("input tap 1 1")
+            time.sleep(3.5)
+        else:
+            time.sleep(2.0)
+            
+        counter += 1
+        
+    print("⚠️ [앱 기동 복구 실패] 제한 시간 내 인게임 진입에 실패했습니다. 강제 앱 재시작을 다시 시도합니다.")
+    return False
+
+global_device = None
 
 def take_screencap_backup(device, prefix="start"):
     try:
@@ -313,6 +662,20 @@ def take_screencap_backup(device, prefix="start"):
 def restart_process(reason):
     print(f"\n🔄 [프로세스 자가 복구 가동] 사유: {reason}")
     
+    # 💾 디스크 파일 연동 연속 재시작 횟수 누적
+    consecutive_restart_count = read_restart_counter() + 1
+    print(f"      ➔ 💾 [연속 재시작 누적 카운트]: {consecutive_restart_count}회")
+    
+    # 조건 A: 연속 2회 이상 재시작 시도 시 즉시 에뮬레이터 콜드 리부트 단행
+    if ENABLE_EMULATOR_REBOOT and consecutive_restart_count >= 2:
+        print(f"      🚨 [연속 재시작 한계 도달] 재시작 시도가 {consecutive_restart_count}회 연속 격발되었습니다. 에뮬레이터 완전 재시작으로 강제 극복합니다.")
+        reboot_emulator()
+        clear_restart_counter()
+        print("      ➔ 🚀 파이썬 프로세스를 전격 재시작합니다.")
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+        return
+
+    # 일반 자가 복구 전개 (카운트 1회차인 경우)
     print("      ➔ 🛠️ 윈도우 ADB 서버 리셋 후 연결 재수립을 개시합니다...")
     os.system("adb kill-server")
     time.sleep(1.0)
@@ -322,19 +685,57 @@ def restart_process(reason):
     os.system("adb connect 127.0.0.1:5555")
     time.sleep(4.0)
     
-    # 📸 [재시작 직전 자동 스샷] 정상 복구된 ADB 연결 상태에서 캡처 백업을 수행
+    # 디바이스 온라인 상태 검증
+    device_online = False
+    device = None
     try:
         client = AdbClient(host="127.0.0.1", port=5037)
         device = client.device("127.0.0.1:5555")
         if not device: device = client.device("127.0.0.1:16384")
         if not device: device = client.device("127.0.0.1:16385")
-        if device:
+        if device and device.get_state() == "device":
+            device_online = True
+    except:
+        pass
+        
+    # 조건 B: ADB 연결을 뚫었음에도 디바이스가 존재하지 않거나 오프라인인 경우 즉각 리부트
+    if ENABLE_EMULATOR_REBOOT and not device_online:
+        print("      🚨 [디바이스 오프라인 감지] ADB 연결 수립 결과 디바이스가 오프라인이거나 감지되지 않습니다. 즉시 에뮬레이터 콜드 리부트를 수행합니다.")
+        reboot_emulator()
+        clear_restart_counter()
+        print("      ➔ 🚀 파이썬 프로세스를 전격 재시작합니다.")
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+        return
+
+    # 정상 복구 시나리오 진행 (온라인 디바이스 확보)
+    if device_online:
+        try:
+            # 🛑 [안전 가드]: 파이썬 리셋 전 먹통이 된 게임 앱을 강제 종료 후 런처 재기동
+            print("      ➔ 🛑 jp.co.drecom.wizardry.daphne 게임 앱 강제 종료 후 재기동을 처리합니다.")
+            device.shell("am force-stop jp.co.drecom.wizardry.daphne")
+            time.sleep(3.0)
+            device.shell("monkey -p jp.co.drecom.wizardry.daphne -c android.intent.category.LAUNCHER 1")
+            
+            # 🖥️ [v1.13.8 연동] 앱 신규 실행 완료 대기 및 기동 복구 수행
+            print("⏳ 초기 로딩을 위해 15초간 대기합니다...")
+            time.sleep(15.0)
+            print("👉 초기 로딩 대기 완료. 최초 [1, 1] 터치를 격발합니다.")
+            device.shell("input tap 1 1")
+            time.sleep(2.0)
+            
+            # recover_app_startup을 가동하여 안전 진입
+            recover_app_startup(device)
+            
             take_screencap_backup(device, "restart")
             time.sleep(1.5) # 디스크 동기화 대기 마진
-        else:
-            print("⚠️ [자가 복구 스샷 실패] 리셋 후 디바이스 객체 획득 불가")
-    except Exception as f9_err:
-        print(f"⚠️ [자가 복구 스샷 실패] {f9_err}")
+        except Exception as f9_err:
+            print(f"⚠️ [자가 복구 기동/스샷 실패] {f9_err}")
+            
+        # 연속 재시작 카운터를 텍스트 파일에 안전 저장
+        write_restart_counter(consecutive_restart_count)
+    else:
+        print("⚠️ [자가 복구 실패] 리셋 후 디바이스 객체 획득 불가")
+        write_restart_counter(consecutive_restart_count)
             
     print("      ➔ 🚀 파이썬 프로세스를 전격 재시작합니다.")
     os.execv(sys.executable, [sys.executable] + sys.argv)
@@ -369,6 +770,12 @@ def load_template(file_path):
         gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
         _, thresh = cv2.threshold(gray, 160, 255, cv2.THRESH_BINARY)
         return thresh
+    except: return None
+
+def load_grayscale_template(file_path):
+    if not os.path.exists(file_path): return None
+    try:
+        return cv2.imread(file_path, cv2.IMREAD_GRAYSCALE)
     except: return None
 
 def load_dead_template(file_path):
@@ -417,6 +824,27 @@ def check_template_present(img_np, thresh_temp, threshold_val=0.70):
     _, max_val, _, _ = cv2.minMaxLoc(result)
     return max_val > threshold_val
 
+def check_template_present_in_roi(img_np, thresh_temp, x1, x2, y1, y2, threshold_val=0.70):
+    if thresh_temp is None or img_np is None: return False
+    h_img, w_img = img_np.shape[:2]
+    h_temp, w_temp = thresh_temp.shape[:2]
+    
+    scale_x, scale_y = w_img / 1440.0, h_img / 2560.0
+    rx1, rx2 = int(x1 * scale_x), int(x2 * scale_x)
+    ry1, ry2 = int(y1 * scale_y), int(y2 * scale_y)
+    
+    if rx2 <= rx1 or ry2 <= ry1 or rx2 > w_img or ry2 > h_img: return False
+    crop = img_np[ry1:ry2, rx1:rx2]
+    
+    h_crop, w_crop = crop.shape[:2]
+    if h_crop < h_temp or w_crop < w_temp: return False
+    
+    gray_crop = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY)
+    _, thresh_crop = cv2.threshold(gray_crop, 160, 255, cv2.THRESH_BINARY)
+    result = cv2.matchTemplate(thresh_crop, thresh_temp, cv2.TM_CCOEFF_NORMED)
+    _, max_val, _, _ = cv2.minMaxLoc(result)
+    return max_val > threshold_val
+
 def get_match_score(img_np, thresh_temp):
     if thresh_temp is None or img_np is None: return 0.0
     h_img, w_img = img_np.shape[:2]
@@ -428,6 +856,62 @@ def get_match_score(img_np, thresh_temp):
     result = cv2.matchTemplate(thresh_img, thresh_temp, cv2.TM_CCOEFF_NORMED)
     _, max_val, _, _ = cv2.minMaxLoc(result)
     return max_val
+
+def check_field_anchor_present(img_np, template, threshold_val=0.65):
+    if template is None or img_np is None: return False
+    h, w = img_np.shape[:2]
+    scale_x, scale_y = w / 1440.0, h / 2560.0
+    x1, x2 = int(1250 * scale_x), int(1420 * scale_x)
+    y1, y2 = int(380 * scale_y), int(530 * scale_y)
+    if x2 <= x1 or y2 <= y1 or x2 > w or y2 > h: return False
+    crop = img_np[y1:y2, x1:x2]
+    
+    h_crop, w_crop = crop.shape[:2]
+    h_temp, w_temp = template.shape[:2]
+    if h_crop < h_temp or w_crop < w_temp: return False
+    
+    gray_crop = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY)
+    result = cv2.matchTemplate(gray_crop, template, cv2.TM_CCOEFF_NORMED)
+    _, max_val, _, _ = cv2.minMaxLoc(result)
+    return max_val > threshold_val
+
+def get_field_match_score(img_np, thresh_temp):
+    if thresh_temp is None or img_np is None: return 0.0
+    h_img, w_img = img_np.shape[:2]
+    scale_x, scale_y = w_img / 1440.0, h_img / 2560.0
+    x1, x2 = int(1250 * scale_x), int(1420 * scale_x)
+    y1, y2 = int(380 * scale_y), int(530 * scale_y)
+    if x2 <= x1 or y2 <= y1 or x2 > w_img or y2 > h_img: return 0.0
+    crop = img_np[y1:y2, x1:x2]
+    
+    h_crop, w_crop = crop.shape[:2]
+    h_temp, w_temp = thresh_temp.shape[:2]
+    if h_crop < h_temp or w_crop < w_temp: return 0.0
+    
+    gray_crop = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY)
+    result = cv2.matchTemplate(gray_crop, thresh_temp, cv2.TM_CCOEFF_NORMED)
+    _, max_val, _, _ = cv2.minMaxLoc(result)
+    return max_val
+
+def get_combat_match_score(img_np, template):
+    if template is None or img_np is None: return 0.0
+    h, w = img_np.shape[:2]
+    scale_x, scale_y = w / 1440.0, h / 2560.0
+    x1, x2 = int(0 * scale_x), int(200 * scale_x)
+    y1, y2 = int(1600 * scale_y), int(1800 * scale_y)
+    if x2 <= x1 or y2 <= y1 or x2 > w or y2 > h: return 0.0
+    crop = img_np[y1:y2, x1:x2]
+    return get_match_score(crop, template)
+
+def get_auto_btn_match_score(img_np, template):
+    if template is None or img_np is None: return 0.0
+    h, w = img_np.shape[:2]
+    scale_x, scale_y = w / 1440.0, h / 2560.0
+    x1, x2 = int(1250 * scale_x), int(1440 * scale_x)
+    y1, y2 = int(1600 * scale_y), int(1800 * scale_y)
+    if x2 <= x1 or y2 <= y1 or x2 > w or y2 > h: return 0.0
+    crop = img_np[y1:y2, x1:x2]
+    return get_match_score(crop, template)
 
 def find_and_get_coords_main(img_np, thresh_temp, threshold_val=0.68):
     if thresh_temp is None or img_np is None: return None
@@ -462,7 +946,24 @@ def find_and_click_template(device, img_np, thresh_temp, threshold_val=0.70):
 
 def start_grand_orchestrator():
     device = connect_mumu()
-    if not device: return
+    if not device:
+        if ENABLE_EMULATOR_REBOOT:
+            print("⚠️ [ADB 연결 실패] 에뮬레이터가 구동 중이지 않은 것으로 식별되었습니다. 에뮬레이터 자동 실행 가드를 격발합니다.")
+            reboot_emulator()
+            device = connect_mumu()
+            if not device:
+                print("❌ [초기 부팅 실패] 에뮬레이터 자동 실행 후에도 연결 수립에 실패했습니다. 프로그램을 종료합니다.")
+                return
+            
+            # 🖥️ [v1.13.8 연동] 에뮬레이터 콜드 부팅 성공 직후 인게임 완전 복구 진입 시퀀스 가동
+            print("🔄 [에뮬레이터 콜드 부팅 완료] 인게임 완전 진입을 위해 초기 로딩 대기 및 복구 시퀀스를 수행합니다.")
+            time.sleep(15.0)
+            device.shell("input tap 1 1")
+            time.sleep(2.0)
+            recover_app_startup(device)
+        else:
+            print("❌ [초기 부팅 실패] 에뮬레이터 연결에 실패하였으며, 자동 재기동 옵션이 비활성화 상태라 프로그램을 종료합니다.")
+            return
     
     # 📸 [초기 구동 스샷 자동화] 수동 시작 시점의 화면 스크린샷 촬영
     take_screencap_backup(device, "start")
@@ -480,7 +981,7 @@ def start_grand_orchestrator():
     t_go_dungeon = load_template("templates/Worldmap/Cave_Wolf_btn.png")
     t_village_to_inn = load_template("templates/Vill_Isbelg/village_to_inn_btn.png")
     
-    t_field = load_template("templates/field_anchor.png")
+    t_field = load_grayscale_template("templates/Field/field_anchor.png")
     t_yeolda = load_template("templates/yeolda_clean.png")
     t_get_item = load_template("templates/get_item.png")
     
@@ -517,6 +1018,7 @@ def start_grand_orchestrator():
     last_action_time = time.time()
     last_logged_status = ""
     first_stuck_time_str = ""
+    first_stuck_start_time = None
     global_skill_setup_completed = False
 
     # 🛑 [Daphne 마스터 섀도우 통화면 동결 감지 엔진 변수]
@@ -524,12 +1026,16 @@ def start_grand_orchestrator():
     last_freeze_check_time = time.time()
 
     print("\n====================================================")
-    print("위저드리 다프네 [그랜드 마스터 순환 컨트롤러 v1.11.9] 가동")
+    print(f"위저드리 다프네 [그랜드 마스터 순환 컨트롤러 v{CURRENT_VERSION}] 가동")
     print(f" -> 목표 주회 설정 수치: {LIMIT_DUNGEON_LOOPS}회 안전 고정")
-    print(f" -> 숏컷기반 스킬 예약 시스템 가동 여부: {ENABLE_FIRST_COMBAT_SKILL}")
+    print(f" -> 숏컷기반 스킬 예약 시스템 가동 여부: {bool(ENABLE_FIRST_COMBAT_SKILL)}")
     print("====================================================")
 
+    # 🔮 [최초 구동 무인 안심 가드] 에뮬리부트/초기실행 후 타이틀/공지사항/주의 화면 돌파 강제 가동
+    recover_app_startup(device)
+
     cap_fail_counter = 0
+    resolution_fail_counter = 0  # 🚨 [v1.14.0-hotfix3] 해상도 미달 가드 연속 카운터 추가
     while True:
         update_heartbeat()
         try:
@@ -548,10 +1054,33 @@ def start_grand_orchestrator():
             continue
 
         height, width = img_np.shape[:2]
+        
+        # 🖥️ [가로 화면/안드로이드 홈 복구 가드] 에뮬레이터가 가로 상태로 기동된 경우 앱을 실행해 세로 모드 회전을 유도
+        if height < width:
+            resolution_fail_counter += 1
+            print(f"🖥️ [가로 화면 감지] 현재 화면이 가로 상태({width}x{height})입니다. 위저드리 다프네 앱 기동(Relaunch)을 강제 주입하여 세로 화면 전환을 시도합니다. ({resolution_fail_counter}/30)")
+            if resolution_fail_counter >= 30:
+                restart_process(f"main 내 가로 화면 정체 30초 지속 감지 (화면 크기: {width}x{height})")
+                resolution_fail_counter = 0
+            try:
+                device.shell("am force-stop jp.co.drecom.wizardry.daphne")
+                time.sleep(1.5)
+                device.shell("monkey -p jp.co.drecom.wizardry.daphne -c android.intent.category.LAUNCHER 1")
+                time.sleep(4.0)
+            except Exception as launch_err:
+                print(f"⚠️ 가로 화면 앱 실행 실패: {launch_err}")
+            continue
+
         if height < 2560 or width < 1440:
-            print(f"⚠️ [main 해상도 미달 가드] 현재 화면 크기({width}x{height})가 기준 해상도(1440x2560) 미만입니다. 1.0초 대기합니다.")
+            resolution_fail_counter += 1
+            print(f"⚠️ [main 해상도 미달 가드] 현재 화면 크기({width}x{height})가 기준 해상도(1440x2560) 미만입니다. 1.0초 대기합니다. ({resolution_fail_counter}/30)")
+            if resolution_fail_counter >= 30:
+                restart_process(f"main 내 해상도 미달 상태 30초 지속 감지 (화면 크기: {width}x{height})")
+                resolution_fail_counter = 0
             time.sleep(1.0)
             continue
+        else:
+            resolution_fail_counter = 0  # 정상 해상도 검출 시 카운터 리셋
 
         mean_brightness = np.mean(img_np)
         if mean_brightness < 5.0:
@@ -560,6 +1089,11 @@ def start_grand_orchestrator():
             continue
 
         current_time = time.time()
+        
+        # 정체 해소 감지 시 타임아웃 초기화
+        if current_time - last_action_time <= 30.0:
+            first_stuck_time_str = ""
+            first_stuck_start_time = None
 
         # ======================================================================
         # 👑 [Daphne 완성형 엔진: 1분 30초 전체 화면 동결 시 인지 복구 레이더 강제 부팅]
@@ -638,7 +1172,14 @@ def start_grand_orchestrator():
             else:
                 if not first_stuck_time_str:
                     first_stuck_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                print(f"\n⚠️ [🚨 사령탑 블랙박스 경고] 아웃게임 상태 무반응 정체 중... (최초 정체 발생 시각: {first_stuck_time_str})")
+                    first_stuck_start_time = time.time()
+                
+                stuck_duration = time.time() - first_stuck_start_time
+                print(f"\n⚠️ [🚨 사령탑 블랙박스 경고] 아웃게임 상태 무반응 정체 중... (최초 정체 발생 시각: {first_stuck_time_str}, 경과: {int(stuck_duration)}초)")
+                
+                # 🖥️ [v1.13.7 추가] 사령탑 아웃게임 5분 이상 정체 시 자동 재부팅 세이프티 가드
+                if stuck_duration >= 300.0:
+                    raise RuntimeError(f"사령탑 아웃게임 정체 한계 초과: {int(stuck_duration)}초 동안 아웃게임 상태에 머물러 강제 앱/에뮬레이터 리셋을 수행합니다.")
                 
             print("🔍 [화면 분석 엔진] 보유 중인 모든 마스터 앵커의 매칭 신뢰도를 전수조사합니다...")
             
@@ -667,13 +1208,13 @@ def start_grand_orchestrator():
             score_dung_sel = get_match_score(img_np, t_dungeon_sel)
             score_inn = get_match_score(img_np, t_inn_title)
             
-            score_field = get_match_score(img_np, t_field)
+            score_field = get_field_match_score(img_np, t_field)
             score_yeolda = get_match_score(img_np, t_yeolda)
             score_loot = get_match_score(img_np, t_get_item)
             score_heal_close = get_match_score(img_np, t_heal_close)
             
-            score_combat_in = get_match_score(img_np, t_combat_in)
-            score_combat_slow = get_match_score(img_np, t_combat_slow)
+            score_combat_in = get_combat_match_score(img_np, t_combat_in)
+            score_combat_slow = get_combat_match_score(img_np, t_combat_slow)
             score_combat = max(score_combat_in, score_combat_slow)
             
             is_mini_screen = chest_opener.is_minigame_screen(img_np, height, width)
@@ -775,11 +1316,11 @@ def start_grand_orchestrator():
                 
                 run_skill_logic = ENABLE_FIRST_COMBAT_SKILL and (not global_skill_setup_completed)
                 try:
-                    exit_by_user, skill_ok = dungeon_bot.start_main_macro(device, run_skill_logic)
+                    exit_by_user, skill_ok = dungeon_bot.start_main_macro(device, run_skill_logic, HEALING_LOOPS, bool(ENABLE_HEAL_AFTER_CHEST), healer_slot=HEALER_SLOT, masked_adventurer_slot=MASKED_ADVENTURER_SLOT)
                     if skill_ok:
                         global_skill_setup_completed = True  
                     if exit_by_user: 
-                        last_action_time = time.time() + 30.0 
+                        last_action_time = time.time() - 20.0 
                     else: 
                         last_action_time = time.time()
                 except Exception as bot_err:
@@ -795,7 +1336,6 @@ def start_grand_orchestrator():
                     else: device.shell("input tap 713 273")
                 time.sleep(2.0)
 
-            last_action_time = time.time()
             continue
 
         if check_template_present(img_np, t_dungeon_sel, 0.83):
@@ -804,16 +1344,37 @@ def start_grand_orchestrator():
                 last_action_time = time.time()
                 last_logged_status = "DUNGEON_SEL"
             if dungeon_run_count < LIMIT_DUNGEON_LOOPS:
-                print(f"📋 [던전선택] 현재 주회 카운트 ({dungeon_run_count}/{LIMIT_DUNGEON_LOOPS}). 지하 1층으로 진입합니다.")
-                if find_and_click_template(device, img_np, t_enter_dungeon, 0.70):
+                # 2층 활성화 감지를 위해 위쪽 격리 ROI 내 지하 1층 버튼 유무 판정 (Y:1200~1320)
+                is_b2_active = check_template_present_in_roi(img_np, t_enter_dungeon, 1100, 1380, 1200, 1320, 0.75)
+                target_floor = DUNGEON_FLOOR
+                click_success = False
+                
+                if is_b2_active:
+                    print(f"📋 [던전선택] 현재 지하 2층 버튼이 활성화되어 있습니다. (목표: {target_floor}층)")
+                    if target_floor == 2:
+                        print("👉 [던전선택] 지하 2층 고정 좌표 (1239, 1411) 터치 주입")
+                        device.shell("input tap 1239 1411")
+                        click_success = True
+                    else:
+                        print("👉 [던전선택] 지하 1층 고정 좌표 (1239, 1267) 터치 주입")
+                        device.shell("input tap 1239 1267")
+                        click_success = True
+                else:
+                    print("📋 [던전선택] 현재 지하 1층만 활성화되어 있습니다.")
+                    print("👉 [던전선택] 지하 1층 고정 좌표 (1239, 1411) 터치 주입")
+                    device.shell("input tap 1239 1411")
+                    click_success = True
+                
+                if click_success:
                     time.sleep(5.0)
                     run_skill_logic = ENABLE_FIRST_COMBAT_SKILL and (not global_skill_setup_completed)
                     try:
-                        exit_by_user, skill_ok = dungeon_bot.start_main_macro(device, run_skill_logic)
+                        exit_by_user, skill_ok = dungeon_bot.start_main_macro(device, run_skill_logic, HEALING_LOOPS, bool(ENABLE_HEAL_AFTER_CHEST), healer_slot=HEALER_SLOT, masked_adventurer_slot=MASKED_ADVENTURER_SLOT)
                         if skill_ok: global_skill_setup_completed = True
-                        if exit_by_user: last_action_time = time.time() + 30.0
+                        if exit_by_user: last_action_time = time.time() - 20.0
                         else: last_action_time = time.time() 
                         dungeon_run_count += 1
+                        clear_restart_counter()
                         is_fully_healed = False 
                     except Exception as bot_err:
                         restart_process(f"던전 진입 시퀀스 중 ADB 통신 치명적 예외 발생: {bot_err}")
@@ -877,6 +1438,7 @@ def start_grand_orchestrator():
                 restart_process(f"여관 루프 숙박 중 ADB 통신 치명적 예외 발생: {inn_err}")
             is_fully_healed = True  
             dungeon_run_count = 0   
+            clear_restart_counter()
             last_action_time = time.time()
             time.sleep(1.0)
             continue
@@ -893,4 +1455,12 @@ if __name__ == "__main__":
         err_msg = f"\n💀💀 [🚨 메인 오케스트레이터 치명적 예외 감지 시간: {error_time}] 💀💀\n" + "".join(tb_lines)
         sys.stdout.write(err_msg)
         sys.stdout.flush()
-        raise err
+        
+        print("🔄 [크래시 복구 가드] 프로그램 종료를 차단하고 10초 대기 후 자가 복구 프로세스를 격발합니다.")
+        time.sleep(10.0)
+        try:
+            restart_process(f"시스템 최상단 크래시 복구 격발: {err}")
+        except Exception as rst_err:
+            print(f"❌ [복구 프로세스 격발 실패] {rst_err}. 강제 프로세스 전격 재시작을 단행합니다.")
+            import os, sys
+            os.execv(sys.executable, [sys.executable] + sys.argv)

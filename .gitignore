@@ -3,6 +3,7 @@ Thumbs.db
 .DS_Store
 __pycache__/
 *.pyc
+temp
 
 # 빌드 릴리즈 배포용 폴더 제외 (깃허브 Releases 탭 배포로 대체)
 releases/
@@ -12,3 +13,9 @@ logs/
 
 # 분석 전용 외부 소스코드 제외
 wvd-master/
+
+# 개발 중인 폴더 및 임시 메모
+dev/
+image_matching_discussion.txt
+*새대화*.txt
+

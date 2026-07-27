@@ -1,8 +1,31 @@
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.12.3
-# - 최근 수정일: 2026-06-27 00:25
+# - 현재 버전: 1.14.1-hotfix5
+# - 최근 수정일: 2026-07-17 14:44
 # - 수정 기록:
+#   1.14.1-hotfix5: 여관 루프 정체 방지 45초 Watchdog 가드 탑재 및 1:1 이진화 매치 적용
+#   1.13.20: 버전 동기화
+#   1.13.19-hotfix2: 버전 동기화
+#   1.13.19-hotfix1: 버전 동기화
+#   1.13.19: 버전 동기화
+#   1.13.18: 버전 동기화
+#   1.13.17: 버전 동기화
+#   1.13.16: 버전 동기화
+#   1.13.7: 버전 동기화
+#   1.13.6: 버전 동기화
+#   1.13.5: 버전 동기화
+#   1.13.4: 버전 동기화
+#   1.13.3: 버전 동기화
+#   1.13.2: 버전 동기화
+#   1.13.1: 버전 동기화
+#   1.13.0-hotfix4: 핫픽스 버전 동기화
+#   1.13.0-hotfix3: 핫픽스 버전 동기화
+#   1.13.0-hotfix2: 핫픽스 버전 동기화
+#   1.13.0-hotfix1: 핫픽스 버전 동기화
+#   1.13.0: 마이너 버전 동기화
+#   1.12.6: 여관 정비 시 멀티 레벨업 '다음' 팝업 처리 구현 및 실시간 타임스탬프 로깅 래퍼 함수 도입
+#   1.12.5: 버전 동기화
+#   1.12.4: 버전 동기화
 #   1.12.3: 버전 동기화
 #   1.12.2: 버전 동기화
 #   1.12.1: 마이너 버전업 - 템플릿 디렉토리 구조 다각화(Worldmap, WolfCave, Vill_Isbelg, inn_sleep) 분리 및 동적 파일명 최적화
@@ -22,11 +45,21 @@ import cv2
 import numpy as np
 from PIL import Image
 
+def print_log(msg):
+    import datetime
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if msg.startswith("\n"):
+        print(f"\n[{now_str}] {msg[1:]}")
+    elif msg.endswith("\n"):
+        print(f"[{now_str}] {msg[:-1]}\n")
+    else:
+        print(f"[{now_str}] {msg}")
+
 def safe_device_shell(device, command):
     try:
         return device.shell(command)
     except Exception as e:
-        print(f"\n🌐⚠️ [inn_manager 소켓 단절] 윈도우 ADB 통신 장애 감지: {e}")
+        print_log(f"🌐⚠️ [inn_manager 소켓 단절] 윈도우 ADB 통신 장애 감지: {e}")
         raise e
 
 def check_template_present(img_np, thresh_temp, threshold_val=0.70):
@@ -77,7 +110,7 @@ def run_inn_sleep_sequence(device):
     [여관 독립 정비 모듈 - 레벨업 좌하단 닫기 픽스 사양]
     로비 진입 상태에서 호출되어 숙박/기상/레벨업 스킵 후 퇴장까지 전담합니다.
     """
-    print("\n💤 [inn_manager] 여관 자동 숙박 시퀀스를 가동합니다.")
+    print_log("\n💤 [inn_manager] 여관 자동 숙박 시퀀스를 가동합니다.")
     
     # 도장 로드
     t_inn_title = load_template("templates/inn_sleep/inn_title.png")
@@ -96,11 +129,18 @@ def run_inn_sleep_sequence(device):
     
     # 💡 [구조 교정] Daphne 팩트체크: 레벨업 창은 우하단 '다음'이 아니라 좌하단 '닫기' 버튼이 주범!
     t_btn_levelup_close = load_template("templates/inn_sleep/levelup_close_btn.png")
+    t_btn_levelup_next = load_template("templates/inn_sleep/levelup_next_btn.png")
 
     is_fully_healed = False
     fail_safe_counter = 0
+    last_action_time = time.time()  # 🚨 절대 타임아웃 감시용 타임스탬프 초기화
 
     while True:
+        # 1. 45초 절대 정체 감시 (Watchdog)
+        if time.time() - last_action_time > 45.0:
+            print_log("⚠️ [inn_manager] 45초 동안 실질적인 여관 동작이 없습니다. 정체 감지로 인해 안전을 위해 강제 이탈합니다.")
+            break
+
         try:
             import sys
             if '__main__' in sys.modules and hasattr(sys.modules['__main__'], 'update_heartbeat'):
@@ -121,15 +161,23 @@ def run_inn_sleep_sequence(device):
         # 0순위. 레벨업 및 스킬 습득 조건부 무한 루프 스킵 제어
         # -------------------------------------------------------------
         if check_template_present(img_np, t_pop_levelup, 0.75):
-            # 💡 [버그 소멸] 새로 제작하신 levelup_close_btn을 찾아 좌하단을 정교하게 타격합니다.
-            print("📈 [inn_manager] 캐릭터 '레벨 업!' 창 포착 -> 좌하단 'X 닫기' 버튼을 정밀 조준 사격합니다.")
-            if find_and_click_template(device, img_np, t_btn_levelup_close, 0.70):
-                time.sleep(0.8)
+            # 💡 [버그 소멸] 새로 제작하신 levelup_close_btn/levelup_next_btn을 이용해 다음/닫기를 타격합니다.
+            if check_template_present(img_np, t_btn_levelup_next, 0.70):
+                print_log("📈 [inn_manager] 캐릭터 '레벨 업!' 창 포착 -> '다음' 버튼을 터치합니다.")
+                if find_and_click_template(device, img_np, t_btn_levelup_next, 0.70):
+                    last_action_time = time.time()
+                    time.sleep(0.8)
+            else:
+                print_log("📈 [inn_manager] 캐릭터 '레벨 업!' 창 포착 -> 좌하단 'X 닫기' 버튼을 정밀 조준 사격합니다.")
+                if find_and_click_template(device, img_np, t_btn_levelup_close, 0.70):
+                    last_action_time = time.time()
+                    time.sleep(0.8)
             continue
 
         elif check_template_present(img_np, t_pop_skill, 0.75):
-            print("✨ [inn_manager] 새로운 '능력 획득!' 창 포착 -> 중앙 하단 '탭하여 닫기' 버튼 타격")
+            print_log("✨ [inn_manager] 새로운 '능력 획득!' 창 포착 -> 중앙 하단 '탭하여 닫기' 버튼 타격")
             if find_and_click_template(device, img_np, t_btn_skill, 0.70):
+                last_action_time = time.time()
                 time.sleep(0.8)
             continue
 
@@ -137,22 +185,26 @@ def run_inn_sleep_sequence(device):
         # 1순위. 고정 숙박 연쇄 팝업 처리 구간
         # -------------------------------------------------------------
         if check_template_present(img_np, t_inn_confirm, 0.70):
-            print("🛑 [inn_manager] 숙박 최종 확인 창 -> '확인' 클릭")
+            print_log("🛑 [inn_manager] 숙박 최종 확인 창 -> '확인' 클릭")
             if find_and_click_template(device, img_np, t_inn_confirm, 0.70):
-                print("⏳ 취침 연출 암전 진입... 5.5초 안전 대기 주입")
+                last_action_time = time.time()
+                print_log("⏳ 취침 연출 암전 진입... 5.5초 안전 대기 주입")
                 time.sleep(5.5)
+                last_action_time = time.time()  # 암전 대기 시간은 타임아웃 제외
             continue
 
         elif check_template_present(img_np, t_inn_inv, 0.70):
-            print("📦 [inn_manager] 소지품 정리 팝업 -> 화면 정중앙 터치 스킵")
+            print_log("📦 [inn_manager] 소지품 정리 팝업 -> 화면 정중앙 터치 스킵")
             safe_device_shell(device, f"input tap {int(width * 0.5)} {int(height * 0.5)}")
+            last_action_time = time.time()
             time.sleep(1.0)
             continue
 
         elif check_template_present(img_np, t_arrow, 0.72):
             if not check_template_present(img_np, t_inn_title, 0.80):
-                print("📐 [inn_manager] 기상 대화창 황금 화살표 -> 스킵 터치 주입")
-                find_and_click_template(device, img_np, t_arrow, 0.72)
+                print_log("📐 [inn_manager] 기상 대화창 황금 화살표 -> 스킵 터치 주입")
+                if find_and_click_template(device, img_np, t_arrow, 0.72):
+                    last_action_time = time.time()
                 is_fully_healed = True  
                 time.sleep(0.8)
                 continue
@@ -162,18 +214,21 @@ def run_inn_sleep_sequence(device):
         # -------------------------------------------------------------
         elif check_template_present(img_np, t_inn_title, 0.83):
             if check_template_present(img_np, t_menu_stay, 0.70) and not is_fully_healed:
-                print("🧾 [inn_manager] 로비 진입 -> '묵는다' 터치")
-                find_and_click_template(device, img_np, t_menu_stay, 0.70)
+                print_log("🧾 [inn_manager] 로비 진입 -> '묵는다' 터치")
+                if find_and_click_template(device, img_np, t_menu_stay, 0.70):
+                    last_action_time = time.time()
                 time.sleep(1.0)
             
             elif check_template_present(img_np, t_menu_standard, 0.70):
-                print("🛏️ [inn_manager] 방 선택 메뉴 -> '스탠다드 룸' 터치")
-                find_and_click_template(device, img_np, t_menu_standard, 0.70)
+                print_log("🛏️ [inn_manager] 방 선택 메뉴 -> '스탠다드 룸' 터치")
+                if find_and_click_template(device, img_np, t_menu_standard, 0.70):
+                    last_action_time = time.time()
                 time.sleep(1.0)
 
             elif check_template_present(img_np, t_menu_leave, 0.70) and is_fully_healed:
-                print("🚪 [inn_manager] 로비 복귀 완료! '밖으로 나간다' 터치하여 여관을 나갑니다.")
+                print_log("🚪 [inn_manager] 로비 복귀 완료! '밖으로 나간다' 터치하여 여관을 나갑니다.")
                 if find_and_click_template(device, img_np, t_menu_leave, 0.70):
+                    last_action_time = time.time()
                     time.sleep(2.0)
             continue
 
@@ -181,13 +236,13 @@ def run_inn_sleep_sequence(device):
         # 3순위. 최종 탈출 조건 (마을 광장 복귀 성공 시 모듈 파기)
         # -------------------------------------------------------------
         elif check_template_present(img_np, t_village, 0.83):
-            print("✨ [inn_manager] 마을 광장 복귀 성공! 여관 모듈을 안전하게 종료합니다.\n")
+            print_log("✨ [inn_manager] 마을 광장 복귀 성공! 여관 모듈을 안전하게 종료합니다.\n")
             break
 
         # 예외 가드 카운터
         fail_safe_counter += 1
         if fail_safe_counter > 150:
-            print("⚠️ [inn_manager] 예외 정체 발생으로 강제 이탈합니다.")
+            print_log("⚠️ [inn_manager] 예외 정체 발생으로 강제 이탈합니다.")
             break
             
         time.sleep(0.3)
