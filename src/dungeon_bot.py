@@ -18,9 +18,10 @@ came_from_chest = False
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.15.0
-# - 최근 수정일: 2026-07-28 01:40
+# - 현재 버전: 1.16.0
+# - 최근 수정일: 2026-07-29 08:05
 # - 수정 기록:
+#   1.16.0: 상자 대화창 우하단 화살표(dialogue_indicator.png) 감지 터치 개편, 공포 상태이상 캐릭 선택 시 "열 수 없다" 대화 팝업 복구 루프 추가, templates/chestopening/ 하위로 상자 관련 템플릿 폴더 정돈에 따른 버전 동기화
 #   1.15.0: 지정 슬롯 따개 터치 개편, 상자공포 자동 감지 및 주인공/타 슬롯 우회 회피 시퀀스 추가, whowillopenit 템플릿 의존성 제거 및 '열다' 버튼 소멸 기반 진입 판정 최적화에 따른 버전 동기화
 #   1.14.1-hotfix10: 전투 중 배속/자동 8초 가드 단일 블록 통합(상하단 동일 타이머 충돌로 인한 자동전투 8초 감지 영구 스킵 결함 완치), 정비 즉시 재사격 및 상자 없음 인지 시 터치 쿨타임(last_click_time = 0) 파쇄(정비 직후 7초 지연 및 출구 탭 3초 지연 제거)에 따른 버전 동기화
 #   1.14.1-hotfix9: 상자깡 완료 연출 마진 sleep(1.0초) 탈거, 전투 중 배속/자동 켜기 가드 8초 쿨타임 주기 검사 도입, 화면 과도기 대기 한계 상향(5회 ➔ 10회)에 따른 버전 동기화
@@ -183,6 +184,15 @@ def check_template_present_dynamic(img_np, thresh_temp, threshold_val=0.68, min_
 
 def check_template_present(img_np, thresh_temp, threshold_val=0.68):
     return check_template_present_dynamic(img_np, thresh_temp, threshold_val, 160)
+
+def check_dialogue_indicator_present(img_np, template, threshold=0.75):
+    if img_np is None or template is None:
+        return False
+    h, w = img_np.shape[:2]
+    if h < 2433 or w < 1377:
+        return False
+    roi = img_np[2349:2433, 1293:1377]
+    return check_template_present(roi, template, threshold)
 
 def check_gray_template_present_specific(img_np, gray_temp, threshold_val=0.65):
     if gray_temp is None or img_np is None: return False
@@ -521,8 +531,8 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     t_move_resume_act = load_grayscale_template("templates/Field/resume_act.png")
     t_move_resume_deact = load_grayscale_template("templates/Field/resume_deact.png")
     t_no_chest = load_template("templates/no_chest.png") 
-    t_yeolda = load_template("templates/yeolda_clean.png")
-    t_get_item = load_template("templates/get_item.png")
+    t_yeolda = load_template("templates/chestopening/yeolda_clean.png")
+    t_dialogue_indicator = load_template("templates/chestopening/dialogue_indicator.png")
     
     t_heal_auto = load_template("templates/healer_auto_btn.png")
     t_heal_confirm = load_template("templates/confirm_recover.png")
@@ -812,7 +822,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                 elif chest_opener.is_minigame_screen(img_np, height, width):
                     transition_delay_count = 0
                     state = "PLAY_MINIGAME"
-                elif check_template_present(img_np, t_get_item, 0.65):
+                elif check_dialogue_indicator_present(img_np, t_dialogue_indicator, 0.75):
                     transition_delay_count = 0
                     state = "CLEAR_CHECK"
                 elif check_field_anchor_present(img_np, t_field, field_threshold):
@@ -1405,7 +1415,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
 
         elif state == "BRANCH_CHECK":
             if chest_opener.is_minigame_screen(img_np, height, width): state = "PLAY_MINIGAME"
-            elif check_template_present(img_np, t_get_item, 0.65): state = "CLEAR_CHECK"
+            elif check_dialogue_indicator_present(img_np, t_dialogue_indicator, 0.75): state = "CLEAR_CHECK"
             else: time.sleep(0.2)
 
         elif state == "PLAY_MINIGAME":
@@ -1417,7 +1427,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
             continue
 
         elif state == "CLEAR_CHECK":
-            if check_template_present(img_np, t_get_item, 0.65):
+            if check_dialogue_indicator_present(img_np, t_dialogue_indicator, 0.75):
                 safe_device_shell(device, "input tap 701 333")
                 time.sleep(0.8)
             else:

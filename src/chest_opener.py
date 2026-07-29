@@ -1,8 +1,9 @@
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.15.0
-# - 최근 수정일: 2026-07-28 01:28
+# - 현재 버전: 1.16.0
+# - 최근 수정일: 2026-07-29 08:05
 # - 수정 기록:
+#   1.16.0: 상자 대화창 우하단 화살표 감지 터치 개편, 공포 팝업 연계 자가 복구, templates/chestopening/ 하위로 리소스 이동에 따른 버전 동기화
 #   1.15.0: 지정 슬롯 따개 선택 도입, 상자공포(chestfear) 그레이스케일/컬러 감지 및 우회 알고리즘 추가
 #           (whowillopenit 템플릿 의존성 제거 및 '열다' 버튼 소멸 기반 진입 판정 전격 전환)
 # ==============================================================================
@@ -113,7 +114,7 @@ def get_slot_center(slot_idx):
 
 def is_minigame_screen(img_np, height, width):
     """ 미니게임 상단 붉은상자+해골마크 앵커 존재 여부 감지 """
-    t_trap_anchor = load_grayscale_template("templates/trap_minigame_anchor.png")
+    t_trap_anchor = load_grayscale_template("templates/chestopening/trap_minigame_anchor.png")
     if t_trap_anchor is not None and img_np is not None:
         h_img, w_img = img_np.shape[:2]
         

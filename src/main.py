@@ -7,7 +7,7 @@ import time
 # ⚙️ [Daphne 마스터 글로벌 제어 세팅 변수 구역 - 진짜 최상단 제어판]
 # ==============================================================================
 # 💡 앞으로 주행 설정을 바꾸실 때는 오직 여기 "최상단 제어판"의 설정값만 수정하시면 됩니다!
-CURRENT_VERSION = "1.15.0"         # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
+CURRENT_VERSION = "1.16.0"         # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
 LIMIT_DUNGEON_LOOPS = 2             # 🔄 [마을 회군 기준] 던전을 몇 바퀴 돌고 마을(여관)로 복귀할지 설정
 START_RUN_COUNT_OFFSET = 2          # 🚀 [초기 부팅 주회 카운트] 매크로 시작 시 초기 주회 offset 수치 (초기값=던전루프와 같은 수치, 던전에서 시작하면 해당 주회 후 복귀, 마을이면 숙박 후 주회 시작)
 ENABLE_FIRST_COMBAT_SKILL = 0       # ⚔️ [초기 전투 스킬 제어] (⚠️ 현재 미구현으로 추후 구현 예정이니 무조건 0으로 고정해 주세요) (0: Off, 1: On)
@@ -33,9 +33,10 @@ MUMU_VM_INDEX = "0"                  # 실행할 가상머신 번호 인덱스 (
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.15.0
-# - 최근 수정일: 2026-07-28 01:40
+# - 현재 버전: 1.16.0
+# - 최근 수정일: 2026-07-29 08:05
 # - 수정 기록:
+#   1.16.0: 상자 대화창 우하단 화살표(dialogue_indicator.png) 감지 터치 개편, 공포 상태이상 캐릭 선택 시 "열 수 없다" 대화 팝업 복구 루프 추가, templates/chestopening/ 하위로 상자 관련 템플릿 폴더 정돈
 #   1.15.0: 지정 슬롯 따개(CHEST_OPENER_SLOT) 터치 개편, 상자공포 상태이상(chestfear.png) 자동 감지 및 주인공/타 슬롯 우회 회피 시퀀스 추가, whowillopenit 템플릿 의존성 제거 및 '열다' 버튼 소멸 기반 진입 판정 최적화
 #   1.14.1-hotfix10: 전투 중 배속/자동 8초 가드 단일 블록 통합(상하단 동일 타이머 충돌로 인한 자동전투 8초 감지 영구 스킵 결함 완치), 정비 즉시 재사격 및 상자 없음 인지 시 터치 쿨타임(last_click_time = 0) 파쇄(정비 직후 7초 지연 및 출구 탭 3초 지연 제거)
 #   1.14.1-hotfix9: 상자깡 완료 연출 마진 sleep(1.0초) 탈거를 통한 딜레이 차감, 전투 중 배속/자동 켜기 가드 8초 쿨타임 주기 검사 도입, 화면 과도기 대기 한계 상향(5회 ➔ 10회)으로 연출 대기 stuck 복구 안정화
@@ -495,7 +496,7 @@ def recover_app_startup(device):
     t_title_notice_close = load_template("templates/reboot/title_notice_close.png")
     t_title_warning = load_template("templates/reboot/title_warning.png")
 
-    t_yeolda = load_template("templates/yeolda_clean.png")
+    t_yeolda = load_template("templates/chestopening/yeolda_clean.png")
     t_combat_in = load_template("templates/combat_in.png")
     t_combat_slow = load_template("templates/combat_slow.png")
     t_net_error = load_template("templates/anchor_network_error.png")
@@ -511,7 +512,8 @@ def recover_app_startup(device):
     t_world_map = load_template("templates/Worldmap/world_map_anchor.png")
     t_dungeon_sel = load_template("templates/WolfCave/dungeon_select.png")
     t_field = load_grayscale_template("templates/Field/field_anchor.png")
-    t_get_item = load_template("templates/get_item.png")
+    t_get_item = load_template("templates/chestopening/get_item.png")
+    t_app_exit = load_template("templates/app_exit.png")
     
     counter = 0
     max_try = 35
@@ -525,6 +527,13 @@ def recover_app_startup(device):
             img_np = np.array(Image.open(io.BytesIO(raw_cap)))
         except:
             time.sleep(0.5)
+            continue
+            
+        # 🚪 [앱 종료 방지 가드]
+        if check_template_present(img_np, t_app_exit, 0.75):
+            print("⏰ [앱 종료 방지 가드] 종료 확인 팝업 감지! 즉각 '취소' 버튼(880, 1450)을 터치하여 파쇄합니다.")
+            device.shell("input tap 880 1450")
+            time.sleep(1.0)
             continue
             
         # 💀 [주인공 사망 부활 복구]
@@ -847,6 +856,26 @@ def check_template_present_in_roi(img_np, thresh_temp, x1, x2, y1, y2, threshold
     _, max_val, _, _ = cv2.minMaxLoc(result)
     return max_val > threshold_val
 
+def get_match_score_in_roi(img_np, thresh_temp, x1, x2, y1, y2):
+    if thresh_temp is None or img_np is None: return 0.0
+    h_img, w_img = img_np.shape[:2]
+    h_temp, w_temp = thresh_temp.shape[:2]
+    
+    scale_x, scale_y = w_img / 1440.0, h_img / 2560.0
+    rx1, rx2 = int(x1 * scale_x), int(x2 * scale_x)
+    ry1, ry2 = int(y1 * scale_y), int(y2 * scale_y)
+    
+    if rx2 <= rx1 or ry2 <= ry1 or rx2 > w_img or ry2 > h_img: return 0.0
+    crop = img_np[ry1:ry2, rx1:rx2]
+    h_crop, w_crop = crop.shape[:2]
+    if h_crop < h_temp or w_crop < w_temp: return 0.0
+    
+    gray_crop = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY)
+    _, thresh_crop = cv2.threshold(gray_crop, 160, 255, cv2.THRESH_BINARY)
+    result = cv2.matchTemplate(thresh_crop, thresh_temp, cv2.TM_CCOEFF_NORMED)
+    _, max_val, _, _ = cv2.minMaxLoc(result)
+    return max_val
+
 def get_match_score(img_np, thresh_temp):
     if thresh_temp is None or img_np is None: return 0.0
     h_img, w_img = img_np.shape[:2]
@@ -984,8 +1013,9 @@ def start_grand_orchestrator():
     t_village_to_inn = load_template("templates/Vill_Isbelg/village_to_inn_btn.png")
     
     t_field = load_grayscale_template("templates/Field/field_anchor.png")
-    t_yeolda = load_template("templates/yeolda_clean.png")
-    t_get_item = load_template("templates/get_item.png")
+    t_yeolda = load_template("templates/chestopening/yeolda_clean.png")
+    t_get_item = load_template("templates/chestopening/get_item.png")
+    t_app_exit = load_template("templates/app_exit.png")
     
     t_heal_close = load_template("templates/close_panel.png") 
     t_combat_in = load_template("templates/combat_in.png")
@@ -1319,6 +1349,12 @@ def start_grand_orchestrator():
                     restart_process(f"던전 내부 동작 중 ADB 통신 치명적 예외 발생: {bot_err}")
                 continue
             else:
+                if check_template_present(img_np, t_app_exit, 0.75):
+                    print("⏰ [사령탑 안전 가드] 앱 종료 팝업 감지! 즉각 '취소'(880, 1450)를 터치하여 파쇄합니다.")
+                    device.shell("input tap 880 1450")
+                    time.sleep(1.0)
+                    last_action_time = time.time()
+                    continue
                 close_coords_main = find_and_get_coords_main(img_np, t_heal_close, 0.70)
                 if close_coords_main:
                     device.shell(f"input tap {close_coords_main[0]} {close_coords_main[1]}")
