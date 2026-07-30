@@ -279,6 +279,33 @@ def watchdog_monitor_loop():
         except Exception as watchdog_err:
             print(f"⚠️ [Watchdog 오류] {watchdog_err}")
 
+def read_restart_counter():
+    flag_path = "restart_counter.txt"
+    if not os.path.exists(flag_path):
+        return 0
+    try:
+        with open(flag_path, "r", encoding="utf-8") as f:
+            return int(f.read().strip())
+    except:
+        return 0
+
+def write_restart_counter(val):
+    flag_path = "restart_counter.txt"
+    try:
+        with open(flag_path, "w", encoding="utf-8") as f:
+            f.write(str(val))
+    except:
+        pass
+
+def clear_restart_counter():
+    flag_path = "restart_counter.txt"
+    if os.path.exists(flag_path):
+        try:
+            os.remove(flag_path)
+            print("💾 [카운터 클리어] 정상 주행 돌입으로 연속 재시작 카운터 플래그 파일이 삭제되었습니다.")
+        except:
+            pass
+
 def init_main_logger():
     log_dir = "logs"
     if not os.path.exists(log_dir):
@@ -391,33 +418,6 @@ def handle_exception(exc_type, exc_value, exc_traceback):
     sys.stdout.flush()
 
 sys.excepthook = handle_exception
-
-def read_restart_counter():
-    flag_path = "restart_counter.txt"
-    if not os.path.exists(flag_path):
-        return 0
-    try:
-        with open(flag_path, "r", encoding="utf-8") as f:
-            return int(f.read().strip())
-    except:
-        return 0
-
-def write_restart_counter(val):
-    flag_path = "restart_counter.txt"
-    try:
-        with open(flag_path, "w", encoding="utf-8") as f:
-            f.write(str(val))
-    except:
-        pass
-
-def clear_restart_counter():
-    flag_path = "restart_counter.txt"
-    if os.path.exists(flag_path):
-        try:
-            os.remove(flag_path)
-            print("💾 [카운터 클리어] 정상 주행 돌입으로 연속 재시작 카운터 플래그 파일이 삭제되었습니다.")
-        except:
-            pass
 
 def reboot_emulator():
     print("\n🖥️🚨 [에뮬레이터 콜드 리부트 작동] MuMu Player가 정지했거나 오프라인 상태입니다. 완전 리셋을 수행합니다!")
