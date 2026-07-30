@@ -220,6 +220,10 @@ def sync_screenshots_loop(session_start_ts, log_dir):
                             item_lower = item.lower()
                             if "screencap_start" in item_lower:
                                 suffix = "start"
+                            elif "screencap_reboot" in item_lower:
+                                import re
+                                match = re.search(r"screencap_(reboot\d+)", item_lower)
+                                suffix = match.group(1) if match else "reboot"
                             elif "screencap_restart" in item_lower:
                                 suffix = "restart"
                             else:
@@ -294,12 +298,15 @@ def init_main_logger():
     except Exception as clean_err:
         print(f"⚠️ [로그 청소기 오류] {clean_err}")
 
+    reboot_cnt = read_restart_counter()
+    suffix = "start" if reboot_cnt == 0 else f"reboot{reboot_cnt}"
+    
     now = datetime.datetime.now()
     base_name = now.strftime("%Y-%m-%d-%H%M")
     
     sequence_num = 0
     while True:
-        log_filename = os.path.join(log_dir, f"{base_name}-{sequence_num:03d}.txt")
+        log_filename = os.path.join(log_dir, f"{base_name}-{sequence_num:03d}_{suffix}.txt")
         if not os.path.exists(log_filename):
             break
         sequence_num += 1
@@ -661,6 +668,10 @@ global_device = None
 def take_screencap_backup(device, prefix="start"):
     try:
         import datetime
+        reboot_cnt = read_restart_counter()
+        if prefix in ["start", "restart"]:
+            prefix = "start" if reboot_cnt == 0 else f"reboot{reboot_cnt}"
+            
         # 안전하게 스크린샷 폴더 생성 가드
         device.shell("mkdir -p /sdcard/Screenshots")
         time_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1051,6 +1062,8 @@ def start_grand_orchestrator():
     last_logged_status = ""
     first_stuck_time_str = ""
     first_stuck_start_time = None
+    first_outgame_stuck_time_str = ""
+    first_outgame_stuck_start_time = None
     global_skill_setup_completed = False
 
     # 🛑 [Daphne 마스터 섀도우 통화면 동결 감지 엔진 변수]
@@ -1126,6 +1139,8 @@ def start_grand_orchestrator():
         if current_time - last_action_time <= 30.0:
             first_stuck_time_str = ""
             first_stuck_start_time = None
+            first_outgame_stuck_time_str = ""
+            first_outgame_stuck_start_time = None
 
         # ======================================================================
         # 👑 [Daphne 완성형 엔진: 1분 30초 전체 화면 동결 시 인지 복구 레이더 강제 부팅]
@@ -1202,12 +1217,12 @@ def start_grand_orchestrator():
                 print(f"\n🚀 [초기 부팅 오토 세트] 시스템이 가동되었습니다. 즉시 현재 에뮬레이터 화면 감별을 시작합니다!")
                 force_first_analysis = False
             else:
-                if not first_stuck_time_str:
-                    first_stuck_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    first_stuck_start_time = time.time()
+                if not first_outgame_stuck_time_str:
+                    first_outgame_stuck_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    first_outgame_stuck_start_time = time.time()
                 
-                stuck_duration = time.time() - first_stuck_start_time
-                print(f"\n⚠️ [🚨 사령탑 블랙박스 경고] 아웃게임 상태 무반응 정체 중... (최초 정체 발생 시각: {first_stuck_time_str}, 경과: {int(stuck_duration)}초)")
+                stuck_duration = time.time() - first_outgame_stuck_start_time
+                print(f"\n⚠️ [🚨 사령탑 블랙박스 경고] 아웃게임 상태 무반응 정체 중... (최초 정체 발생 시각: {first_outgame_stuck_time_str}, 경과: {int(stuck_duration)}초)")
                 
                 # 🖥️ [v1.13.7 추가] 사령탑 아웃게임 5분 이상 정체 시 자동 재부팅 세이프티 가드
                 if stuck_duration >= 300.0:
