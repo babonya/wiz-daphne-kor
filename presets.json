@@ -1,0 +1,17 @@
+{
+  "active_preset": "유령성 2층 채굴",
+  "presets": {
+    "백아1층 파밍": {
+      "town": "이스벨크",
+      "dungeon": "백아의 동굴",
+      "floor": "백아1층",
+      "farming_method": "상자파밍"
+    },
+    "유령성 2층 채굴": {
+      "town": "노던할로우",
+      "dungeon": "북쪽의 유령선",
+      "floor": "2nd",
+      "farming_method": "광석파밍"
+    }
+  }
+}

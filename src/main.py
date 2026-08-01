@@ -2,12 +2,13 @@ import sys
 import os
 import datetime
 import time
+import json
 
 # ==============================================================================
 # ⚙️ [Daphne 마스터 글로벌 제어 세팅 변수 구역 - 진짜 최상단 제어판]
 # ==============================================================================
-# 💡 앞으로 주행 설정을 바꾸실 때는 오직 여기 "최상단 제어판"의 설정값만 수정하시면 됩니다!
-CURRENT_VERSION = "1.16.0"         # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
+CURRENT_VERSION = "1.17.0"         # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
+
 LIMIT_DUNGEON_LOOPS = 2             # 🔄 [마을 회군 기준] 던전을 몇 바퀴 돌고 마을(여관)로 복귀할지 설정
 START_RUN_COUNT_OFFSET = 2          # 🚀 [초기 부팅 주회 카운트] 매크로 시작 시 초기 주회 offset 수치 (초기값=던전루프와 같은 수치, 던전에서 시작하면 해당 주회 후 복귀, 마을이면 숙박 후 주회 시작)
 ENABLE_FIRST_COMBAT_SKILL = 0       # ⚔️ [초기 전투 스킬 제어] (⚠️ 현재 미구현으로 추후 구현 예정이니 무조건 0으로 고정해 주세요) (0: Off, 1: On)
@@ -29,13 +30,55 @@ CHEST_OPENER_SLOT = 6                   # 🔑 [상자 해제 따개 슬롯] 1�
 ENABLE_EMULATOR_REBOOT = True       # 🔄 [에뮬레이터 리부트] 디바이스 오프라인/5분 정체 지속 시 에뮬레이터 자체를 강제 재시작할지 설정
 MUMU_EXECUTABLE_PATH = r"C:\Program Files\Netease\MuMuPlayer\nx_main\MuMuNxMain.exe"  # 뮤뮤 실행 파일 경로
 MUMU_VM_INDEX = "0"                  # 실행할 가상머신 번호 인덱스 (기본값 "0")
+
+# 📂 [v1.17.0 프리셋 파일 자동 로딩 엔진]
+# 💡 [프리셋 선택 방법]
+#   1. 아래 ACTIVE_PRESET_NAME에 원하는 프리셋명을 지정하시거나 ("유령성 2층 채굴" 또는 "백아1층 파밍"),
+#   2. presets.json 파일 내부의 "active_preset" 값을 직접 변경하고 실행하시면 됩니다!
+ACTIVE_PRESET_NAME = "유령성 2층 채굴"  # 👈 여기에 원하는 프리셋 명칭을 적어주세요! (None으로 두면 presets.json 설정을 따릅니다)
+
+TOWN_NAME = "이스벨크"               # 기동 마을 (자동 오버라이트)
+DUNGEON_NAME = "백아의 동굴"         # 기동 던전 (자동 오버라이트)
+DUNGEON_FLOOR_NAME = "백아1층"       # 기동 층수 (자동 오버라이트)
+FARMING_METHOD = "상자파밍"          # 파밍 방식 (자동 오버라이트)
+
+# main.py 파일의 부모 디렉토리를 구하여 presets.json의 물리 절대 경로를 도출합니다.
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(script_dir)
+presets_path = os.path.join(project_root, "presets.json")
+
+if os.path.exists(presets_path):
+    try:
+        with open(presets_path, "r", encoding="utf-8") as f:
+            preset_data = json.load(f)
+            sel_preset = ACTIVE_PRESET_NAME if ACTIVE_PRESET_NAME else preset_data.get("active_preset")
+            if sel_preset and sel_preset in preset_data.get("presets", {}):
+                p_info = preset_data["presets"][sel_preset]
+                TOWN_NAME = p_info.get("town", TOWN_NAME)
+                DUNGEON_NAME = p_info.get("dungeon", DUNGEON_NAME)
+                DUNGEON_FLOOR_NAME = p_info.get("floor", DUNGEON_FLOOR_NAME)
+                FARMING_METHOD = p_info.get("farming_method", FARMING_METHOD)
+                print(f"📂 [프리셋 로드 성공] 활성화된 프리셋: {sel_preset}")
+                print(f"   - 마을: {TOWN_NAME} | 던전: {DUNGEON_NAME} | 층: {DUNGEON_FLOOR_NAME} | 방식: {FARMING_METHOD}")
+            else:
+                print(f"⚠️ [프리셋 경고] 지정된 프리셋 '{sel_preset}'을 presets.json에서 찾지 못했습니다. 기본 설정을 적용합니다.")
+    except Exception as pr_err:
+        print(f"⚠️ [프리셋 로드 에러] {pr_err}. 기본 설정을 적용합니다.")
+else:
+    print(f"⚠️ [프리셋 경고] presets.json 파일이 존재하지 않습니다. ({presets_path}) 기본 설정을 적용합니다.")
+
+if DUNGEON_FLOOR_NAME == "백아2층":
+    DUNGEON_FLOOR = 2
+else:
+    DUNGEON_FLOOR = 1
 # ==============================================================================
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.16.0
-# - 최근 수정일: 2026-07-29 08:05
+# - 현재 버전: 1.17.0
+# - 최근 수정일: 2026-08-02 01:40
 # - 수정 기록:
+#   1.17.0: FFXI 콜라보 북쪽의 유령선 2층 광석파밍(마이닝) 주회 상태 머신 및 presets.json 동적 가변 프리셋 로딩 엔진 구축, 층 매칭 오검출 방지 임계치 0.88 상향 튜닝
 #   1.16.0: 상자 대화창 우하단 화살표(dialogue_indicator.png) 감지 터치 개편, 공포 상태이상 캐릭 선택 시 "열 수 없다" 대화 팝업 복구 루프 추가, templates/chestopening/ 하위로 상자 관련 템플릿 폴더 정돈
 #   1.15.0: 지정 슬롯 따개(CHEST_OPENER_SLOT) 터치 개편, 상자공포 상태이상(chestfear.png) 자동 감지 및 주인공/타 슬롯 우회 회피 시퀀스 추가, whowillopenit 템플릿 의존성 제거 및 '열다' 버튼 소멸 기반 진입 판정 최적화
 #   1.14.1-hotfix10: 전투 중 배속/자동 8초 가드 단일 블록 통합(상하단 동일 타이머 충돌로 인한 자동전투 8초 감지 영구 스킵 결함 완치), 정비 즉시 재사격 및 상자 없음 인지 시 터치 쿨타임(last_click_time = 0) 파쇄(정비 직후 7초 지연 및 출구 탭 3초 지연 제거)
@@ -539,9 +582,18 @@ def recover_app_startup(device):
     t_anchor_dead = load_dead_template("templates/anchor_dead_screen.png")
     
     t_inn_title = load_template("templates/inn_sleep/inn_title.png")
-    t_village_anchor = load_template("templates/Vill_Isbelg/village_anchor.png")
     t_world_map = load_template("templates/Worldmap/world_map_anchor.png")
-    t_dungeon_sel = load_template("templates/WolfCave/dungeon_select.png")
+
+    if TOWN_NAME == "노던할로우":
+        t_village_anchor = load_template("templates/FFXI/!!vill_FFXI.png")
+    else:
+        t_village_anchor = load_template("templates/Vill_Isbelg/village_anchor.png")
+
+    if DUNGEON_NAME == "북쪽의 유령선":
+        t_dungeon_sel = load_template("templates/FFXI/FFXI_dungeon_Anchor.png")
+    else:
+        t_dungeon_sel = load_template("templates/WolfCave/dungeon_select.png")
+
     t_field = load_grayscale_template("templates/Field/field_anchor.png")
     t_get_item = load_template("templates/chestopening/get_item.png")
     t_app_exit = load_template("templates/app_exit.png")
@@ -1044,16 +1096,35 @@ def start_grand_orchestrator():
 
     print("\n=======================================")
     print("🎨 [마스터 마스킹] 대순환 루프 전용 모든 코어 도장들을 로드합니다...")
-    t_village = load_template("templates/Vill_Isbelg/village_anchor.png")
     t_world_map = load_template("templates/Worldmap/world_map_anchor.png")
-    t_dungeon_sel = load_template("templates/WolfCave/dungeon_select.png")
     t_inn_title = load_template("templates/inn_sleep/inn_title.png")
-    
-    t_enter_dungeon = load_template("templates/WolfCave/Wolf_B1_btn.png")
     t_open_world = load_template("templates/open_world_map_btn.png")
-    t_go_village = load_template("templates/Worldmap/Vill_isbelk_btn.png")
-    t_go_dungeon = load_template("templates/Worldmap/Cave_Wolf_btn.png")
-    t_village_to_inn = load_template("templates/Vill_Isbelg/village_to_inn_btn.png")
+    
+    # 📂 [v1.17.0 프리셋별 템플릿 동적 교체 로딩]
+    if TOWN_NAME == "노던할로우":
+        t_village = load_template("templates/FFXI/!!vill_FFXI.png")
+        t_village_to_inn = load_template("templates/FFXI/inn.png")
+        t_go_village = load_template("templates/Worldmap/FFXI_village.png")
+    else:
+        t_village = load_template("templates/Vill_Isbelg/village_anchor.png")
+        t_village_to_inn = load_template("templates/Vill_Isbelg/village_to_inn_btn.png")
+        t_go_village = load_template("templates/Worldmap/Vill_isbelk_btn.png")
+
+    if DUNGEON_NAME == "북쪽의 유령선":
+        t_dungeon_sel = load_template("templates/FFXI/FFXI_dungeon_Anchor.png")
+        t_go_dungeon = load_template("templates/Worldmap/FFXI_dungeon.png")
+        
+        # 반투명 층 선택 도장 이진화 로딩
+        floor_img_path = f"templates/FFXI/{DUNGEON_FLOOR_NAME}.png"
+        t_enter_dungeon = load_template(floor_img_path)
+    else:
+        t_dungeon_sel = load_template("templates/WolfCave/dungeon_select.png")
+        t_go_dungeon = load_template("templates/Worldmap/Cave_Wolf_btn.png")
+        
+        if DUNGEON_FLOOR == 2:
+            t_enter_dungeon = load_template("templates/WolfCave/Wolf_B2_btn.png")
+        else:
+            t_enter_dungeon = load_template("templates/WolfCave/Wolf_B1_btn.png")
     
     t_field = load_grayscale_template("templates/Field/field_anchor.png")
     t_yeolda = load_template("templates/chestopening/yeolda_clean.png")
@@ -1107,6 +1178,9 @@ def start_grand_orchestrator():
     print(f" -> 목표 주회 설정 수치: {LIMIT_DUNGEON_LOOPS}회 안전 고정")
     print(f" -> 숏컷기반 스킬 예약 시스템 가동 여부: {bool(ENABLE_FIRST_COMBAT_SKILL)}")
     print("====================================================")
+    is_worldmap_swiped = False
+    worldmap_drag_step = 0
+    worldmap_last_drag_time = 0.0
 
     # 🔮 [최초 구동 무인 안심 가드] 에뮬리부트/초기실행 후 타이틀/공지사항/주의 화면 돌파 강제 가동
     recover_app_startup(device)
@@ -1358,6 +1432,9 @@ def start_grand_orchestrator():
                 print(f"   ➔ 🏠 [엔진 최종 판정] 리얼 아웃게임 스팟 안착 확인: '{best_status}' 구역으로 확정합니다. (신뢰도: {scores[best_status]:.2f})")
                 first_stuck_time_str = "" 
                 global_skill_setup_completed = False
+                if best_status != "WORLDMAP":
+                    is_worldmap_swiped = False
+                    worldmap_drag_step = 0
                 
                 if best_status == "VILLAGE":
                     waiting_for_village_dialogue = False
@@ -1383,7 +1460,7 @@ def start_grand_orchestrator():
                 
                 run_skill_logic = ENABLE_FIRST_COMBAT_SKILL and (not global_skill_setup_completed)
                 try:
-                    exit_by_user, skill_ok = dungeon_bot.start_main_macro(device, run_skill_logic, HEALING_LOOPS, bool(ENABLE_HEAL_AFTER_CHEST), healer_slot=HEALER_SLOT, masked_adventurer_slot=MASKED_ADVENTURER_SLOT, chest_opener_slot=CHEST_OPENER_SLOT)
+                    exit_by_user, skill_ok = dungeon_bot.start_main_macro(device, run_skill_logic, HEALING_LOOPS, bool(ENABLE_HEAL_AFTER_CHEST), healer_slot=HEALER_SLOT, masked_adventurer_slot=MASKED_ADVENTURER_SLOT, chest_opener_slot=CHEST_OPENER_SLOT, farming_method=FARMING_METHOD, dungeon_name=DUNGEON_NAME)
                     if skill_ok:
                         global_skill_setup_completed = True  
                     if exit_by_user: 
@@ -1416,33 +1493,43 @@ def start_grand_orchestrator():
             if last_logged_status != "DUNGEON_SEL":
                 last_action_time = time.time()
                 last_logged_status = "DUNGEON_SEL"
-            if dungeon_run_count < LIMIT_DUNGEON_LOOPS:
-                # 2층 활성화 감지를 위해 위쪽 격리 ROI 내 지하 1층 버튼 유무 판정 (Y:1200~1320)
-                is_b2_active = check_template_present_in_roi(img_np, t_enter_dungeon, 1100, 1380, 1200, 1320, 0.75)
-                target_floor = DUNGEON_FLOOR
+            if (dungeon_run_count < LIMIT_DUNGEON_LOOPS) or (FARMING_METHOD == "광석파밍"):
                 click_success = False
                 
-                if is_b2_active:
-                    print(f"📋 [던전선택] 현재 지하 2층 버튼이 활성화되어 있습니다. (목표: {target_floor}층)")
-                    if target_floor == 2:
-                        print("👉 [던전선택] 지하 2층 고정 좌표 (1239, 1411) 터치 주입")
-                        device.shell("input tap 1239 1411")
+                if DUNGEON_NAME == "북쪽의 유령선":
+                    # 파판 던전 층계 버튼 이진화 매치 터치 (오검출 방지를 위해 임계값을 0.88로 대폭 상향 튜닝)
+                    print(f"📋 [던전선택 - FFXI] '{DUNGEON_FLOOR_NAME}' 층 버튼 도장 정밀 조준을 시도합니다.")
+                    if find_and_click_template(device, img_np, t_enter_dungeon, 0.88):
+                        print(f"👉 [던전선택 - FFXI] '{DUNGEON_FLOOR_NAME}' 진입 버튼 격파 성공!")
                         click_success = True
                     else:
-                        print("👉 [던전선택] 지하 1층 고정 좌표 (1239, 1267) 터치 주입")
-                        device.shell("input tap 1239 1267")
-                        click_success = True
+                        print(f"⚠️ [던전선택 - FFXI] '{DUNGEON_FLOOR_NAME}' 층 버튼 매칭 실패. 재스캔 대기...")
                 else:
-                    print("📋 [던전선택] 현재 지하 1층만 활성화되어 있습니다.")
-                    print("👉 [던전선택] 지하 1층 고정 좌표 (1239, 1411) 터치 주입")
-                    device.shell("input tap 1239 1411")
-                    click_success = True
+                    # 2층 활성화 감지를 위해 위쪽 격리 ROI 내 지하 1층 버튼 유무 판정 (Y:1200~1320)
+                    is_b2_active = check_template_present_in_roi(img_np, t_enter_dungeon, 1100, 1380, 1200, 1320, 0.75)
+                    target_floor = DUNGEON_FLOOR
+                    
+                    if is_b2_active:
+                        print(f"📋 [던전선택] 현재 지하 2층 버튼이 활성화되어 있습니다. (목표: {target_floor}층)")
+                        if target_floor == 2:
+                            print("👉 [던전선택] 지하 2층 고정 좌표 (1239, 1411) 터치 주입")
+                            device.shell("input tap 1239 1411")
+                            click_success = True
+                        else:
+                            print("👉 [던전선택] 지하 1층 고정 좌표 (1239, 1267) 터치 주입")
+                            device.shell("input tap 1239 1267")
+                            click_success = True
+                    else:
+                        print("📋 [던전선택] 현재 지하 1층만 활성화되어 있습니다.")
+                        print("👉 [던전선택] 지하 1층 고정 좌표 (1239, 1411) 터치 주입")
+                        device.shell("input tap 1239 1411")
+                        click_success = True
                 
                 if click_success:
                     time.sleep(5.0)
                     run_skill_logic = ENABLE_FIRST_COMBAT_SKILL and (not global_skill_setup_completed)
                     try:
-                        exit_by_user, skill_ok = dungeon_bot.start_main_macro(device, run_skill_logic, HEALING_LOOPS, bool(ENABLE_HEAL_AFTER_CHEST), healer_slot=HEALER_SLOT, masked_adventurer_slot=MASKED_ADVENTURER_SLOT, chest_opener_slot=CHEST_OPENER_SLOT)
+                        exit_by_user, skill_ok = dungeon_bot.start_main_macro(device, run_skill_logic, HEALING_LOOPS, bool(ENABLE_HEAL_AFTER_CHEST), healer_slot=HEALER_SLOT, masked_adventurer_slot=MASKED_ADVENTURER_SLOT, chest_opener_slot=CHEST_OPENER_SLOT, farming_method=FARMING_METHOD, dungeon_name=DUNGEON_NAME)
                         if skill_ok: global_skill_setup_completed = True
                         if exit_by_user: last_action_time = time.time() - 20.0
                         else: last_action_time = time.time() 
@@ -1457,8 +1544,8 @@ def start_grand_orchestrator():
                     last_action_time = time.time()
                     time.sleep(2.5)
                 else:
-                    print("      ⚠️ [세계지도 단추 은폐 감지] 알림 레이어 방해 포착! '세계지도를 연다' 텍스트 바 중앙(720, 1160) 강제 파쇄 점사!!")
-                    device.shell("input tap 720 1160")
+                    print("      ⚠️ [세계지도 단추 은폐 감지] 뒤로가기(ESC) 입력을 주입해 세계지도로 안전 탈출을 유도합니다.")
+                    device.shell("input keyevent 4")
                     last_action_time = time.time()
                     time.sleep(3.0)
             continue
@@ -1468,7 +1555,77 @@ def start_grand_orchestrator():
             if last_logged_status != "WORLDMAP":
                 last_action_time = time.time()
                 last_logged_status = "WORLDMAP"
-            if dungeon_run_count >= LIMIT_DUNGEON_LOOPS and not is_fully_healed:
+            
+            is_mining_mode = (FARMING_METHOD == "광석파밍")
+            should_go_town = (dungeon_run_count >= LIMIT_DUNGEON_LOOPS and not is_fully_healed) and (not is_mining_mode)
+            
+            is_ffxi_worldmap = (TOWN_NAME == "노던할로우" if should_go_town else DUNGEON_NAME == "북쪽의 유령선")
+            
+            if is_ffxi_worldmap:
+                # 3초마다 걸레질 지그재그 탐색 단계(worldmap_drag_step)를 가동
+                if time.time() - worldmap_last_drag_time > 3.0:
+                    print(f"🗺️ [세계지도 - 걸레질 탐색] FFXI 타겟 수색 중 (현재 단계: Step {worldmap_drag_step})")
+                    worldmap_last_drag_time = time.time()
+                    
+                    if worldmap_drag_step == 0:
+                        print("🗺️ [Step 0] 맵을 좌상단 원점으로 강력히 리셋합니다 (캘리브레이션 2회).")
+                        device.shell("input swipe 200 200 1200 2000 300")
+                        time.sleep(0.8)
+                        device.shell("input swipe 200 200 1200 2000 300")
+                        time.sleep(0.8)
+                        worldmap_drag_step = 1
+                        
+                    elif worldmap_drag_step == 1:
+                        if should_go_town:
+                            print("🗺️ [Step 1] 1번 라인 마을 기본 뷰 정밀 드래그(400, 400 ➔ 500, 300) 주입")
+                            device.shell("input swipe 400 400 500 300 800")
+                        else:
+                            print("🗺️ [Step 1] 1번 라인 던전 기본 뷰 정밀 드래그(200, 430 ➔ 50, 580) 주입")
+                            device.shell("input swipe 200 430 50 580 800")
+                        worldmap_drag_step = 2
+                        
+                    elif worldmap_drag_step == 2:
+                        print("🗺️ [Step 2] 1번 라인 가로 추가 탐색 (화면 왼쪽으로 쓸기 ➔ 맵 우측 노출)")
+                        device.shell("input swipe 1000 1200 300 1200 500")
+                        worldmap_drag_step = 3
+                        
+                    elif worldmap_drag_step == 3:
+                        print("🗺️ [Step 3] 세로 1단 하강 (세로 1000px 맵 끌어올리기)")
+                        device.shell("input swipe 600 1600 600 600 500")
+                        worldmap_drag_step = 4
+                        
+                    elif worldmap_drag_step == 4:
+                        print("🗺️ [Step 4] 2번 라인 가로 탐색 (화면 오른쪽으로 쓸기 ➔ 맵 좌측 노출)")
+                        device.shell("input swipe 300 1200 1000 1200 500")
+                        worldmap_drag_step = 5
+                        
+                    elif worldmap_drag_step == 5:
+                        print("🗺️ [Step 5] 2번 라인 가로 추가 탐색 (화면 오른쪽으로 쓸기 ➔ 맵 좌측 추가 노출)")
+                        device.shell("input swipe 300 1200 1000 1200 500")
+                        worldmap_drag_step = 6
+                        
+                    elif worldmap_drag_step == 6:
+                        print("🗺️ [Step 6] 세로 2단 하강 (세로 1000px 맵 한 칸 더 끌어올리기)")
+                        device.shell("input swipe 600 1600 600 600 500")
+                        worldmap_drag_step = 7
+                        
+                    elif worldmap_drag_step == 7:
+                        print("🗺️ [Step 7] 3번 라인 가로 탐색 (화면 다시 왼쪽으로 쓸기 ➔ 맵 우측 노출)")
+                        device.shell("input swipe 1000 1200 300 1200 500")
+                        worldmap_drag_step = 8
+                        
+                    elif worldmap_drag_step == 8:
+                        print("🗺️ [Step 8] 수색 한계 도달! 원점(Step 0)으로 캘리브레이션 롤백합니다.")
+                        worldmap_drag_step = 0
+                    
+                    time.sleep(1.5)
+                    try:
+                        raw_cap_w = device.screencap()
+                        if raw_cap_w:
+                            img_np = np.array(Image.open(io.BytesIO(raw_cap_w)))
+                    except: pass
+            
+            if should_go_town:
                 if find_and_click_template(device, img_np, t_go_village, 0.70):
                     waiting_for_village_dialogue = True
                     last_action_time = time.time()
@@ -1478,6 +1635,7 @@ def start_grand_orchestrator():
                     last_action_time = time.time()
                     time.sleep(3.0)
             continue
+
 
         if check_template_present(img_np, t_village, 0.83):
             first_stuck_time_str = ""
