@@ -268,12 +268,12 @@ def update_heartbeat():
 
 def watchdog_monitor_loop():
     global last_heartbeat_time
-    print("🛡️ [Watchdog 감시자] 백그라운드 락(Lock) 감시 센서 기동 완료 (주기: 15초, 한계치: 120초)")
+    print("🛡️ [Watchdog 감시자] 백그라운드 락(Lock) 감시 센서 기동 완료 (주기: 15초, 한계치: 240초)")
     while True:
         time.sleep(15)
         try:
             inactive_duration = time.time() - last_heartbeat_time
-            if inactive_duration > 120:
+            if inactive_duration > 240:
                 print(f"\n🚨🚨 [Watchdog 감시자 경보] 메인 스레드가 {int(inactive_duration)}초 동안 무반응 정체(락) 상태에 빠진 것을 인지했습니다.")
                 restart_process("Watchdog 감시자에 의한 메인 스레드 무반응(ADB 소켓 블로킹 등) 검출")
         except Exception as watchdog_err:
