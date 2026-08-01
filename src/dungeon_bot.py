@@ -581,6 +581,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     need_heal = False
     came_from_chest = False
     low_threshold_active_until = 0.0
+    low_threshold_reset_count = 0
     
     # 💡 [반응형 이동 및 즉시 복귀 상태 변수]
     last_target_coords = None
@@ -695,10 +696,14 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                 
                 if field_matched_low or combat_matched_low or yeolda_matched_low:
                     print(f"🚨 [정체 탈출 가드] 임계값 0.45 완화 시 앵커 매칭 성공! (필드:{field_matched_low}, 전투:{combat_matched_low}, 상자:{yeolda_matched_low})")
-                    print("🔴 빈사(딸피) 장막 간섭으로 판정하여 즉시 need_heal = True 설정 및 60초간 완화 모드를 가동합니다.")
                     need_heal = True
                     low_threshold_active_until = current_time + 60.0
-                    last_state_changed_time = current_time  # 정체 타이머 리셋
+                    if low_threshold_reset_count < 3:
+                        last_state_changed_time = current_time  # 정체 타이머 리셋
+                        low_threshold_reset_count += 1
+                        print(f"🔴 빈사(딸피) 장막 간섭 판정: 완화 모드 리셋 적용 ({low_threshold_reset_count}/3)")
+                    else:
+                        print("🔴 빈사(딸피) 완화 리셋 한계(3회) 도달! 진성 정체 상태일 가능성이 있으므로 타이머 리셋을 건너뜁니다.")
                     
             if stuck_duration > stuck_limit:
                 if state == "TRIGGER_EXIT":
@@ -859,6 +864,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
             previous_state = state
             last_state_changed_time = time.time()
             yeolda_stuck_retry_count = 0
+            low_threshold_reset_count = 0
         # 🎮 [미니게임 즉각 돌입 가드] 화면이 미니게임 해제 창인 경우 30초 정체 대기 없이 즉시 전이
         if state in ["FIELD_WAIT", "AUTO_MOVING"] and chest_opener.is_minigame_screen(img_np, height, width):
             print("🎮 [dungeon_bot] 미니게임 화면 포착! 즉각 PLAY_MINIGAME 상태로 진입합니다.")

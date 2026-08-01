@@ -419,6 +419,33 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 
 sys.excepthook = handle_exception
 
+def launch_daphne_app(device):
+    print("      ➔ 🛑 jp.co.drecom.wizardry.daphne 게임 앱 강제 종료 및 Relaunch를 실행합니다.")
+    try:
+        device.shell("am force-stop jp.co.drecom.wizardry.daphne")
+        time.sleep(2.0)
+    except Exception as stop_err:
+        print(f"      ⚠️ am force-stop 실패: {stop_err}")
+
+    # wvd 방식 동적 액티비티 런칭 적용
+    launched = False
+    try:
+        act_brief = device.shell("cmd package resolve-activity --brief jp.co.drecom.wizardry.daphne")
+        if act_brief and "No activity found" not in act_brief:
+            main_act = act_brief.strip().split("\n")[-1]
+            print(f"      ➔ 🚀 동적 런처 엑티비티 식별 성공: {main_act} - am start 기동을 전개합니다.")
+            device.shell(f"am start -n {main_act}")
+            launched = True
+    except Exception as brief_err:
+        print(f"      ⚠️ 동적 런처 엑티비티 식별 실패: {brief_err}")
+
+    if not launched:
+        print("      ➔ 🚀 monkey 런칭으로 폴백하여 기동을 주입합니다.")
+        try:
+            device.shell("monkey -p jp.co.drecom.wizardry.daphne -c android.intent.category.LAUNCHER 1")
+        except Exception as monkey_err:
+            print(f"      ⚠️ monkey 폴백 런칭 실패: {monkey_err}")
+
 def reboot_emulator():
     print("\n🖥️🚨 [에뮬레이터 콜드 리부트 작동] MuMu Player가 정지했거나 오프라인 상태입니다. 완전 리셋을 수행합니다!")
     # 1. 윈도우 taskkill을 통해 모든 뮤뮤 플레이어 프로세스 강제 킬
@@ -484,10 +511,7 @@ def reboot_emulator():
                     valid_device = d
                     break
             if valid_device:
-                print("      ➔ 🛑 jp.co.drecom.wizardry.daphne 게임 앱 강제 종료 및 Relaunch를 실행합니다.")
-                valid_device.shell("am force-stop jp.co.drecom.wizardry.daphne")
-                time.sleep(2.0)
-                valid_device.shell("monkey -p jp.co.drecom.wizardry.daphne -c android.intent.category.LAUNCHER 1")
+                launch_daphne_app(valid_device)
                 time.sleep(5.0)
         except Exception as app_err:
             print(f"⚠️ [에뮬레이터 리부트 앱 실행 실패] {app_err}")
@@ -534,6 +558,17 @@ def recover_app_startup(device):
             img_np = np.array(Image.open(io.BytesIO(raw_cap)))
         except:
             time.sleep(0.5)
+            continue
+            
+        # 🖥️ [가로 화면/안드로이드 홈 복구 가드] 에뮬레이터가 가로 상태로 기동된 경우 앱을 실행해 세로 모드 회전을 유도
+        height, width = img_np.shape[:2]
+        if height < width:
+            print(f"🖥️ [기동 복구 - 가로 화면 감지] 현재 화면이 가로 상태({width}x{height})입니다. 위저드리 다프네 앱 기동(Relaunch)을 강제 주입하여 세로 화면 전환을 시도합니다.")
+            try:
+                launch_daphne_app(device)
+                time.sleep(4.0)
+            except Exception as launch_err:
+                print(f"⚠️ 기동 복구 중 가로 화면 앱 실행 실패: {launch_err}")
             continue
             
         # 🚪 [앱 종료 방지 가드]
@@ -733,10 +768,7 @@ def restart_process(reason):
     if device_online:
         try:
             # 🛑 [안전 가드]: 파이썬 리셋 전 먹통이 된 게임 앱을 강제 종료 후 런처 재기동
-            print("      ➔ 🛑 jp.co.drecom.wizardry.daphne 게임 앱 강제 종료 후 재기동을 처리합니다.")
-            device.shell("am force-stop jp.co.drecom.wizardry.daphne")
-            time.sleep(3.0)
-            device.shell("monkey -p jp.co.drecom.wizardry.daphne -c android.intent.category.LAUNCHER 1")
+            launch_daphne_app(device)
             
             # 🖥️ [v1.13.8 연동] 앱 신규 실행 완료 대기 및 기동 복구 수행
             print("⏳ 초기 로딩을 위해 15초간 대기합니다...")
@@ -1108,9 +1140,7 @@ def start_grand_orchestrator():
                 restart_process(f"main 내 가로 화면 정체 30초 지속 감지 (화면 크기: {width}x{height})")
                 resolution_fail_counter = 0
             try:
-                device.shell("am force-stop jp.co.drecom.wizardry.daphne")
-                time.sleep(1.5)
-                device.shell("monkey -p jp.co.drecom.wizardry.daphne -c android.intent.category.LAUNCHER 1")
+                launch_daphne_app(device)
                 time.sleep(4.0)
             except Exception as launch_err:
                 print(f"⚠️ 가로 화면 앱 실행 실패: {launch_err}")
