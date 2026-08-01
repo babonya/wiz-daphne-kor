@@ -18,5 +18,5 @@ wvd-master/
 dev/
 image_matching_discussion.txt
 *새대화*.txt
-*예정.txt
-
+# 에이전트 규칙 폴더 제외
+.agents/
