@@ -2,6 +2,71 @@
 📋 [프로젝트: Daphne 매크로 통합 히스토리 로그]
 =============================================================================
 
+[1.17.0-hotfix1] 2026-08-02 19:00 - 핫픽스 릴리즈 - 유령성 세계지도 탈출 스턱 완치, 광석파밍 회군 전면 재설계(need_pickaxe 전용화), LIMIT_DUNGEON_LOOPS 무한주회 지원, village_common 공용 마을 판별 체계 전환
+- 내용: 실제 구동 로그(logs/2026-08-02-1626/1630/1839)와 실측 템플릿 매칭 테스트로 확인된, 1.17.0 릴리즈 이후 발견된 결함들을 완치한 핫픽스 버전. Claude Code로 담당 전환 후 첫 패치.
+- 상세:
+  1. 세계지도 버튼("세계지도를 연다") 그레이스케일 매칭 전환:
+     - [문제 원인]: t_open_world를 이진화(160) 방식으로 매칭한 결과, 던전마다 매칭률이 들쭉날쭉(백아 0.992, 유령성 0.628)하여 유령성 던전선택창에서 클릭 실패 → ESC 폴백 → 세계지도 오판정(0.80 < 0.83 임계값) → 5분 정체 → 강제 리부팅이 반복됨.
+     - [해법]: t_open_world를 load_grayscale_template으로 전환(5개 던전 전수 테스트 0.957 이상 확인)하고, 이진화를 강제하던 find_and_click_template 대신 신설한 find_and_click_grayscale_template으로 클릭하도록 교정. 던전별 전용 도장 분기 없이 공용 도장 1개로 통일.
+  2. 던전선택 로그에 던전명 표시: 아웃게임 상태 판정 로그에 DUNGEON_NAME을 삽입하여 백아/유령성 구분이 로그만으로 가능하도록 개선.
+  3. 월드맵 지그재그 탐색 Step 1 스케일 보정:
+     - [문제 원인]: wvd(900x1600) 좌표를 1.6배 환산 없이 그대로 이식하여, Step 1 스와이프 이동거리가 100px로 이웃 스텝(700~1800px) 대비 1/7~1/18 수준에 불과해 사실상 거의 움직이지 않던 결함.
+     - [해법]: 이웃 스텝과 비슷한 규모(약 600px)로 상향 조정.
+  4. 광석파밍 회군 조건 전면 재설계:
+     - [문제 원인]: dungeon_bot.start_main_macro()가 "곡괭이 부족"과 "정상 채굴 종료"를 동일한 반환값으로 알려주어, 사령탑이 광석파밍이면 이유 불문 dungeon_run_count를 LIMIT_DUNGEON_LOOPS로 강제 상승시켜 매번 던전선택에 도달할 때마다 무조건 마을로 회군하던 결함. 한번 회군 판정이 나면 세계지도 탈출 버그(상기 1번)로 인해 마을 도착에도 실패해 dungeon_run_count가 리셋될 기회조차 없이 영구 고착됨.
+     - [해법]: start_main_macro 반환값에 need_pickaxe_refill 플래그를 추가(need_pickaxe 감지 시에만 True)하고, 광석파밍은 dungeon_run_count/LIMIT_DUNGEON_LOOPS를 아예 참조하지 않고 이 플래그로만 회군 여부를 결정하도록 전면 분리. 정상 채굴 종료는 무한 재진입, 곡괭이 소진 시에만 마을행. 여관 숙박 완료 시 need_pickaxe_refill을 리셋.
+     - [부가]: LIMIT_DUNGEON_LOOPS=0이 "무한 주회"를 의미하도록 상자파밍 로직도 별도 보강 (기존에는 dungeon_run_count < 0이 항상 거짓이라 0 입력 시 즉시 회군해버리던 결함).
+  5. village_common 공용 마을 상태 판별 체계로 전환:
+     - [문제 원인]: 마을별 개별 앵커 파일(FFXI/!!vill_FFXI.png 등)에 의존한 결과, 해당 파일이 실수로 삭제되면 그 마을 인식이 전면 불가능해지는 구조적 취약점이 존재.
+     - [해법]: 5개 마을(이스벨크/루크나리아/구아르다/그랜드레기온/노던할로우) 전수 실측 검증을 거쳐, "마을에 있다" 판별 및 여관 진입 클릭을 village_common/inn.png(그레이스케일) 공용 도장 하나로 통일. 캐릭터창이 펼쳐져 월드맵 아이콘이 가려지는 예외 상황은 village_common/char_down.png(이진화)로 우선 감지 후 접기 처리하도록 연동하고, 마을 이탈은 기존 고정좌표 blind tap 대신 village_common/worldmap_icon.png(이진화) 실제 매칭 클릭으로 교체(폴백은 유지). main.py의 recover_app_startup/start_grand_orchestrator, inn_manager.py의 숙박 종료 조건까지 동일 앵커로 일괄 교체.
+     - [부수 효과]: 마을별 파일 의존이 사라지면서 !!vill_FFXI.png 삭제로 인한 노던할로우 인식 불가 버그도 함께 해소됨.
+  6. 세계지도 앵커(t_world_map) 그레이스케일 전환 및 텍스트 영역 크롭:
+     - [문제 원인]: 항목 1에서 t_open_world만 그레이스케일로 고치고, 같은 world_map_anchor.png 파일을 쓰는 t_world_map은 이진화(160)로 남아있어 동일한 결함이 재발함. 실측 결과 스크롤 후 던전 아이콘이 닫기 버튼 근처에 겹치는 상황에서 이진화 매칭이 0.557까지 폭락(그레이스케일은 0.917로 안정).
+     - [해법]: t_world_map 로딩(2곳) 및 판정(check_template_present→check_grayscale_template_present, get_match_score→get_grayscale_match_score) 전부 그레이스케일로 통일. 템플릿 자체도 "닫기" 텍스트 행을 제거(158x189→158x136)하여 여유폭 확보(0.991). 원본은 world_map_anchor_full_backup.png로 백업.
+  7. recover_app_startup() 가로화면 감지 무한루프 완치:
+     - [문제 원인]: 부팅 시 1회 호출되는 recover_app_startup() 내 가로화면 감지 분기가 "continue"로 함수 하단의 counter += 1 문을 건너뛰어, max_try(35) 상한이 있으나 마나여서 MuMu 렌더링이 깨진 상태로는 수학적으로 100% 무한루프에 빠지는 결함. 실사용 중 3시간 가까이 무반응으로 방치된 사례 확인(MuMu 자체가 꺼진 상태였음). restart_process()도 복구 마지막 단계에서 recover_app_startup()을 재호출하므로, 어느 경로로 복구가 시작되든 이 구멍에 다시 빠질 수 있는 구조였음.
+     - [해법]: 이 분기 전용 카운터(startup_landscape_fail_counter)를 신설해 30회(메인 루프와 동일 기준) 연속 가로화면 감지 시 restart_process()를 호출하도록 완치. 이제 MuMu 자체가 응답 불능이어도 결국 reboot_emulator()까지 자동으로 이어짐.
+  8. 월드맵 분기 should_go_town 미동기화 및 지그재그 상태 잔류 버그 완치 (실사용 중 발견):
+     - [문제 원인]: 항목 4에서 던전선택(DUNGEON_SEL) 분기의 회군 판단은 need_pickaxe_refill로 전환했지만, 월드맵(WORLDMAP) 분기의 should_go_town은 옛 dungeon_run_count 기준 그대로 남아있었음. 광석파밍은 dungeon_run_count를 더 이상 증가시키지 않으므로, 곡괭이가 없어도 should_go_town이 False로 나와 노던할로우 대신 유령선(던전) 아이콘을 눌러 다시 던전선택으로 돌아가버리는 결함. 추가로 worldmap_drag_step/worldmap_last_drag_time이 세계지도 재진입 시 초기화되지 않아, 이전 방문의 중간 단계(Step 3~7 등)에서 그대로 이어가며 실제 화면과 안 맞는 위치를 스와이프하는 결함도 함께 발견됨.
+     - [해법]: should_go_town을 광석파밍이면 need_pickaxe_refill 단독 기준으로 분리(상자파밍은 기존 dungeon_run_count 기준 유지). last_logged_status가 WORLDMAP으로 새로 전환되는 시점에 worldmap_drag_step=0, worldmap_last_drag_time=now로 초기화하여 매번 원점부터 탐색을 시작하고, 첫 스와이프 전 3초간 이미 보이는 목표 아이콘을 먼저 클릭 시도할 여유를 확보.
+  9. worldmap_icon 이진화 매칭 야간 배경 오탐(0,0 좌표 폭주) 완치 (실사용 중 발견):
+     - [문제 원인]: 노던할로우 마을 야간 배경(왼쪽 위 하늘이 넓은 단색 검정)에서, worldmap_icon.png 이진화(160) 매칭이 실제 아이콘 위치가 아니라 화면 좌상단(0,0)의 검은 하늘 영역과 완벽 일치(1.000)해버려, 마을을 나가려 계속 (92,84) 부근을 헛클릭하며 세계지도로 못 나가는 결함. village_common README 검증 당시 주간 마을 스샷으로만 테스트해 이 함정을 못 잡았음.
+     - [해법]: t_worldmap_icon 로딩 및 클릭 판정을 그레이스케일로 전환(실제 스샷 재검증: 그레이스케일 0.964로 정확한 위치 매칭 확인). 마을 이탈 관련 로그(여관 재진입/캐릭터창 접기/월드맵 아이콘 클릭/폴백)에 성공·실패 각각 출력 추가하여 향후 유사 결함 진단 소요 시간 단축.
+  10. 프리셋 불일치 던전선택 화면 범용 인식 및 자동 이탈 (실사용 중 발견):
+     - [문제 원인]: recover_app_startup()과 메인 루프의 DUNGEON_SEL 판별이 현재 프리셋(DUNGEON_NAME)에 맞는 도장 하나만 확인하도록 되어 있어, 프리셋을 바꿔서(예: 백아1층) 기동했는데 실제 화면이 다른 던전(유령성)의 셀렉창이면 어떤 마스터 앵커도 매칭이 안 돼 recover_app_startup()이 "인게임 진입 실패"로 (1,1) 공허 터치를 반복하는 결함. 신규 추가한 dungeon_select_anchor.png("Dungeon Select" 텍스트)로 범용 인식을 시도해봤으나 유령성에서 0.435로 실패(백아 특유의 파란 톤이 섞여 크롭됨)해 대체 불가 확인.
+     - [해법]: 이미 5개 던전 전수 검증된 공용 도장 open_world_map_btn.png("세계지도를 연다", ROI 800~1200/1480~1650, 임계값 0.85)를 "여기가 (프리셋 무관) 어떤 던전이든 던전선택 화면이다"의 범용 판별자로 채택. recover_app_startup()의 인게임 진입 성공 조건에 추가하고, 메인 루프 DUNGEON_SEL 분기도 "내 던전 맞음(기존 로직 유지)" / "던전선택 화면은 맞는데 내 던전 아님(새 elif, 즉시 세계지도로 이탈)"으로 분리. 던전별 앵커 레지스트리 없이 기존 공용 도장 재활용만으로 해결.
+  11. 잔여 정리: no_chest.png 리소스 폴더 정돈 및 프리셋 문서화:
+     - templates/no_chest.png → templates/Field/toastmsg_nochest.png로 이동(git mv) 및 dungeon_bot.py 참조 경로 동기화(변수명 t_no_chest는 유지, 사용처 2곳 정상 확인).
+     - presets.json에 "_가이드" 키(JSON 비주석 대체)로 town/dungeon/floor/farming_method 가능한 값과 오타 함정("백아2층" 완전 일치 아니면 조용히 1층 처리 등)을 명시.
+     - main.py 최상단 제어판: LIMIT_DUNGEON_LOOPS=0의 의미(상자파밍 무한주회, 광석파밍엔 무영향) 주석 보강, TOWN_NAME/DUNGEON_NAME/DUNGEON_FLOOR_NAME/FARMING_METHOD를 "직접 수정 금지, presets.json 로드 실패시만 쓰이는 비상 기본값"으로 재정리(ACTIVE_PRESET_NAME 하나만 수정하면 되도록), 상시 덮어써지던 미사용 DUNGEON_FLOOR=1 초기값 제거.
+- 적용 파일: main.py, dungeon_bot.py, inn_manager.py, Daphne Antigravity.bat, templates/Worldmap/world_map_anchor.png, templates/Field/toastmsg_nochest.png, presets.json, implementation_plan.md, history.log
+
+[1.17.0] 2026-08-02 16:09 - 정식 릴리즈 - FFXI 콜라보 던전("북쪽의 유령선") 및 월드맵 이동/검지, 던전 내 공통 상자("열다") 최우선 해제 구조 개편, 기존 백아 대순환 시퀀스 100% 모듈화 연동, 월드맵 지그재그 마을 탐색 복구, 곡괭이 소진(need_pickaxe) BGR 컬러 매칭 전환 및 FIELD_WAIT 공통 회군 가드 이식, 광석 파밍/프리셋 연동, 3채널 BGR 컬러 매칭 하켄 귀환 스턱 완치, 광석 파밍 체크포인트 1회 제한 + Redo 연동, 최초 기동 던전 직진입 안전 탈출 패치
+- 내용: 파이널 판타지 11(FF XI) 콜라보 이벤트 던전 "북쪽의 유령선" 및 월드맵 이동/검지 탐색 기능, 던전 내부 어떠한 동작 수행 중에도 상자 "열다"(t_yeolda) 앵커 포착 시 최우선으로 chest_opener를 구동하는 공통 감지 구조 개편과 기존 백아 던전의 검증된 대순환 회군 시퀀스(dungeon_run_count 기반 여관 숙박 회군)를 100% 모듈화 연동하고 월드맵 내 마을(이스벨크) 지그재그 탐색 예외를 제거하여 원상 복구하였으며 곡괭이 소진(need_pickaxe) BGR 컬러 매칭 전환 및 FIELD_WAIT 최상단 공통 회군 가드 이식을 집도하고, 광석 채굴 파밍 지원과 presets.json 프리셋 엔진을 공식 탑재하며, 하켄 귀환 팝업 조명 변화에 따른 매칭 실패 및 30초 stuck KEYCODE_BACK 복구 간섭으로 인한 무한 스턱을 3채널 BGR 수렴 루프로 완치하고, 광석 파밍 시 체크포인트(3번) 터치를 최초 1회로 제한(이후 Redo 1번 터치)하며, 매크로 재부팅 등으로 던전 내부에서 기동되었을 때만 던전 밖으로 안전하게 하켄 탈출하도록 개편한 정식 릴리즈 버전.
+- 상세:
+  1. 기존 백아 던전 검증 대순환 시퀀스 100% 모듈화 연동 및 월드맵 마을 지그재그 탐색 원상 복구:
+     - [문제 원인]: main.py 던전 선택창(L1496)과 월드맵 탐색 구문(L1563)에 or/and (FARMING_METHOD == "광석파밍") 이라는 억지 예외 구문이 남아 있어, 곡괭이 소진으로 밖으로 나와도 여관으로 가지 못하고 무조건 던전 2층으로 들어가거나 월드맵에서 마을 아이콘(이스벨크)을 찾지 않고 멈추는 결함이 발생함.
+     - [해법]: 억지 예외 구문을 전면 제거하여 백아 던전의 검증된 대순환 회군 및 월드맵 걸레질 지그재그 탐색 로직으로 100% 원상 복구하고, 광석 파밍 채굴 1주회 완수/소진 후 탈출 시 dungeon_run_count = LIMIT_DUNGEON_LOOPS로 동기화하여 던전 선택창 및 월드맵 도달 시 즉시 이스벨크 마을 여관 숙박(곡괭이 100% 리필)으로 이어지는 무결점 순환 체계를 완성함.
+  1. 곡괭이 소진(`t_need_pickaxe`) BGR 컬러 매칭 전환 및 FIELD_WAIT 최상단 공통 회군 가드 신설:
+     - [해법]: t_need_pickaxe 템플릿을 3채널 BGR 컬러 매칭(load_color_template, 임계값 0.75)으로 전환하여 갈색 불투명 팝업의 흰색 글자 픽셀을 100% 정밀 식별.
+     - [해법]: FIELD_WAIT 상태 안착 시 최상단에서 곡괭이 소진 팝업을 1순위로 검시하여, 연타 마이닝 루프 종료 후 팝업이 잔여한 경우에도 즉시 감지하여 미니맵 2번 터치 및 하켄 귀환 수렴 루프(trigger_harken_escape)를 집도하도록 완치.
+  2. 던전 내 공통 상자("열다") 최우선 검지 및 `chest_opener` 격발 구조 개편:
+     - [해법]: 파밍 모드("광석파밍"/"상자파밍")와 무관하게 FIELD_WAIT 안착 시 최상단에서 무조건 t_yeolda("열다") 앵커를 1순위로 검시하도록 리팩토링.
+     - [해법]: 광석 이동(3번/1번) 후 안착 스캔 시점에도 2차 상자 포착 가드를 이식하여, 던전 재부팅 직후나 이동 중 만난 보물 상자도 100% 해제하고 파밍을 계속 진행하도록 완치.
+  3. FFXI 콜라보 던전("북쪽의 유령선") 및 프리셋 관리 엔진(`presets.json`), 월드맵 이동/검지 지원:
+     - [해법]: main.py 상단에 ACTIVE_PRESET_NAME 설정 구역을 배치하여 presets.json 내의 던전명("북쪽의 유령선"), 마을명("이스벨크"), 진입 층수("2nd"), 파밍 방식("광석파밍")을 일괄 동기화 로딩하도록 엔진 구축.
+     - [해법]: 월드맵 앵커(t_open_world) 및 월드맵 내 던전/마을 아이콘 검지 제어를 탑재하여, 월드맵을 거쳐 이스벨크 마을 및 유령선 던전 선택창으로 이동하는 동선을 무결하게 연동함.
+     - [해법]: 유령선 전용 층계 버튼 템플릿(FFXI_enter_b1.png, FFXI_enter_b2.png)을 0.88 정밀 임계값으로 조준 진입하고, 광석 채굴(mining_ready, mining_done, mining_get, need_pickaxe) 시퀀스를 연동함.
+  4. 3채널 BGR 컬러 매칭 기반 하켄 귀환 수렴 루프 스턱 완치 (`trigger_harken_escape`):
+     - [문제 원인]: 하켄 팝업 창 뒤쪽의 3D 촛불 조명 불빛 연출에 의해, 기존 160 고정 이진화 매칭(find_and_click_template_in_bot)의 픽셀 형태가 파손되어 20분쯤 주회 시 매칭률이 폭락했습니다. 또한 단발성 4초 대기 후 실패 시 메인 루프에서 FIELD_WAIT 30초 정체로 판단하여 KEYCODE_BACK을 날려 하켄 창을 끄는 무한 스턱이 발생했습니다.
+     - [해법]: 하켄 귀환 창이 뜰 때까지 3.75초 간격으로 최대 3회 스캔 및 미니맵 2번(출구이동) 재타격을 날리는 수렴 루프를 구현했습니다. 매칭 방식은 3채널 BGR 컬러 매칭(find_and_click_color_template_in_bot, 임계값 0.75)으로 전면 교체하여 촛불 빛 간섭을 무력화했으며, 10초 초과 시 1440x2560 세로 기준 고정 좌표 (720, 1920) 강제 터치 폴백을 이식하고 루프 내 타이머(last_state_changed_time)를 리셋하여 KEYCODE_BACK 간섭을 원천 차단했습니다.
+  5. 광석 파밍 체크포인트 1회 터치 제한 및 Redo(1번) 연동:
+     - [해법]: start_main_macro 내에 checkpoint_pressed_count 변수를 도입하여, 광석 파밍 시 최초 1회만 미니맵 3번(체크포인트)을 누르고, 이후부터는 미니맵 1번(t_move_resume_act/deact - Redo) 단추를 눌러 동일 위치 이동 재개 상태를 유지하도록 개선했습니다. (1번 미검출 시 3번 폴백).
+  6. 최초 기동 및 던전 직진입 구분을 위한 from_dungeon_select 인자 연동 및 던전 내부 기동 강제 탈출:
+     - [문제 원인]: 던전 선택창(DUNGEON_SEL)에서 정상 진입할 때도 is_initial_start가 True로 리셋되어 진입 즉시 2번(하켄귀환)으로 도망치는 현상이 발생함.
+     - [해법]: main.py와 dungeon_bot.py 간에 from_dungeon_select 파라미터를 넘겨주어, 던전 선택창을 거쳐 정상 진입한 경우(from_dungeon_select=True)에는 도망치지 않고 정상 주회를 집도하며, 게임 재부팅/튕김 등으로 던전 선택창을 거치지 않고 던전 안에서 켜진 경우(from_dungeon_select=False)에만 즉시 하켄 탈출을 단행하도록 완치함.
+- 적용 파일: main.py, dungeon_bot.py, Daphne Antigravity.bat, presets.json, AGENTS.md, history.log
+
 [1.16.0] 2026-07-29 20:30 - 정식 릴리즈 - 상자 개봉 후 범용 대화 화살표 터치 개편, 리소스 폴더 정돈, 일반 대화 롤백 핫픽스, 시스템 종료 팝업 사령탑 격리 및 TypeError 크래시 타이머 변수 격리 패치
 - 내용: 상자 개봉 및 공포 오선택 팝업을 우하단 범용 대화 화살표 이미지 매칭으로 통합하고, 일반 대화 씹힘과 종료 팝업 갇힘 스턱을 예방하는 2중 안전 장치 사령탑 이식, TypeError를 격발하던 정체 타이머 변수 충돌 격리, 그리고 자동 재부팅 횟수 구분을 위한 텍스트 로그/스크린샷 reboot 넘버링 접미사 기능을 탑재한 안정성 확보 마이너 릴리즈 버전.
 - 상세:

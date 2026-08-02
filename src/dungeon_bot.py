@@ -13,14 +13,16 @@ import chest_opener
 import party_manager
 
 # 💡 [v1.13.18 신설] 통합 힐링 필요 플래그 및 상자 복귀 감시 전역 변수
+# 💡 [v1.17.0] FFXI 콜라보 던전("북쪽의 유령선") 지원, 3채널 BGR 컬러 매칭 수렴 루프 하켄 스턱 완치, 체크포인트 1회 제한 + Redo 연동, 최초 기동 던전 직진입 안전 탈출
 need_heal = False
 came_from_chest = False
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.17.0
-# - 최근 수정일: 2026-08-02 01:40
+# - 현재 버전: 1.17.0-hotfix1
+# - 최근 수정일: 2026-08-02 19:00
 # - 수정 기록:
+#   1.17.0-hotfix1: start_main_macro 반환값에 need_pickaxe_refill 플래그 추가(곡괭이 소진 vs 정상 채굴종료 구분), 사령탑이 이 플래그만으로 광석파밍 회군을 판단하도록 지원
 #   1.17.0: FFXI 콜라보 북쪽의 유령선 2층 광석파밍(마이닝) 주회 상태 머신 및 presets.json 동적 가변 프리셋 로딩 엔진 구축에 따른 버전 동기화
 #   1.16.0: 상자 대화창 우하단 화살표(dialogue_indicator.png) 감지 터치 개편, 공포 상태이상 캐릭 선택 시 "열 수 없다" 대화 팝업 복구 루프 추가, templates/chestopening/ 하위로 상자 관련 템플릿 폴더 정돈에 따른 버전 동기화
 #   1.15.0: 지정 슬롯 따개 터치 개편, 상자공포 자동 감지 및 주인공/타 슬롯 우회 회피 시퀀스 추가, whowillopenit 템플릿 의존성 제거 및 '열다' 버튼 소멸 기반 진입 판정 최적화에 따른 버전 동기화
@@ -41,7 +43,7 @@ came_from_chest = False
 #   1.13.20: 자동전투 켜기 씹힘 방지(auto_combat_paused_for_skill 가드 우회) 보완
 #   1.13.19-hotfix2: 최상단 전투 가드 변수 리셋, 렉 보호 가드 주입, 탈출 앵커 임계치 상향 및 안전지대(700, 150) 터치 조율
 #   1.13.19-hotfix1: 던전 최초 탈출 시 출구 이동 버튼 0.2초 간격 2회 터치(더블 탭) 보완
-#   1.13.19: WVD 기반 사망/부활(InCombat_dead, btn_resurrect) 흐름 및 기동 복구(recover_app_startup) 연동 고도화
+#   1.13.19: 사망/부활(InCombat_dead, btn_resurrect) 흐름 및 기동 복구(recover_app_startup) 연동 고도화
 #   1.13.18: 통합 힐링 플래그 need_heal 도입, 상자 완료 필드 앵커 2차 검증 가드 주입, 임의 빈사 힐링 제거 및 임계치 완화
 #   1.13.17: 버전 동기화
 #   1.13.16: 버전 동기화
@@ -503,6 +505,64 @@ def find_and_click_template_in_bot(device, img_np, thresh_temp, threshold_val=0.
 
 # [독 감지 모니터링 기능은 1.14.1-hotfix7에서 렉 최적화를 위해 탈거되었습니다]
 
+def find_and_click_color_template_in_bot(device, img_np, color_temp, threshold_val=0.75):
+    """
+    3채널 BGR/RGB 컬러 템플릿 매칭으로 대상 좌표를 탐색하고 클릭합니다.
+    """
+    if color_temp is None or img_np is None: return False
+    h_img, w_img = img_np.shape[:2]
+    h_temp, w_temp = color_temp.shape[:2]
+    if h_img < h_temp or w_img < w_temp: return False
+    try:
+        img_match = img_np[:, :, :3] if len(img_np.shape) == 3 and img_np.shape[2] == 4 else img_np
+        temp_match = color_temp[:, :, :3] if len(color_temp.shape) == 3 and color_temp.shape[2] == 4 else color_temp
+        
+        result = cv2.matchTemplate(img_match, temp_match, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, max_loc = cv2.minMaxLoc(result)
+        if max_val > threshold_val:
+            h, w = temp_match.shape[:2]
+            safe_device_shell(device, f"input tap {max_loc[0] + int(w / 2)} {max_loc[1] + int(h / 2)}")
+            return True
+        return False
+    except: return False
+
+def trigger_harken_escape(device, t_harken_return, t_move_exit):
+    """
+    하켄 탈출 수렴 루프: 3채널 BGR 컬러 매칭으로 하켄 귀환 창이 뜰 때까지 대기하며, 
+    만약 보이지 않으면 출구이동(미니맵 2번) 터치를 재시도하며 안정적으로 귀환 버튼을 클릭하고 탈출합니다.
+    """
+    harken_clicked = False
+    print("⏳ [하켄귀환] 귀환 팝업 대기 및 BGR 컬러 수렴 루프 기동 (간격: 3.75초, 최대 3회)")
+    for h_wait in range(3):  # 3.75초 간격 * 3회 = 약 11.25초
+        time.sleep(3.75)
+        try:
+            raw_h = device.screencap()
+            if raw_h:
+                img_np_h = np.array(Image.open(io.BytesIO(raw_h)))
+                # 귀환 글씨 BGR 3채널 컬러 매칭 (0.75~0.80 수렴 기준 적용)
+                if find_and_click_color_template_in_bot(device, img_np_h, t_harken_return, 0.75):
+                    print(f"🚪 [하켄귀환] 귀환 버튼 BGR 컬러 인식 및 터치 성공! (대기 {h_wait+1}회차)")
+                    harken_clicked = True
+                    break
+                else:
+                    # 팝업이 아직 안 떴을 가능성이 있으므로 미니맵 2번 재타격
+                    print(f"🔄 [하켄귀환] 귀환 버튼 미검출로 미니맵 2번 터치 재주입 시도 ({h_wait+1}/3)")
+                    exit_coords = find_and_get_field_btn_coords(img_np_h, t_move_exit, 0.70)
+                    if exit_coords:
+                        safe_device_shell(device, f"input tap {exit_coords[0]} {exit_coords[1]}")
+                    else:
+                        safe_device_shell(device, "input tap 1140 572")
+        except Exception as scan_err:
+            print(f"⚠️ [하켄귀환] 스크린샷 스캔 중 예외 발생: {scan_err}")
+            
+    if not harken_clicked:
+        print("⚠️ [하켄귀환] 컬러 인식 실패. 1440x2560 표준 고정 좌표 (720, 1920) 강제 터치 주입!")
+        safe_device_shell(device, "input tap 720 1920")
+        harken_clicked = True
+        
+    time.sleep(4.0)  # 퇴장 연출 대기
+    return True
+
 def fire_target_monster_body(device, img_np, t_next, t_arrow):
     target_coords = find_and_get_coords(img_np, t_next, 0.65)
     if target_coords:
@@ -526,10 +586,10 @@ def fire_target_monster_body(device, img_np, t_next, t_arrow):
 
 
 
-def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_chest=True, healer_slot=5, masked_adventurer_slot=5, chest_opener_slot=6, farming_method="상자파밍", dungeon_name="일반 던전"):
+def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_chest=True, healer_slot=5, masked_adventurer_slot=5, chest_opener_slot=6, farming_method="상자파밍", dungeon_name="일반 던전", from_dungeon_select=False):
     # - farming_method: "상자파밍"(범용 상자 순회 방식) 또는 "광석파밍"(FFXI 유령선 전용)
     # - dungeon_name: "북쪽의 유령선"과 같이 특수 던전 제어 구분을 위함 (일반 상자파밍 던전은 범용 로직 공유)
-    if not device: return False, False
+    if not device: return False, False, False
 
     print("\n=======================================")
     print("🎨 [dungeon_bot] 코어 마스크 도장을 로드합니다...")
@@ -545,7 +605,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     
     t_move_resume_act = load_grayscale_template("templates/Field/resume_act.png")
     t_move_resume_deact = load_grayscale_template("templates/Field/resume_deact.png")
-    t_no_chest = load_template("templates/no_chest.png") 
+    t_no_chest = load_template("templates/Field/toastmsg_nochest.png")
     t_yeolda = load_template("templates/chestopening/yeolda_clean.png")
     t_dialogue_indicator = load_template("templates/chestopening/dialogue_indicator.png")
     
@@ -568,8 +628,8 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     t_mining_ready = load_color_template("templates/FFXI/mining_ready.png")
     t_mining_done = load_color_template("templates/FFXI/mining_done.png")
     t_mining_get = load_color_template("templates/FFXI/mining_get.png")
-    t_need_pickaxe = load_template("templates/FFXI/need_pickaxe.png")
-    t_harken_return = load_template("templates/FFXI/harken_return.png")
+    t_need_pickaxe = load_color_template("templates/FFXI/need_pickaxe.png")
+    t_harken_return = load_color_template("templates/FFXI/harken_return.png")
     
     t_anchor_dead = load_dead_template("templates/anchor_dead_screen.png")
     t_btn_resurrect = load_dead_template("templates/btn_resurrect.png")
@@ -630,6 +690,9 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     exit_first_start_time = None
     exit_recovery_retry_count = 0
     minimap_expanded = False
+    checkpoint_pressed_count = 0
+    is_initial_start = True
+    need_pickaxe_refill = False  # 💡 [광석파밍 전용] 곡괭이 소진으로 탈출한 경우에만 True. 사령탑이 이 플래그로만 마을 회군 여부를 판단합니다.
 
     cap_fail_counter = 0
     resolution_fail_counter = 0  # 🚨 [v1.14.0-hotfix3] 해상도 미달 가드 연속 카운터 추가
@@ -684,7 +747,24 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
 
         if check_template_present(img_np, t_dungeon_sel, 0.70):
             print("🚪 [dungeon_bot] 현실 화면이 '던전 선택창'으로 식별되었습니다! 사령탑으로 즉시 퇴장합니다.")
-            return False, skill_mission_success_this_combat
+            return False, skill_mission_success_this_combat, need_pickaxe_refill
+
+        # 🚨 [v1.14.1-hotfix11] 재부팅/최초 기동 시 던전 내부인 경우 즉시 던전 밖으로 탈출
+        if farming_method == "광석파밍" and (not from_dungeon_select) and is_initial_start:
+            if check_field_anchor_present(img_np, t_field, field_threshold):
+                print("🚨 [최초 기동 감지] 던전 선택창을 거치지 않고 던전 내부에서 시작된 것이 포착되었습니다! 안전한 순회를 위해 즉시 하켄 탈출을 단행합니다.")
+                is_initial_start = False
+                exit_coords = find_and_get_field_btn_coords(img_np, t_move_exit, 0.70)
+                if exit_coords:
+                    print(f"👉 [출구이동] 미니맵 2번 단추 터치 ({exit_coords[0]}, {exit_coords[1]})")
+                    safe_device_shell(device, f"input tap {exit_coords[0]} {exit_coords[1]}")
+                else:
+                    safe_device_shell(device, "input tap 1140 572")
+                
+                last_state_changed_time = time.time()
+                trigger_harken_escape(device, t_harken_return, t_move_exit)
+                last_state_changed_time = time.time()
+                return False, skill_mission_success_this_combat, need_pickaxe_refill
 
         # 🌐 [통합 네트워크 에러 감시 가드]
         if check_template_present(img_np, t_err_retry, 0.70):
@@ -762,7 +842,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                 
                 # [독 치료 복구 가드는 1.14.1-hotfix7에서 탈거되었습니다]
 
-                if check_template_present(img_np, t_dungeon_sel, 0.70): return False, skill_mission_success_this_combat
+                if check_template_present(img_np, t_dungeon_sel, 0.70): return False, skill_mission_success_this_combat, need_pickaxe_refill
                 
                 close_coords_bot = find_and_get_coords(img_np, t_heal_close, 0.70)
                 if close_coords_bot:
@@ -961,6 +1041,21 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     continue
 
         if state == "FIELD_WAIT":
+            # 🚨 [독립 최상단 가드] 암전/블러 화면 포함 곡괭이 부족 메시지(t_need_pickaxe) 포착 시 즉시 하켄 탈출
+            if check_color_template_present(img_np, t_need_pickaxe, 0.70):
+                need_pickaxe_refill = True
+                print("⚠️ [곡괭이 부족] 팝업 화면에서 need_pickaxe BGR 컬러 확정! 즉시 여관 숙박 회군을 단행합니다.")
+                exit_coords = find_and_get_field_btn_coords(img_np, t_move_exit, 0.70)
+                if exit_coords:
+                    safe_device_shell(device, f"input tap {exit_coords[0]} {exit_coords[1]}")
+                else:
+                    safe_device_shell(device, "input tap 1140 572")
+                
+                last_state_changed_time = time.time()
+                trigger_harken_escape(device, t_harken_return, t_move_exit)
+                last_state_changed_time = time.time()
+                return False, skill_mission_success_this_combat, need_pickaxe_refill
+
             if check_field_anchor_present(img_np, t_field, 0.65):
                 # 1. 전투 종료 복귀 검증 및 카운팅
                 was_from_combat = False
@@ -1003,20 +1098,55 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                 if was_from_combat:
                     continue
                 
+                # 🚨 [던전 공통 최우선 철칙] 화면에 상자 "열다" (t_yeolda) 앵커 포착 시 즉시 상자 해제 구동
+                if check_template_present_dynamic(img_np, t_yeolda, 0.65, 160):
+                    print("📦 [공통 상자 감지] 던전 필드에서 '열다' 버튼 포착! 상자 해제/개봉 시퀀스를 최우선 격발합니다.")
+                    if chest_opener.open_and_disarm_chest(device, img_np, t_yeolda, chest_opener_slot=chest_opener_slot, masked_adventurer_slot=masked_adventurer_slot):
+                        came_from_chest = True
+                        last_click_time = time.time()
+                        last_state_changed_time = time.time()
+                        continue
+
                 if time.time() - last_click_time > 4.0:
                     if farming_method == "광석파밍":
-                        # ⛏️ [v1.17.0 광석파밍 주회 로직]
-                        # 1) 미니맵 3번(체크포인트)으로 이동
-                        chk_coords = find_checkpoint_btn_coords(img_np, t_move_check_act, t_move_check_deact, 0.70)
-                        if chk_coords:
-                            cx, cy = chk_coords
-                            print(f"⛏️ [광석이동] '체크포인트 자동 이동(3번)' ({cx}, {cy}) 터치 주입")
-                            safe_device_shell(device, f"input tap {cx} {cy}")
-                            last_click_time = time.time()
-                            
-                            # 이동 완료 대기 (3초 강제 대기)
-                            time.sleep(3.0)
-                            
+                        # ⛏️ [v1.14.1-hotfix11 광석파밍 주회 로직]
+                        # 1) 최초 1회만 미니맵 3번(체크포인트)으로 이동, 그 이후는 1번(Redo)으로 이동
+                        moved = False
+                        if checkpoint_pressed_count == 0:
+                            chk_coords = find_checkpoint_btn_coords(img_np, t_move_check_act, t_move_check_deact, 0.70)
+                            if chk_coords:
+                                cx, cy = chk_coords
+                                print(f"⛏️ [광석이동] 최초 1회 '체크포인트 자동 이동(3번)' ({cx}, {cy}) 터치 주입")
+                                safe_device_shell(device, f"input tap {cx} {cy}")
+                                checkpoint_pressed_count += 1
+                                last_click_time = time.time()
+                                last_state_changed_time = time.time()
+                                moved = True
+                                time.sleep(3.0)
+                        else:
+                            # 1번 Redo(이동 재개) 단추 터치
+                            resume_coords = find_checkpoint_btn_coords(img_np, t_move_resume_act, t_move_resume_deact, 0.70)
+                            if resume_coords:
+                                rx, ry = resume_coords
+                                print(f"⛏️ [광석이동] '이동 재개(1번 Redo)' ({rx}, {ry}) 터치 주입")
+                                safe_device_shell(device, f"input tap {rx} {ry}")
+                                last_click_time = time.time()
+                                last_state_changed_time = time.time()
+                                moved = True
+                                time.sleep(3.0)
+                            else:
+                                print("⛏️ [광석이동] 이동 재개(1번 Redo) 단추 미검출. 폴백으로 체크포인트(3번) 재조준 시도")
+                                chk_coords = find_checkpoint_btn_coords(img_np, t_move_check_act, t_move_check_deact, 0.70)
+                                if chk_coords:
+                                    cx, cy = chk_coords
+                                    print(f"⛏️ [광석이동] '체크포인트 자동 이동(3번)' ({cx}, {cy}) 터치 주입")
+                                    safe_device_shell(device, f"input tap {cx} {cy}")
+                                    last_click_time = time.time()
+                                    last_state_changed_time = time.time()
+                                    moved = True
+                                    time.sleep(3.0)
+
+                        if moved:
                             # 2) 도착 화면 재캡처 및 상태 분석
                             try:
                                 raw = device.screencap()
@@ -1024,6 +1154,15 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                     img_np = np.array(Image.open(io.BytesIO(raw)))
                             except: pass
                             
+                            # 🚨 [이동 안착 지점 2차 상자 포착 가드]
+                            if check_template_present_dynamic(img_np, t_yeolda, 0.65, 160):
+                                print("📦 [이동 도중 상자 발견!] 광석 이동 도착 지점/경로에서 '열다' 상자 포착! 상자 해제 시퀀스를 단행합니다.")
+                                if chest_opener.open_and_disarm_chest(device, img_np, t_yeolda, chest_opener_slot=chest_opener_slot, masked_adventurer_slot=masked_adventurer_slot):
+                                    came_from_chest = True
+                                    last_click_time = time.time()
+                                    last_state_changed_time = time.time()
+                                    continue
+
                             is_ready = check_color_template_present(img_np, t_mining_ready, 0.78)
                             is_done = check_color_template_present(img_np, t_mining_done, 0.78)
                             
@@ -1051,27 +1190,20 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                         safe_device_shell(device, "input tap 731 859")
                                         time.sleep(1.0)
                                         
-                                    # 곡괭이 부족 감지 시 ➔ 여관 복귀
-                                    if check_template_present(img_np_mine, t_need_pickaxe, 0.70):
-                                        print("⚠️ [곡괭이 부족] need_pickaxe 감지! 여관 숙박 회군을 개시합니다.")
+                                    # 곡괭이 부족 감지 시 ➔ 여관 복귀 (3채널 BGR 컬러 매칭 0.75 적용)
+                                    if check_color_template_present(img_np_mine, t_need_pickaxe, 0.75):
+                                        need_pickaxe_refill = True
+                                        print("⚠️ [곡괭이 부족] need_pickaxe BGR 컬러 감지! 여관 숙박 회군을 개시합니다.")
                                         exit_coords = find_and_get_field_btn_coords(img_np_mine, t_move_exit, 0.70)
                                         if exit_coords:
                                             safe_device_shell(device, f"input tap {exit_coords[0]} {exit_coords[1]}")
                                         else:
                                             safe_device_shell(device, "input tap 1140 572") # 고정
-                                        time.sleep(4.0)
                                         
-                                        # 하켄 귀환 버튼 검출 클릭
-                                        try:
-                                            raw_h = device.screencap()
-                                            if raw_h:
-                                                img_np_h = np.array(Image.open(io.BytesIO(raw_h)))
-                                                if find_and_click_template_in_bot(device, img_np_h, t_harken_return, 0.70):
-                                                    print("🚪 [하켄귀환] 곡괭이 부족으로 인한 유령선 완전 탈출 성공! 사령탑 회군.")
-                                                    time.sleep(3.0)
-                                                    return False, skill_mission_success_this_combat
-                                        except: pass
-                                        return False, skill_mission_success_this_combat
+                                        last_state_changed_time = time.time()
+                                        trigger_harken_escape(device, t_harken_return, t_move_exit)
+                                        last_state_changed_time = time.time()
+                                        return False, skill_mission_success_this_combat, need_pickaxe_refill
                                     
                                     # 채굴 완료 완료
                                     if check_color_template_present(img_np_mine, t_mining_done, 0.78):
@@ -1085,19 +1217,11 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                             safe_device_shell(device, f"input tap {exit_coords[0]} {exit_coords[1]}")
                                         else:
                                             safe_device_shell(device, "input tap 1140 572")
-                                        time.sleep(4.0)
                                         
-                                        # 하켄 귀환
-                                        try:
-                                            raw_h = device.screencap()
-                                            if raw_h:
-                                                img_np_h = np.array(Image.open(io.BytesIO(raw_h)))
-                                                if find_and_click_template_in_bot(device, img_np_h, t_harken_return, 0.70):
-                                                    print("🚪 [하켄귀환] 채굴 완료로 인한 유령선 완전 탈출 성공! 사령탑 회군.")
-                                                    time.sleep(3.0)
-                                                    return False, skill_mission_success_this_combat
-                                        except: pass
-                                        return False, skill_mission_success_this_combat
+                                        last_state_changed_time = time.time()
+                                        trigger_harken_escape(device, t_harken_return, t_move_exit)
+                                        last_state_changed_time = time.time()
+                                        return False, skill_mission_success_this_combat, need_pickaxe_refill
                                 
                             else:
                                 # 3) 이미 캠 or 광석이 없는 상태 ➔ 던전 탈출 복귀
@@ -1108,18 +1232,11 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                     safe_device_shell(device, f"input tap {exit_coords[0]} {exit_coords[1]}")
                                 else:
                                     safe_device_shell(device, "input tap 1140 572")
-                                time.sleep(4.0)
                                 
-                                # 하켄 귀환
-                                try:
-                                    raw_h = device.screencap()
-                                    if raw_h:
-                                        img_np_h = np.array(Image.open(io.BytesIO(raw_h)))
-                                        if find_and_click_template_in_bot(device, img_np_h, t_harken_return, 0.70):
-                                            print("🚪 [하켄귀환] 유령선 완전 탈출 성공! 던전셀렉창으로 복귀합니다.")
-                                            time.sleep(3.0)
-                                            return False, skill_mission_success_this_combat
-                                except: pass
+                                last_state_changed_time = time.time()
+                                trigger_harken_escape(device, t_harken_return, t_move_exit)
+                                last_state_changed_time = time.time()
+                                return False, skill_mission_success_this_combat, need_pickaxe_refill
                         continue
 
                     # 이하 기존 상자 파밍 시퀀스
@@ -1388,7 +1505,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     print("🎉 [탈출 무결점 성공] 던전 필드 화면이 완전히 소멸되었습니다! 사령탑 무대로 복귀합니다.")
                     exit_clicked_once = False             # 🚨 [v1.14.0-hotfix2] 다음 판을 위한 변수 초기화
                     exit_first_start_time = None          # 🚨 [v1.14.0-hotfix2] 다음 판을 위한 변수 초기화
-                    return True, skill_mission_success_this_combat
+                    return True, skill_mission_success_this_combat, need_pickaxe_refill
             
             if exit_touched_this_loop or exit_clicked_once:
                 time.sleep(3.0)

@@ -7,23 +7,22 @@ import json
 # ==============================================================================
 # ⚙️ [Daphne 마스터 글로벌 제어 세팅 변수 구역 - 진짜 최상단 제어판]
 # ==============================================================================
-CURRENT_VERSION = "1.17.0"         # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
+CURRENT_VERSION = "1.17.0-hotfix1" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
+# 💡 [v1.17.0] FFXI 콜라보 던전/프리셋 연동, 3채널 BGR 컬러 매칭 수렴 루프 하켄 스턱 완치, 광석 파밍 체크포인트 1회 제한 + Redo 연동, 최초 기동 던전 직진입 안전 탈출
 
 LIMIT_DUNGEON_LOOPS = 2             # 🔄 [마을 회군 기준] 던전을 몇 바퀴 돌고 마을(여관)로 복귀할지 설정
-START_RUN_COUNT_OFFSET = 2          # 🚀 [초기 부팅 주회 카운트] 매크로 시작 시 초기 주회 offset 수치 (초기값=던전루프와 같은 수치, 던전에서 시작하면 해당 주회 후 복귀, 마을이면 숙박 후 주회 시작)
+                                    #    0으로 설정 시 상자파밍은 회군 없이 무한 주회합니다. (광석파밍은 이 값과 무관하게 곡괭이가 소진될 때까지 항상 무한 재진입하므로, 광석파밍 프리셋에서는 이 값이 아무 영향도 없습니다.)
+START_RUN_COUNT_OFFSET = 1          # 🚀 [초기 부팅 주회 카운트] 매크로 시작 시 초기 주회 offset 수치 (초기값=던전루프와 같은 수치, 던전에서 시작하면 해당 주회 후 복귀, 마을이면 숙박 후 주회 시작)
 ENABLE_FIRST_COMBAT_SKILL = 0       # ⚔️ [초기 전투 스킬 제어] (⚠️ 현재 미구현으로 추후 구현 예정이니 무조건 0으로 고정해 주세요) (0: Off, 1: On)
-ENABLE_HEAL_AFTER_CHEST = 1         # 📦 [상자 개방 후 힐링] 상자 해제/개방 성공 후 긴급 파티 치료(정비)를 작동할지 설정 (0: Off, 1: On)
+ENABLE_HEAL_AFTER_CHEST = 0         # 📦 [상자 개방 후 힐링] 상자 해제/개방 성공 후 긴급 파티 치료(정비)를 작동할지 설정 (0: Off, 1: On)
 HEALING_LOOPS = 1                   # 💊 [전투 후 정비 주기] 몇 회의 전투마다 파티 힐링 정비를 수행할지 설정
                                     #    - 1: 매 전투 종료 시 필드 복귀 직후 즉시 힐링 시퀀스 실행
                                     #    - 2: 2회 전투 치를 때마다 힐링 시퀀스 실행 (누적 카운트 기준)
                                     #    - 0: 전투 후 자동 힐링 정비 비활성화 (체력 소진 시까지 계속 전투 진행)
 
-# 🗺️ [던전 층수 설정 (백아/철광산 한정)]
-DUNGEON_FLOOR = 1                       # 🪜 [진입할 던전 층수 지정] 1: 지하 1층 진입, 2: 지하 2층 진입
-
 # 🏥 [힐러 및 주인공 슬롯 설정]
 HEALER_SLOT = 5                         # 💊 [힐러 캐릭터 슬롯 번호] 1번~6번 슬롯 중 주 힐러(스켈톤 등)의 배치 슬롯
-MASKED_ADVENTURER_SLOT = 4              # 👤 [주인공 캐릭터 슬롯 번호] 1번~6번 슬롯 중 주인공의 배치 슬롯 (2번 사망 시 주인공이 앞으로 밀릴 수 있음)
+MASKED_ADVENTURER_SLOT = 6              # 👤 [주인공 캐릭터 슬롯 번호] 1번~6번 슬롯 중 주인공의 배치 슬롯 (2번 사망 시 주인공이 앞으로 밀릴 수 있음)
 CHEST_OPENER_SLOT = 6                   # 🔑 [상자 해제 따개 슬롯] 1번~6번 슬롯 중 상자 따기(함정 해제)를 기본 담당할 캐릭터 슬롯
 
 # 🖥️ [MuMu 에뮬레이터 콜드 리부트 자동 제어 세팅]
@@ -32,15 +31,19 @@ MUMU_EXECUTABLE_PATH = r"C:\Program Files\Netease\MuMuPlayer\nx_main\MuMuNxMain.
 MUMU_VM_INDEX = "0"                  # 실행할 가상머신 번호 인덱스 (기본값 "0")
 
 # 📂 [v1.17.0 프리셋 파일 자동 로딩 엔진]
-# 💡 [프리셋 선택 방법]
+# 💡 [프리셋 선택 방법 - 아래 ACTIVE_PRESET_NAME 딱 하나만 수정하시면 됩니다!]
 #   1. 아래 ACTIVE_PRESET_NAME에 원하는 프리셋명을 지정하시거나 ("유령성 2층 채굴" 또는 "백아1층 파밍"),
 #   2. presets.json 파일 내부의 "active_preset" 값을 직접 변경하고 실행하시면 됩니다!
-ACTIVE_PRESET_NAME = "유령성 2층 채굴"  # 👈 여기에 원하는 프리셋 명칭을 적어주세요! (None으로 두면 presets.json 설정을 따릅니다)
+#   ⚠️ 마을/던전/층/파밍방식은 여기서 직접 손대지 마세요 — presets.json에서 자동으로 채워집니다.
+#      새로운 마을/던전/층 조합이 필요하면 presets.json에 프리셋을 새로 추가하세요.
+ACTIVE_PRESET_NAME = "유령성 2층 채굴"  # 👈 여기에 원하는 프리셋 명칭을 적어주세요! (None으로 두면 presets.json 설정을 따릅니다), 백아1층 파밍, 유령성 2층 채굴
 
-TOWN_NAME = "이스벨크"               # 기동 마을 (자동 오버라이트)
-DUNGEON_NAME = "백아의 동굴"         # 기동 던전 (자동 오버라이트)
-DUNGEON_FLOOR_NAME = "백아1층"       # 기동 층수 (자동 오버라이트)
-FARMING_METHOD = "상자파밍"          # 파밍 방식 (자동 오버라이트)
+# 🚨 [최후 안전망 전용 - 직접 수정 금지] presets.json이 없거나 지정한 프리셋을 못 찾은 극단적 예외 상황에서만 쓰이는 비상 기본값입니다.
+# 정상적인 상황에서는 아래 4개 값이 항상 presets.json 내용으로 자동 교체됩니다.
+TOWN_NAME = "이스벨크"
+DUNGEON_NAME = "백아의 동굴"
+DUNGEON_FLOOR_NAME = "백아1층"
+FARMING_METHOD = "상자파밍"
 
 # main.py 파일의 부모 디렉토리를 구하여 presets.json의 물리 절대 경로를 도출합니다.
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -75,9 +78,10 @@ else:
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.17.0
-# - 최근 수정일: 2026-08-02 01:40
+# - 현재 버전: 1.17.0-hotfix1
+# - 최근 수정일: 2026-08-03 00:30
 # - 수정 기록:
+#   1.17.0-hotfix1: 세계지도 버튼 그레이스케일 매칭 전환(유령성 스턱 완치), 던전선택 로그 던전명 표시, 월드맵 지그재그 Step1 스케일 보정, 광석파밍 회군을 need_pickaxe 전용 플래그로 전면 재설계(N주회 카운터 미참조 + 무한 재진입), LIMIT_DUNGEON_LOOPS=0 무한주회 지원, village_common 공용 도장(여관/캐릭터창닫기/월드맵아이콘)으로 마을 상태 판별 체계 전환, t_world_map 그레이스케일 전환 및 텍스트 크롭, recover_app_startup 가로화면 무한루프(탈출구 부재) 완치, 월드맵 분기 should_go_town을 need_pickaxe_refill과 동기화 및 지그재그 상태(worldmap_drag_step/worldmap_last_drag_time) 재진입 시 초기화, worldmap_icon 야간 배경 이진화 오탐(0,0 좌표) 완치(그레이스케일 전환) 및 마을 이탈 로그 보강, 프리셋 불일치 던전선택 화면 범용 인식(open_world_map_btn ROI 공용 판별) 및 자동 세계지도 이탈 추가
 #   1.17.0: FFXI 콜라보 북쪽의 유령선 2층 광석파밍(마이닝) 주회 상태 머신 및 presets.json 동적 가변 프리셋 로딩 엔진 구축, 층 매칭 오검출 방지 임계치 0.88 상향 튜닝
 #   1.16.0: 상자 대화창 우하단 화살표(dialogue_indicator.png) 감지 터치 개편, 공포 상태이상 캐릭 선택 시 "열 수 없다" 대화 팝업 복구 루프 추가, templates/chestopening/ 하위로 상자 관련 템플릿 폴더 정돈
 #   1.15.0: 지정 슬롯 따개(CHEST_OPENER_SLOT) 터치 개편, 상자공포 상태이상(chestfear.png) 자동 감지 및 주인공/타 슬롯 우회 회피 시퀀스 추가, whowillopenit 템플릿 의존성 제거 및 '열다' 버튼 소멸 기반 진입 판정 최적화
@@ -101,7 +105,7 @@ else:
 #   1.13.20: 자동전투 켜기 씹힘 방지(auto_combat_paused_for_skill 가드 우회) 보완
 #   1.13.19-hotfix2: 최상단 전투 가드 변수 리셋, 렉 보호 가드 주입, 탈출 앵커 임계치 상향 및 안전지대(700, 150) 터치 조율
 #   1.13.19-hotfix1: 던전 최초 탈출 시 출구 이동 버튼 0.2초 간격 2회 터치(더블 탭) 보완
-#   1.13.19: WVD 기반 사망/부활(InCombat_dead, btn_resurrect) 흐름 및 기동 복구(recover_app_startup) 연동 고도화
+#   1.13.19: 사망/부활(InCombat_dead, btn_resurrect) 흐름 및 기동 복구(recover_app_startup) 연동 고도화
 #   1.13.18: 통합 힐링 플래그 need_heal 도입, 상자 완료 필드 앵커 2차 검증 가드 주입, 임의 빈사 힐링 제거 및 임계치 완화
 #   1.13.17: 전투 후 상자 획득 시 중복 힐링 충돌 차단
 #   1.13.16: 상자 탐색 무한 루프 방어, On/Off 1/0 치환, 버전 전역 변수화 및 상자 개방 정비 추가
@@ -470,7 +474,7 @@ def launch_daphne_app(device):
     except Exception as stop_err:
         print(f"      ⚠️ am force-stop 실패: {stop_err}")
 
-    # wvd 방식 동적 액티비티 런칭 적용
+    # 동적 액티비티 런칭 적용
     launched = False
     try:
         act_brief = device.shell("cmd package resolve-activity --brief jp.co.drecom.wizardry.daphne")
@@ -582,17 +586,19 @@ def recover_app_startup(device):
     t_anchor_dead = load_dead_template("templates/anchor_dead_screen.png")
     
     t_inn_title = load_template("templates/inn_sleep/inn_title.png")
-    t_world_map = load_template("templates/Worldmap/world_map_anchor.png")
+    t_world_map = load_grayscale_template("templates/Worldmap/world_map_anchor.png")
 
-    if TOWN_NAME == "노던할로우":
-        t_village_anchor = load_template("templates/FFXI/!!vill_FFXI.png")
-    else:
-        t_village_anchor = load_template("templates/Vill_Isbelg/village_anchor.png")
+    # 💡 [항목5] 마을별 개별 앵커(!!vill_FFXI.png 등) 대신 어떤 마을에나 있는 공용 여관 도장으로 통일
+    t_village_anchor = load_grayscale_template("templates/village_common/inn.png")
 
     if DUNGEON_NAME == "북쪽의 유령선":
         t_dungeon_sel = load_template("templates/FFXI/FFXI_dungeon_Anchor.png")
     else:
         t_dungeon_sel = load_template("templates/WolfCave/dungeon_select.png")
+
+    # 💡 [던전선택 범용 인식] 프리셋과 다른 던전의 셀렉창에서 부팅돼도 "세계지도를 연다" 공용 버튼(5개 던전 전수 0.957+ 검증)으로
+    # "여기가 어떤 던전이든 던전선택 화면이다"를 판별. ROI(800~1200, 1480~1650)로 제한해 오탐 방지.
+    t_open_world = load_grayscale_template("templates/open_world_map_btn.png")
 
     t_field = load_grayscale_template("templates/Field/field_anchor.png")
     t_get_item = load_template("templates/chestopening/get_item.png")
@@ -600,7 +606,8 @@ def recover_app_startup(device):
     
     counter = 0
     max_try = 35
-    
+    startup_landscape_fail_counter = 0  # 🚨 [v1.17.0-hotfix1] 가로화면 무한루프 완치용 전용 카운터 (기존 counter는 이 분기의 continue로 인해 증가하지 않아 탈출구가 없었음)
+
     while counter < max_try:
         try:
             raw_cap = device.screencap()
@@ -611,11 +618,16 @@ def recover_app_startup(device):
         except:
             time.sleep(0.5)
             continue
-            
+
         # 🖥️ [가로 화면/안드로이드 홈 복구 가드] 에뮬레이터가 가로 상태로 기동된 경우 앱을 실행해 세로 모드 회전을 유도
         height, width = img_np.shape[:2]
         if height < width:
-            print(f"🖥️ [기동 복구 - 가로 화면 감지] 현재 화면이 가로 상태({width}x{height})입니다. 위저드리 다프네 앱 기동(Relaunch)을 강제 주입하여 세로 화면 전환을 시도합니다.")
+            startup_landscape_fail_counter += 1
+            print(f"🖥️ [기동 복구 - 가로 화면 감지] 현재 화면이 가로 상태({width}x{height})입니다. 위저드리 다프네 앱 기동(Relaunch)을 강제 주입하여 세로 화면 전환을 시도합니다. ({startup_landscape_fail_counter}/30)")
+            if startup_landscape_fail_counter >= 30:
+                print("      🚨 [기동 복구 - 가로화면 탈출 실패] 30회 연속 가로 화면 정체! MuMu 자체 이상으로 판단해 자가 복구 절차로 넘어갑니다.")
+                restart_process(f"기동 복구(recover_app_startup) 중 가로 화면 30회 연속 정체 (화면 크기: {width}x{height})")
+                return True
             try:
                 launch_daphne_app(device)
                 time.sleep(4.0)
@@ -670,15 +682,16 @@ def recover_app_startup(device):
                 print(f"⚠️ [기동 복구 가드] need_heal 설정 실패: {e}")
             continue
             
-        if (check_field_anchor_present(img_np, t_field, 0.62) or 
-            check_template_present(img_np, t_dungeon_sel, 0.70) or 
-            get_combat_match_score(img_np, t_combat_in) > 0.80 or 
+        if (check_field_anchor_present(img_np, t_field, 0.62) or
+            check_template_present(img_np, t_dungeon_sel, 0.70) or
+            check_grayscale_template_present_in_roi(img_np, t_open_world, 800, 1200, 1480, 1650, 0.85) or
+            get_combat_match_score(img_np, t_combat_in) > 0.80 or
             get_combat_match_score(img_np, t_combat_slow) > 0.80 or
             check_template_present(img_np, t_yeolda, 0.65) or
             check_template_present(img_np, t_get_item, 0.65) or
             check_template_present(img_np, t_inn_title, 0.83) or
-            check_template_present(img_np, t_world_map, 0.75) or
-            check_template_present(img_np, t_village_anchor, 0.70)):
+            check_grayscale_template_present(img_np, t_world_map, 0.70) or
+            check_grayscale_template_present(img_np, t_village_anchor, 0.65)):
             print("✨ [앱 기동 복구 성공] 인게임 화면(필드/전투/던전선택/상자/여관/세계지도/마을 등) 진입 성공! 매크로를 복구합니다.")
             return True
             
@@ -923,10 +936,22 @@ def check_template_present(img_np, thresh_temp, threshold_val=0.70):
     h_img, w_img = img_np.shape[:2]
     h_temp, w_temp = thresh_temp.shape[:2]
     if h_img < h_temp or w_img < w_temp: return False
-    
+
     gray_img = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
     _, thresh_img = cv2.threshold(gray_img, 160, 255, cv2.THRESH_BINARY)
     result = cv2.matchTemplate(thresh_img, thresh_temp, cv2.TM_CCOEFF_NORMED)
+    _, max_val, _, _ = cv2.minMaxLoc(result)
+    return max_val > threshold_val
+
+def check_grayscale_template_present(img_np, thresh_temp, threshold_val=0.65):
+    # 이진화 없이 순수 그레이스케일 매칭 (village_common 공용 도장용, load_grayscale_template와 짝을 이룸)
+    if thresh_temp is None or img_np is None: return False
+    h_img, w_img = img_np.shape[:2]
+    h_temp, w_temp = thresh_temp.shape[:2]
+    if h_img < h_temp or w_img < w_temp: return False
+
+    gray_img = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+    result = cv2.matchTemplate(gray_img, thresh_temp, cv2.TM_CCOEFF_NORMED)
     _, max_val, _, _ = cv2.minMaxLoc(result)
     return max_val > threshold_val
 
@@ -951,6 +976,27 @@ def check_template_present_in_roi(img_np, thresh_temp, x1, x2, y1, y2, threshold
     _, max_val, _, _ = cv2.minMaxLoc(result)
     return max_val > threshold_val
 
+def check_grayscale_template_present_in_roi(img_np, thresh_temp, x1, x2, y1, y2, threshold_val=0.70):
+    # 이진화 없이 순수 그레이스케일 ROI 매칭 (던전 구분 없이 공용인 open_world_map_btn.png용)
+    if thresh_temp is None or img_np is None: return False
+    h_img, w_img = img_np.shape[:2]
+    h_temp, w_temp = thresh_temp.shape[:2]
+
+    scale_x, scale_y = w_img / 1440.0, h_img / 2560.0
+    rx1, rx2 = int(x1 * scale_x), int(x2 * scale_x)
+    ry1, ry2 = int(y1 * scale_y), int(y2 * scale_y)
+
+    if rx2 <= rx1 or ry2 <= ry1 or rx2 > w_img or ry2 > h_img: return False
+    crop = img_np[ry1:ry2, rx1:rx2]
+
+    h_crop, w_crop = crop.shape[:2]
+    if h_crop < h_temp or w_crop < w_temp: return False
+
+    gray_crop = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY)
+    result = cv2.matchTemplate(gray_crop, thresh_temp, cv2.TM_CCOEFF_NORMED)
+    _, max_val, _, _ = cv2.minMaxLoc(result)
+    return max_val > threshold_val
+
 def get_match_score_in_roi(img_np, thresh_temp, x1, x2, y1, y2):
     if thresh_temp is None or img_np is None: return 0.0
     h_img, w_img = img_np.shape[:2]
@@ -971,12 +1017,24 @@ def get_match_score_in_roi(img_np, thresh_temp, x1, x2, y1, y2):
     _, max_val, _, _ = cv2.minMaxLoc(result)
     return max_val
 
+def get_grayscale_match_score(img_np, thresh_temp):
+    # 이진화 없이 순수 그레이스케일 매칭 점수 (village_common 공용 도장용)
+    if thresh_temp is None or img_np is None: return 0.0
+    h_img, w_img = img_np.shape[:2]
+    h_temp, w_temp = thresh_temp.shape[:2]
+    if h_img < h_temp or w_img < w_temp: return 0.0
+
+    gray_img = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+    result = cv2.matchTemplate(gray_img, thresh_temp, cv2.TM_CCOEFF_NORMED)
+    _, max_val, _, _ = cv2.minMaxLoc(result)
+    return max_val
+
 def get_match_score(img_np, thresh_temp):
     if thresh_temp is None or img_np is None: return 0.0
     h_img, w_img = img_np.shape[:2]
     h_temp, w_temp = thresh_temp.shape[:2]
     if h_img < h_temp or w_img < w_temp: return 0.0
-    
+
     gray_img = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
     _, thresh_img = cv2.threshold(gray_img, 160, 255, cv2.THRESH_BINARY)
     result = cv2.matchTemplate(thresh_img, thresh_temp, cv2.TM_CCOEFF_NORMED)
@@ -1059,10 +1117,26 @@ def find_and_click_template(device, img_np, thresh_temp, threshold_val=0.70):
     h_img, w_img = img_np.shape[:2]
     h_temp, w_temp = thresh_temp.shape[:2]
     if h_img < h_temp or w_img < w_temp: return False
-    
+
     gray_img = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
     _, thresh_img = cv2.threshold(gray_img, 160, 255, cv2.THRESH_BINARY)
     result = cv2.matchTemplate(thresh_img, thresh_temp, cv2.TM_CCOEFF_NORMED)
+    _, max_val, _, max_loc = cv2.minMaxLoc(result)
+    if max_val > threshold_val:
+        h, w = thresh_temp.shape[:2]
+        device.shell(f"input tap {max_loc[0] + int(w / 2)} {max_loc[1] + int(h / 2)}")
+        return True
+    return False
+
+def find_and_click_grayscale_template(device, img_np, thresh_temp, threshold_val=0.70):
+    # 이진화 없이 순수 그레이스케일 매칭 (마을/던전마다 조명 차이가 큰 도장용, load_grayscale_template와 짝을 이룸)
+    if thresh_temp is None or img_np is None: return False
+    h_img, w_img = img_np.shape[:2]
+    h_temp, w_temp = thresh_temp.shape[:2]
+    if h_img < h_temp or w_img < w_temp: return False
+
+    gray_img = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+    result = cv2.matchTemplate(gray_img, thresh_temp, cv2.TM_CCOEFF_NORMED)
     _, max_val, _, max_loc = cv2.minMaxLoc(result)
     if max_val > threshold_val:
         h, w = thresh_temp.shape[:2]
@@ -1096,18 +1170,21 @@ def start_grand_orchestrator():
 
     print("\n=======================================")
     print("🎨 [마스터 마스킹] 대순환 루프 전용 모든 코어 도장들을 로드합니다...")
-    t_world_map = load_template("templates/Worldmap/world_map_anchor.png")
+    t_world_map = load_grayscale_template("templates/Worldmap/world_map_anchor.png")
     t_inn_title = load_template("templates/inn_sleep/inn_title.png")
-    t_open_world = load_template("templates/open_world_map_btn.png")
+    t_open_world = load_grayscale_template("templates/open_world_map_btn.png")
     
     # 📂 [v1.17.0 프리셋별 템플릿 동적 교체 로딩]
+    # 💡 [항목5] "마을에 있다" 판별 및 여관 진입은 마을별 개별 앵커 대신 village_common 공용 도장으로 통일.
+    # 캐릭터창이 펼쳐져 월드맵 아이콘이 가려질 수 있어 worldmap_icon은 앵커로 쓰지 않고 클릭 전용으로만 사용.
+    t_village = load_grayscale_template("templates/village_common/inn.png")
+    t_char_down = load_template("templates/village_common/char_down.png")
+    # 💡 [항목5 후속수정] 이진화(160) 매칭이 밤 배경(넓은 검은 하늘 영역)에서 (0,0) 좌표로 완벽 오탐(1.000)하는 결함 발견 → 그레이스케일로 전환
+    t_worldmap_icon = load_grayscale_template("templates/village_common/worldmap_icon.png")
+
     if TOWN_NAME == "노던할로우":
-        t_village = load_template("templates/FFXI/!!vill_FFXI.png")
-        t_village_to_inn = load_template("templates/FFXI/inn.png")
         t_go_village = load_template("templates/Worldmap/FFXI_village.png")
     else:
-        t_village = load_template("templates/Vill_Isbelg/village_anchor.png")
-        t_village_to_inn = load_template("templates/Vill_Isbelg/village_to_inn_btn.png")
         t_go_village = load_template("templates/Worldmap/Vill_isbelk_btn.png")
 
     if DUNGEON_NAME == "북쪽의 유령선":
@@ -1156,9 +1233,10 @@ def start_grand_orchestrator():
 
     print("=======================================")
 
-    dungeon_run_count = START_RUN_COUNT_OFFSET  
-    is_fully_healed = False 
-    waiting_for_village_dialogue = False 
+    dungeon_run_count = START_RUN_COUNT_OFFSET
+    is_fully_healed = False
+    need_pickaxe_refill = False  # 💡 [광석파밍 전용] True면 다음 던전선택 도달 시 재진입 대신 마을로 회군
+    waiting_for_village_dialogue = False
 
     force_first_analysis = True
     last_action_time = time.time()
@@ -1354,8 +1432,8 @@ def start_grand_orchestrator():
                 last_action_time = time.time()
                 continue
             
-            score_village = get_match_score(img_np, t_village)
-            score_world = get_match_score(img_np, t_world_map)
+            score_village = get_grayscale_match_score(img_np, t_village)
+            score_world = get_grayscale_match_score(img_np, t_world_map)
             score_dung_sel = get_match_score(img_np, t_dungeon_sel)
             score_inn = get_match_score(img_np, t_inn_title)
             
@@ -1429,7 +1507,8 @@ def start_grand_orchestrator():
             best_status = max(scores, key=scores.get)
 
             if scores[best_status] > 0.65:
-                print(f"   ➔ 🏠 [엔진 최종 판정] 리얼 아웃게임 스팟 안착 확인: '{best_status}' 구역으로 확정합니다. (신뢰도: {scores[best_status]:.2f})")
+                status_label = f"{best_status}({DUNGEON_NAME})" if best_status == "DUNGEON_SEL" else best_status
+                print(f"   ➔ 🏠 [엔진 최종 판정] 리얼 아웃게임 스팟 안착 확인: '{status_label}' 구역으로 확정합니다. (신뢰도: {scores[best_status]:.2f})")
                 first_stuck_time_str = "" 
                 global_skill_setup_completed = False
                 if best_status != "WORLDMAP":
@@ -1450,6 +1529,7 @@ def start_grand_orchestrator():
                         restart_process(f"여관 숙박 동작 중 ADB 통신 치명적 예외 발생: {inn_err}")
                     is_fully_healed = True
                     dungeon_run_count = 0
+                    need_pickaxe_refill = False
                 
                 last_action_time = time.time()
                 continue
@@ -1460,7 +1540,9 @@ def start_grand_orchestrator():
                 
                 run_skill_logic = ENABLE_FIRST_COMBAT_SKILL and (not global_skill_setup_completed)
                 try:
-                    exit_by_user, skill_ok = dungeon_bot.start_main_macro(device, run_skill_logic, HEALING_LOOPS, bool(ENABLE_HEAL_AFTER_CHEST), healer_slot=HEALER_SLOT, masked_adventurer_slot=MASKED_ADVENTURER_SLOT, chest_opener_slot=CHEST_OPENER_SLOT, farming_method=FARMING_METHOD, dungeon_name=DUNGEON_NAME)
+                    exit_by_user, skill_ok, need_pickaxe_result = dungeon_bot.start_main_macro(device, run_skill_logic, HEALING_LOOPS, bool(ENABLE_HEAL_AFTER_CHEST), healer_slot=HEALER_SLOT, masked_adventurer_slot=MASKED_ADVENTURER_SLOT, chest_opener_slot=CHEST_OPENER_SLOT, farming_method=FARMING_METHOD, dungeon_name=DUNGEON_NAME, from_dungeon_select=False)
+                    if FARMING_METHOD == "광석파밍":
+                        need_pickaxe_refill = need_pickaxe_result
                     if skill_ok:
                         global_skill_setup_completed = True  
                     if exit_by_user: 
@@ -1488,12 +1570,26 @@ def start_grand_orchestrator():
 
             continue
 
+        # 💡 [던전선택 범용 인식] "세계지도를 연다" 공용 버튼(ROI 제한)으로 "여기가 어떤 던전이든 던전선택 화면이다"를 우선 판별.
+        # 프리셋 전용 도장(t_dungeon_sel)이 안 맞아도 이걸로 "던전선택 화면인데 내 던전이 아니다"를 구분할 수 있다.
+        is_any_dungeon_sel = check_grayscale_template_present_in_roi(img_np, t_open_world, 800, 1200, 1480, 1650, 0.85)
+
         if check_template_present(img_np, t_dungeon_sel, 0.83):
             first_stuck_time_str = ""
             if last_logged_status != "DUNGEON_SEL":
                 last_action_time = time.time()
                 last_logged_status = "DUNGEON_SEL"
-            if (dungeon_run_count < LIMIT_DUNGEON_LOOPS) or (FARMING_METHOD == "광석파밍"):
+                print(f"🚪 [던전선택 도달] '{DUNGEON_NAME}' 던전선택창 확인.")
+
+            # 💡 [항목4] 파밍 방식별 재진입 여부 완전 분리
+            # - 광석파밍: N주회 카운터를 아예 참조하지 않고, 곡괭이 부족(need_pickaxe_refill)일 때만 마을 회군
+            # - 상자파밍(기존 백아): 기존 N주회 카운터 유지 + LIMIT_DUNGEON_LOOPS=0이면 무한 주회
+            if FARMING_METHOD == "광석파밍":
+                should_reenter = not need_pickaxe_refill
+            else:
+                should_reenter = (LIMIT_DUNGEON_LOOPS == 0) or (dungeon_run_count < LIMIT_DUNGEON_LOOPS)
+
+            if should_reenter:
                 click_success = False
                 
                 if DUNGEON_NAME == "북쪽의 유령선":
@@ -1529,18 +1625,21 @@ def start_grand_orchestrator():
                     time.sleep(5.0)
                     run_skill_logic = ENABLE_FIRST_COMBAT_SKILL and (not global_skill_setup_completed)
                     try:
-                        exit_by_user, skill_ok = dungeon_bot.start_main_macro(device, run_skill_logic, HEALING_LOOPS, bool(ENABLE_HEAL_AFTER_CHEST), healer_slot=HEALER_SLOT, masked_adventurer_slot=MASKED_ADVENTURER_SLOT, chest_opener_slot=CHEST_OPENER_SLOT, farming_method=FARMING_METHOD, dungeon_name=DUNGEON_NAME)
+                        exit_by_user, skill_ok, need_pickaxe_result = dungeon_bot.start_main_macro(device, run_skill_logic, HEALING_LOOPS, bool(ENABLE_HEAL_AFTER_CHEST), healer_slot=HEALER_SLOT, masked_adventurer_slot=MASKED_ADVENTURER_SLOT, chest_opener_slot=CHEST_OPENER_SLOT, farming_method=FARMING_METHOD, dungeon_name=DUNGEON_NAME, from_dungeon_select=True)
                         if skill_ok: global_skill_setup_completed = True
                         if exit_by_user: last_action_time = time.time() - 20.0
-                        else: last_action_time = time.time() 
-                        dungeon_run_count += 1
+                        else: last_action_time = time.time()
+                        if FARMING_METHOD == "광석파밍":
+                            need_pickaxe_refill = need_pickaxe_result
+                        else:
+                            dungeon_run_count += 1
                         clear_restart_counter()
-                        is_fully_healed = False 
+                        is_fully_healed = False
                     except Exception as bot_err:
                         restart_process(f"던전 진입 시퀀스 중 ADB 통신 치명적 예외 발생: {bot_err}")
             else:
-                if find_and_click_template(device, img_np, t_open_world, 0.70):
-                    print("      ✅ 't_open_world' 도장 추적 정밀 타격 성공.")
+                if find_and_click_grayscale_template(device, img_np, t_open_world, 0.70):
+                    print(f"      ✅ 't_open_world' 도장 추적 정밀 타격 성공. ({DUNGEON_NAME})")
                     last_action_time = time.time()
                     time.sleep(2.5)
                 else:
@@ -1550,15 +1649,41 @@ def start_grand_orchestrator():
                     time.sleep(3.0)
             continue
 
-        if check_template_present(img_np, t_world_map, 0.83):
+        elif is_any_dungeon_sel:
+            # 💡 [던전선택 불일치] 던전선택 화면은 맞는데 지금 프리셋(DUNGEON_NAME)의 던전이 아님 → 층 진입 시도하지 않고 즉시 세계지도로 이탈
+            if last_logged_status != "DUNGEON_SEL_WRONG":
+                last_action_time = time.time()
+                last_logged_status = "DUNGEON_SEL_WRONG"
+                print(f"🚪⚠️ [던전선택 불일치] 현재 화면이 '{DUNGEON_NAME}' 던전선택창이 아닙니다. 세계지도로 이탈을 시도합니다.")
+            if find_and_click_grayscale_template(device, img_np, t_open_world, 0.70):
+                print("      ✅ 't_open_world' 도장 추적 정밀 타격 성공. (불일치 던전 이탈)")
+                last_action_time = time.time()
+                time.sleep(2.5)
+            else:
+                print("      ⚠️ [세계지도 단추 은폐 감지] 뒤로가기(ESC) 입력을 주입해 세계지도로 안전 탈출을 유도합니다.")
+                device.shell("input keyevent 4")
+                last_action_time = time.time()
+                time.sleep(3.0)
+            continue
+
+        if check_grayscale_template_present(img_np, t_world_map, 0.83):
             first_stuck_time_str = ""
             if last_logged_status != "WORLDMAP":
                 last_action_time = time.time()
                 last_logged_status = "WORLDMAP"
-            
-            is_mining_mode = (FARMING_METHOD == "광석파밍")
-            should_go_town = (dungeon_run_count >= LIMIT_DUNGEON_LOOPS and not is_fully_healed) and (not is_mining_mode)
-            
+                # 💡 [항목4 후속수정] 세계지도에 신규 진입할 때마다 지그재그 탐색을 원점(Step 0)부터 새로 시작하도록 초기화.
+                # 이전 방문의 중간 단계(Step 3~7 등)에서 이어가면 실제 화면 위치와 안 맞아 엉뚱한 곳을 스와이프하게 됨.
+                # worldmap_last_drag_time도 지금 시각으로 맞춰서, 첫 스와이프 전에 이미 보이는 목표 아이콘을
+                # 클릭 시도할 3초의 여유를 먼저 준다.
+                worldmap_drag_step = 0
+                worldmap_last_drag_time = time.time()
+
+            # 💡 [항목4 후속수정] 광석파밍은 dungeon_run_count가 아니라 need_pickaxe_refill로만 마을행 여부 판단
+            if FARMING_METHOD == "광석파밍":
+                should_go_town = need_pickaxe_refill
+            else:
+                should_go_town = (dungeon_run_count >= LIMIT_DUNGEON_LOOPS and not is_fully_healed)
+
             is_ffxi_worldmap = (TOWN_NAME == "노던할로우" if should_go_town else DUNGEON_NAME == "북쪽의 유령선")
             
             if is_ffxi_worldmap:
@@ -1576,12 +1701,15 @@ def start_grand_orchestrator():
                         worldmap_drag_step = 1
                         
                     elif worldmap_drag_step == 1:
+                        # 💡 [항목3] wvd(900x1600) 좌표를 1.6배 환산 없이 그대로 옮겨써서 이동거리가 이웃 스텝(700~1800px) 대비
+                        # 1/7~1/18 수준(100px)이던 결함을 보정. 이웃 스텝과 비슷한 규모(약 600px)로 상향.
+                        # 최종 이동량은 실제 구동 화면을 보며 미세조정이 필요할 수 있음.
                         if should_go_town:
-                            print("🗺️ [Step 1] 1번 라인 마을 기본 뷰 정밀 드래그(400, 400 ➔ 500, 300) 주입")
-                            device.shell("input swipe 400 400 500 300 800")
+                            print("🗺️ [Step 1] 1번 라인 마을 기본 뷰 정밀 드래그(400, 450 ➔ 800, 50) 주입")
+                            device.shell("input swipe 400 450 800 50 800")
                         else:
-                            print("🗺️ [Step 1] 1번 라인 던전 기본 뷰 정밀 드래그(200, 430 ➔ 50, 580) 주입")
-                            device.shell("input swipe 200 430 50 580 800")
+                            print("🗺️ [Step 1] 1번 라인 던전 기본 뷰 정밀 드래그(650, 430 ➔ 50, 1030) 주입")
+                            device.shell("input swipe 650 430 50 1030 800")
                         worldmap_drag_step = 2
                         
                     elif worldmap_drag_step == 2:
@@ -1637,7 +1765,7 @@ def start_grand_orchestrator():
             continue
 
 
-        if check_template_present(img_np, t_village, 0.83):
+        if check_grayscale_template_present(img_np, t_village, 0.65):
             first_stuck_time_str = ""
             if last_logged_status != "VILLAGE":
                 last_action_time = time.time()
@@ -1646,16 +1774,32 @@ def start_grand_orchestrator():
                 waiting_for_village_dialogue = False
                 last_action_time = time.time()
             if not is_fully_healed:
-                if find_and_click_template(device, img_np, t_village_to_inn, 0.70):
+                if find_and_click_grayscale_template(device, img_np, t_village, 0.65):
+                    print("🏠 [마을] 여관 도장 인식 및 진입 터치 성공.")
                     last_action_time = time.time()
                     time.sleep(2.5)
-                else: time.sleep(1.0)
+                else:
+                    print("⚠️ [마을] 여관 도장 미검출. 재스캔 대기...")
+                    time.sleep(1.0)
             else:
-                target_x = int(width * 0.93)
-                target_y = int(height * 0.93)
-                device.shell(f"input tap {target_x} {target_y}")
-                last_action_time = time.time()
-                time.sleep(2.5)
+                # 💡 [항목5] 캐릭터창이 펼쳐져 있으면(월드맵 아이콘이 가려짐) 먼저 접기부터 처리
+                if check_template_present(img_np, t_char_down, 0.65):
+                    print("🔽 [마을] 캐릭터창 펼침 감지! 접기 버튼을 눌러 월드맵 아이콘을 노출시킵니다.")
+                    find_and_click_template(device, img_np, t_char_down, 0.65)
+                    last_action_time = time.time()
+                    time.sleep(1.0)
+                elif find_and_click_grayscale_template(device, img_np, t_worldmap_icon, 0.80):
+                    print("🗺️ [마을] 월드맵 아이콘 인식 및 터치 성공. 세계지도로 이탈합니다.")
+                    last_action_time = time.time()
+                    time.sleep(2.5)
+                else:
+                    # 도장 매칭 실패 시 안전망 폴백 (기존 고정좌표)
+                    print("⚠️ [마을] 월드맵 아이콘 미검출. 고정좌표 폴백 터치를 주입합니다.")
+                    target_x = int(width * 0.93)
+                    target_y = int(height * 0.93)
+                    device.shell(f"input tap {target_x} {target_y}")
+                    last_action_time = time.time()
+                    time.sleep(2.5)
             continue
 
         if check_template_present(img_np, t_inn_title, 0.83):
@@ -1667,8 +1811,9 @@ def start_grand_orchestrator():
                 inn_manager.run_inn_sleep_sequence(device)
             except Exception as inn_err:
                 restart_process(f"여관 루프 숙박 중 ADB 통신 치명적 예외 발생: {inn_err}")
-            is_fully_healed = True  
-            dungeon_run_count = 0   
+            is_fully_healed = True
+            dungeon_run_count = 0
+            need_pickaxe_refill = False
             clear_restart_counter()
             last_action_time = time.time()
             time.sleep(1.0)

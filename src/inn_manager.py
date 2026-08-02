@@ -1,8 +1,9 @@
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.14.1-hotfix5
-# - 최근 수정일: 2026-07-17 14:44
+# - 현재 버전: 1.17.0-hotfix1
+# - 최근 수정일: 2026-08-02 19:00
 # - 수정 기록:
+#   1.17.0-hotfix1: 마을 광장 복귀 판정용 t_village을 마을별 개별 앵커 대신 village_common/inn.png 공용 도장(그레이스케일)으로 전환
 #   1.14.1-hotfix5: 여관 루프 정체 방지 45초 Watchdog 가드 탑재 및 1:1 이진화 매치 적용
 #   1.13.20: 버전 동기화
 #   1.13.19-hotfix2: 버전 동기화
@@ -105,6 +106,25 @@ def load_template(file_path):
         return thresh
     except: return None
 
+def load_grayscale_template(file_path):
+    import os
+    if not os.path.exists(file_path): return None
+    try:
+        return cv2.imread(file_path, cv2.IMREAD_GRAYSCALE)
+    except: return None
+
+def check_grayscale_template_present(img_np, thresh_temp, threshold_val=0.65):
+    # 이진화 없이 순수 그레이스케일 매칭 (village_common 공용 도장용, load_grayscale_template와 짝을 이룸)
+    if thresh_temp is None or img_np is None: return False
+    h_img, w_img = img_np.shape[:2]
+    h_temp, w_temp = thresh_temp.shape[:2]
+    if h_img < h_temp or w_img < w_temp: return False
+
+    gray_img = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+    result = cv2.matchTemplate(gray_img, thresh_temp, cv2.TM_CCOEFF_NORMED)
+    _, max_val, _, _ = cv2.minMaxLoc(result)
+    return max_val > threshold_val
+
 def run_inn_sleep_sequence(device):
     """
     [여관 독립 정비 모듈 - 레벨업 좌하단 닫기 픽스 사양]
@@ -120,7 +140,7 @@ def run_inn_sleep_sequence(device):
     t_inn_confirm = load_template("templates/inn_sleep/inn_confirm_btn.png")
     t_inn_inv = load_template("templates/inn_sleep/inn_inventory_popup.png")
     t_arrow = load_template("templates/inn_sleep/arrow_clean.png")
-    t_village = load_template("templates/Vill_Isbelg/village_anchor.png")
+    t_village = load_grayscale_template("templates/village_common/inn.png")  # 💡 [항목5] 마을별 개별 앵커 대신 공용 여관 도장으로 통일
 
     # - 레벨업 및 스킬 팝업 관련 도장
     t_pop_levelup = load_template("templates/inn_sleep/popup_levelup_title.png")
@@ -235,7 +255,7 @@ def run_inn_sleep_sequence(device):
         # -------------------------------------------------------------
         # 3순위. 최종 탈출 조건 (마을 광장 복귀 성공 시 모듈 파기)
         # -------------------------------------------------------------
-        elif check_template_present(img_np, t_village, 0.83):
+        elif check_grayscale_template_present(img_np, t_village, 0.65):
             print_log("✨ [inn_manager] 마을 광장 복귀 성공! 여관 모듈을 안전하게 종료합니다.\n")
             break
 
