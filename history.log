@@ -2,6 +2,14 @@
 📋 [프로젝트: Daphne 매크로 통합 히스토리 로그]
 =============================================================================
 
+[1.17.0-hotfix1] 2026-08-03 09:00 - 잔가지 정리 - presets.json/combat_strategy.json을 src/ 폴더로 이동, README 최신화 (로컬 커밋 전용, 미푸시)
+- 내용: 사용자가 직접 편집할 일이 거의 없는 설정 파일들을 프로젝트 루트에서 src/ 폴더로 정리. 기능 변경 없음.
+- 상세:
+  1. presets.json → src/presets.json 이동(git mv). main.py의 경로 계산 로직을 project_root 경유 대신 script_dir(= src/) 기준으로 단순화. README의 경로 언급도 동기화.
+  2. combat_strategy.json → src/combat_strategy.json 이동. combat_manager.py의 load_combat_strategy()/initialize_templates() 둘 다 main.py/dungeon_bot.py 어디에서도 import·호출되지 않는 완전 미연동 상태임을 재확인(코드 수정 없이 파일 위치만 정리).
+  3. README.md 타이틀을 "(Claude Code Bot)"으로 변경, 상자공포 템플릿 등록 섹션 제거(이미 기본 제공되는 템플릿이라 사용자 조치 불필요), 실행 방법에 파밍방식별(상자파밍/광석파밍) 권장 시작 상태 안내 추가.
+- 적용 파일: main.py, src/presets.json, src/combat_strategy.json, README.md, history.log (원격 푸시는 추후 신규 기능 추가 및 안정화 이후 진행 예정)
+
 [1.17.0-hotfix1] 2026-08-02 19:00 - 핫픽스 릴리즈 - 유령성 세계지도 탈출 스턱 완치, 광석파밍 회군 전면 재설계(need_pickaxe 전용화), LIMIT_DUNGEON_LOOPS 무한주회 지원, village_common 공용 마을 판별 체계 전환
 - 내용: 실제 구동 로그(logs/2026-08-02-1626/1630/1839)와 실측 템플릿 매칭 테스트로 확인된, 1.17.0 릴리즈 이후 발견된 결함들을 완치한 핫픽스 버전. Claude Code로 담당 전환 후 첫 패치.
 - 상세:

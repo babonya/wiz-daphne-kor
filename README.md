@@ -73,7 +73,7 @@ pip install opencv-python pillow numpy pure-python-adb
 
 ## 🎯 3. 프리셋 설정 (`presets.json`)
 
-던전/마을/파밍방식 조합은 프로젝트 루트의 `presets.json` 파일에서 관리합니다.
+던전/마을/파밍방식 조합은 `src/presets.json` 파일에서 관리합니다.
 
 ```json
 {

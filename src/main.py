@@ -45,10 +45,9 @@ DUNGEON_NAME = "백아의 동굴"
 DUNGEON_FLOOR_NAME = "백아1층"
 FARMING_METHOD = "상자파밍"
 
-# main.py 파일의 부모 디렉토리를 구하여 presets.json의 물리 절대 경로를 도출합니다.
+# main.py 파일이 위치한 src/ 폴더를 기준으로 presets.json의 물리 절대 경로를 도출합니다. (v1.17.0-hotfix1부터 presets.json이 src/ 안으로 이동)
 script_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(script_dir)
-presets_path = os.path.join(project_root, "presets.json")
+presets_path = os.path.join(script_dir, "presets.json")
 
 if os.path.exists(presets_path):
     try:
