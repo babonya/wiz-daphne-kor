@@ -23,3 +23,9 @@ claude_handoff_guide.md
 FFXI_dungeon_add.txt
 # 에이전트 규칙 폴더 제외
 .agents/
+
+# 개인 작업용 문서 (릴리즈/배포에 불필요, 구동에도 무관)
+1.16.0_roadmap.md
+combat_strategy.json
+dungeon_template_guide.md
+implementation_plan.md
