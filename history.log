@@ -2,6 +2,14 @@
 📋 [프로젝트: Daphne 매크로 통합 히스토리 로그]
 =============================================================================
 
+[1.17.0-hotfix1] 2026-08-03 09:30 - 기능 추가 - 재시작/리부팅 직전 스턱 화면 증거 보존용 스크린샷(stuck 접미사) 자동 캡처 (로컬 커밋 전용, 미푸시)
+- 내용: 대설지대 등 아직 대응 도장이 없는 던전에서 NPC 대화 선택창처럼 낯선 정체 상황을 만나 재시작/리부팅이 걸릴 경우, 화면이 바뀌기 전 마지막 순간을 스크린샷으로 남겨두어 나중에 원인 분석 및 새 도장 채집에 쓸 수 있도록 하는 사전 준비 기능. (본 기능 자체는 특정 던전에 종속되지 않는 범용 안전망)
+- 상세:
+  1. restart_process(reason) 최상단에 모듈 전역 last-known 디바이스(global_device)를 이용해 take_screencap_backup(global_device, prefix="stuck") 캡처를 추가. 재연결/리부팅 등 어떤 복구 분기를 타든 항상 가장 먼저 실행되어 정체 시점의 실제 화면을 보존.
+  2. take_screencap_backup()은 "start"/"restart" 접두어만 reboot 카운터 기반으로 변환하므로, "stuck"은 그대로 screencap_stuck_{시각}.png로 안드로이드 기기에 저장됨.
+  3. sync_screenshots_loop()의 로그 폴더 동기화 접미사 인식 패턴에 "screencap_stuck" → "stuck" 케이스 추가. 최종적으로 logs/YYYY-MM-DD-HHMM-0SS_stuck.png 형태로 저장됨.
+- 적용 파일: main.py, history.log (원격 푸시는 추후 신규 기능 추가 및 안정화 이후 진행 예정)
+
 [1.17.0-hotfix1] 2026-08-03 09:00 - 잔가지 정리 - presets.json/combat_strategy.json을 src/ 폴더로 이동, README 최신화 (로컬 커밋 전용, 미푸시)
 - 내용: 사용자가 직접 편집할 일이 거의 없는 설정 파일들을 프로젝트 루트에서 src/ 폴더로 정리. 기능 변경 없음.
 - 상세:

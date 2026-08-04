@@ -80,7 +80,7 @@ else:
 # - 현재 버전: 1.17.0-hotfix1
 # - 최근 수정일: 2026-08-03 00:30
 # - 수정 기록:
-#   1.17.0-hotfix1: 세계지도 버튼 그레이스케일 매칭 전환(유령성 스턱 완치), 던전선택 로그 던전명 표시, 월드맵 지그재그 Step1 스케일 보정, 광석파밍 회군을 need_pickaxe 전용 플래그로 전면 재설계(N주회 카운터 미참조 + 무한 재진입), LIMIT_DUNGEON_LOOPS=0 무한주회 지원, village_common 공용 도장(여관/캐릭터창닫기/월드맵아이콘)으로 마을 상태 판별 체계 전환, t_world_map 그레이스케일 전환 및 텍스트 크롭, recover_app_startup 가로화면 무한루프(탈출구 부재) 완치, 월드맵 분기 should_go_town을 need_pickaxe_refill과 동기화 및 지그재그 상태(worldmap_drag_step/worldmap_last_drag_time) 재진입 시 초기화, worldmap_icon 야간 배경 이진화 오탐(0,0 좌표) 완치(그레이스케일 전환) 및 마을 이탈 로그 보강, 프리셋 불일치 던전선택 화면 범용 인식(open_world_map_btn ROI 공용 판별) 및 자동 세계지도 이탈 추가
+#   1.17.0-hotfix1: 세계지도 버튼 그레이스케일 매칭 전환(유령성 스턱 완치), 던전선택 로그 던전명 표시, 월드맵 지그재그 Step1 스케일 보정, 광석파밍 회군을 need_pickaxe 전용 플래그로 전면 재설계(N주회 카운터 미참조 + 무한 재진입), LIMIT_DUNGEON_LOOPS=0 무한주회 지원, village_common 공용 도장(여관/캐릭터창닫기/월드맵아이콘)으로 마을 상태 판별 체계 전환, t_world_map 그레이스케일 전환 및 텍스트 크롭, recover_app_startup 가로화면 무한루프(탈출구 부재) 완치, 월드맵 분기 should_go_town을 need_pickaxe_refill과 동기화 및 지그재그 상태(worldmap_drag_step/worldmap_last_drag_time) 재진입 시 초기화, worldmap_icon 야간 배경 이진화 오탐(0,0 좌표) 완치(그레이스케일 전환) 및 마을 이탈 로그 보강, 프리셋 불일치 던전선택 화면 범용 인식(open_world_map_btn ROI 공용 판별) 및 자동 세계지도 이탈 추가, 재시작 직전 스턱 화면 증거 보존용 screencap(prefix=stuck) 캡처 및 로그 동기화 접미사 인식 추가
 #   1.17.0: FFXI 콜라보 북쪽의 유령선 2층 광석파밍(마이닝) 주회 상태 머신 및 presets.json 동적 가변 프리셋 로딩 엔진 구축, 층 매칭 오검출 방지 임계치 0.88 상향 튜닝
 #   1.16.0: 상자 대화창 우하단 화살표(dialogue_indicator.png) 감지 터치 개편, 공포 상태이상 캐릭 선택 시 "열 수 없다" 대화 팝업 복구 루프 추가, templates/chestopening/ 하위로 상자 관련 템플릿 폴더 정돈
 #   1.15.0: 지정 슬롯 따개(CHEST_OPENER_SLOT) 터치 개편, 상자공포 상태이상(chestfear.png) 자동 감지 및 주인공/타 슬롯 우회 회피 시퀀스 추가, whowillopenit 템플릿 의존성 제거 및 '열다' 버튼 소멸 기반 진입 판정 최적화
@@ -264,7 +264,9 @@ def sync_screenshots_loop(session_start_ts, log_dir):
                             
                             # 파일명 분석을 통한 접미사(suffix) 설정
                             item_lower = item.lower()
-                            if "screencap_start" in item_lower:
+                            if "screencap_stuck" in item_lower:
+                                suffix = "stuck"
+                            elif "screencap_start" in item_lower:
                                 suffix = "start"
                             elif "screencap_reboot" in item_lower:
                                 import re
@@ -782,7 +784,12 @@ def take_screencap_backup(device, prefix="start"):
 
 def restart_process(reason):
     print(f"\n🔄 [프로세스 자가 복구 가동] 사유: {reason}")
-    
+
+    # 📸 [스턱 증거 보존] 재시작/리부팅으로 화면이 바뀌기 전, 마지막으로 연결됐던 디바이스 기준으로 현재 화면을 캡처합니다.
+    # NPC 대화 선택창 등 아직 대응 도장이 없는 미지의 정체 상황을 나중에 분석해 새 도장을 채집할 수 있도록 남겨두는 용도입니다.
+    if global_device is not None:
+        take_screencap_backup(global_device, prefix="stuck")
+
     # 💾 디스크 파일 연동 연속 재시작 횟수 누적
     consecutive_restart_count = read_restart_counter() + 1
     print(f"      ➔ 💾 [연속 재시작 누적 카운트]: {consecutive_restart_count}회")
