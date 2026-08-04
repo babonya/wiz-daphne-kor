@@ -78,9 +78,9 @@ else:
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
 # - 현재 버전: 1.17.0-hotfix1
-# - 최근 수정일: 2026-08-03 00:30
+# - 최근 수정일: 2026-08-04 19:30
 # - 수정 기록:
-#   1.17.0-hotfix1: 세계지도 버튼 그레이스케일 매칭 전환(유령성 스턱 완치), 던전선택 로그 던전명 표시, 월드맵 지그재그 Step1 스케일 보정, 광석파밍 회군을 need_pickaxe 전용 플래그로 전면 재설계(N주회 카운터 미참조 + 무한 재진입), LIMIT_DUNGEON_LOOPS=0 무한주회 지원, village_common 공용 도장(여관/캐릭터창닫기/월드맵아이콘)으로 마을 상태 판별 체계 전환, t_world_map 그레이스케일 전환 및 텍스트 크롭, recover_app_startup 가로화면 무한루프(탈출구 부재) 완치, 월드맵 분기 should_go_town을 need_pickaxe_refill과 동기화 및 지그재그 상태(worldmap_drag_step/worldmap_last_drag_time) 재진입 시 초기화, worldmap_icon 야간 배경 이진화 오탐(0,0 좌표) 완치(그레이스케일 전환) 및 마을 이탈 로그 보강, 프리셋 불일치 던전선택 화면 범용 인식(open_world_map_btn ROI 공용 판별) 및 자동 세계지도 이탈 추가, 재시작 직전 스턱 화면 증거 보존용 screencap(prefix=stuck) 캡처 및 로그 동기화 접미사 인식 추가
+#   1.17.0-hotfix1: 세계지도 버튼 그레이스케일 매칭 전환(유령성 스턱 완치), 던전선택 로그 던전명 표시, 월드맵 지그재그 Step1 스케일 보정, 광석파밍 회군을 need_pickaxe 전용 플래그로 전면 재설계(N주회 카운터 미참조 + 무한 재진입), LIMIT_DUNGEON_LOOPS=0 무한주회 지원, village_common 공용 도장(여관/캐릭터창닫기/월드맵아이콘)으로 마을 상태 판별 체계 전환, t_world_map 그레이스케일 전환 및 텍스트 크롭, recover_app_startup 가로화면 무한루프(탈출구 부재) 완치, 월드맵 분기 should_go_town을 need_pickaxe_refill과 동기화 및 지그재그 상태(worldmap_drag_step/worldmap_last_drag_time) 재진입 시 초기화, worldmap_icon 야간 배경 이진화 오탐(0,0 좌표) 완치(그레이스케일 전환) 및 마을 이탈 로그 보강, 프리셋 불일치 던전선택 화면 범용 인식(open_world_map_btn ROI 공용 판별) 및 자동 세계지도 이탈 추가, 재시작 직전 스턱 화면 증거 보존용 screencap(prefix=stuck) 캡처 및 로그 동기화 접미사 인식 추가, dumpsys 기반 위저드리 앱 최상단 실행 여부 사전 점검(is_daphne_app_foreground) 추가로 MuMu만 켜진 상태 부팅 시 5분 정체 방지
 #   1.17.0: FFXI 콜라보 북쪽의 유령선 2층 광석파밍(마이닝) 주회 상태 머신 및 presets.json 동적 가변 프리셋 로딩 엔진 구축, 층 매칭 오검출 방지 임계치 0.88 상향 튜닝
 #   1.16.0: 상자 대화창 우하단 화살표(dialogue_indicator.png) 감지 터치 개편, 공포 상태이상 캐릭 선택 시 "열 수 없다" 대화 팝업 복구 루프 추가, templates/chestopening/ 하위로 상자 관련 템플릿 폴더 정돈
 #   1.15.0: 지정 슬롯 따개(CHEST_OPENER_SLOT) 터치 개편, 상자공포 상태이상(chestfear.png) 자동 감지 및 주인공/타 슬롯 우회 회피 시퀀스 추가, whowillopenit 템플릿 의존성 제거 및 '열다' 버튼 소멸 기반 진입 판정 최적화
@@ -467,6 +467,16 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 
 sys.excepthook = handle_exception
 
+def is_daphne_app_foreground(device):
+    # 💡 이미지 매칭(가로화면 감지 등) 없이 ADB dumpsys로 직접 "지금 위저드리 다프네가 최상단 앱인가"를 확인합니다.
+    # 이미지 기반 판정은 안드로이드 홈 화면처럼 낯선(가로도 아니고 인게임도 아닌) 상태를 놓칠 수 있어, 앱 자체가 아예 안 켜져 있는
+    # 상황에서는 여기서 즉시 잡아내 launch_daphne_app을 곧바로 격발할 수 있도록 하는 빠른 사전 점검용입니다.
+    try:
+        result = device.shell("dumpsys activity activities | grep mResumedActivity") or ""
+        return "jp.co.drecom.wizardry.daphne" in result
+    except Exception:
+        return False
+
 def launch_daphne_app(device):
     print("      ➔ 🛑 jp.co.drecom.wizardry.daphne 게임 앱 강제 종료 및 Relaunch를 실행합니다.")
     try:
@@ -605,6 +615,17 @@ def recover_app_startup(device):
     t_get_item = load_template("templates/chestopening/get_item.png")
     t_app_exit = load_template("templates/app_exit.png")
     
+    # 🎮 [앱 실행 여부 사전 점검] MuMu는 켜져있지만 위저드리 다프네 앱 자체가 안 켜져 있는 경우(예: 안드로이드 홈 화면),
+    # 가로화면도 아니고 아는 인게임 화면도 아니라서 아래 루프가 (1,1) 공허 탭만 반복하다 5분 정체 타이머까지 기다리던 결함을 완치.
+    # dumpsys로 빠르게 확인해서 즉시 앱을 실행합니다.
+    if not is_daphne_app_foreground(device):
+        print("🎮 [앱 상태 점검] 위저드리 다프네 앱이 최상단에 있지 않은 것으로 확인되었습니다. 즉시 앱 기동을 시도합니다.")
+        try:
+            launch_daphne_app(device)
+            time.sleep(4.0)
+        except Exception as launch_err:
+            print(f"⚠️ [앱 상태 점검] 앱 실행 시도 실패: {launch_err}")
+
     counter = 0
     max_try = 35
     startup_landscape_fail_counter = 0  # 🚨 [v1.17.0-hotfix1] 가로화면 무한루프 완치용 전용 카운터 (기존 counter는 이 분기의 continue로 인해 증가하지 않아 탈출구가 없었음)
