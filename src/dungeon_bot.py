@@ -20,8 +20,9 @@ came_from_chest = False
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
 # - 현재 버전: 1.17.0-hotfix1
-# - 최근 수정일: 2026-08-02 19:00
+# - 최근 수정일: 2026-08-05 01:45
 # - 수정 기록:
+#   1.17.0-hotfix1: trigger_harken_escape 재시도 3회(11.25초)→10회(37.5초)로 상향 및 폴백 좌표 탭 이후 재검증(잔류 시 정밀 재클릭) 추가 - wvd 원본 대비 축소됐던 재시도 예산(MAX_TRY_LIMIT 25) 오이식 결함 완치
 #   1.17.0-hotfix1: start_main_macro 반환값에 need_pickaxe_refill 플래그 추가(곡괭이 소진 vs 정상 채굴종료 구분), 사령탑이 이 플래그만으로 광석파밍 회군을 판단하도록 지원
 #   1.17.0: FFXI 콜라보 북쪽의 유령선 2층 광석파밍(마이닝) 주회 상태 머신 및 presets.json 동적 가변 프리셋 로딩 엔진 구축에 따른 버전 동기화
 #   1.16.0: 상자 대화창 우하단 화살표(dialogue_indicator.png) 감지 터치 개편, 공포 상태이상 캐릭 선택 시 "열 수 없다" 대화 팝업 복구 루프 추가, templates/chestopening/ 하위로 상자 관련 템플릿 폴더 정돈에 따른 버전 동기화
@@ -532,8 +533,12 @@ def trigger_harken_escape(device, t_harken_return, t_move_exit):
     만약 보이지 않으면 출구이동(미니맵 2번) 터치를 재시도하며 안정적으로 귀환 버튼을 클릭하고 탈출합니다.
     """
     harken_clicked = False
-    print("⏳ [하켄귀환] 귀환 팝업 대기 및 BGR 컬러 수렴 루프 기동 (간격: 3.75초, 최대 3회)")
-    for h_wait in range(3):  # 3.75초 간격 * 3회 = 약 11.25초
+    # 💡 [v1.17.0-hotfix1] wvd 원본(script.py)의 동일 화면("ReturnText"/"leaveDung"/"donothing" 하켄 목록) 대응 로직을
+    # 확인해보니 대기시간 3.75초 자체는 wvd에서 맞게 가져온 값이었지만, 실제 재시도 횟수는 wvd의 MAX_TRY_LIMIT(기본 25회)인데
+    # 이식 과정에서 3회로 축소되어 있었음. 구역이 많이 열린 던전은 하켄 목록 렌더링이 오래 걸려 11.25초 안에 못 뜨는 경우가 있어
+    # 폴백 좌표를 허공에 찍고도 성공으로 오판정하던 결함을 완치하기 위해 10회(약 37.5초)로 상향.
+    print("⏳ [하켄귀환] 귀환 팝업 대기 및 BGR 컬러 수렴 루프 기동 (간격: 3.75초, 최대 10회)")
+    for h_wait in range(10):  # 3.75초 간격 * 10회 = 약 37.5초
         time.sleep(3.75)
         try:
             raw_h = device.screencap()
@@ -544,22 +549,37 @@ def trigger_harken_escape(device, t_harken_return, t_move_exit):
                     print(f"🚪 [하켄귀환] 귀환 버튼 BGR 컬러 인식 및 터치 성공! (대기 {h_wait+1}회차)")
                     harken_clicked = True
                     break
-                else:
-                    # 팝업이 아직 안 떴을 가능성이 있으므로 미니맵 2번 재타격
-                    print(f"🔄 [하켄귀환] 귀환 버튼 미검출로 미니맵 2번 터치 재주입 시도 ({h_wait+1}/3)")
+                elif h_wait < 2:
+                    # 처음 1~2회차에만 미니맵 2번 재타격 (그 이후엔 이미 하켄 목록 화면일 가능성이 높아 재탭 생략)
+                    print(f"🔄 [하켄귀환] 귀환 버튼 미검출로 미니맵 2번 터치 재주입 시도 ({h_wait+1}/10)")
                     exit_coords = find_and_get_field_btn_coords(img_np_h, t_move_exit, 0.70)
                     if exit_coords:
                         safe_device_shell(device, f"input tap {exit_coords[0]} {exit_coords[1]}")
                     else:
                         safe_device_shell(device, "input tap 1140 572")
+                else:
+                    print(f"🔄 [하켄귀환] 귀환 버튼 미검출, 화면 안착 대기 재시도 ({h_wait+1}/10)")
         except Exception as scan_err:
             print(f"⚠️ [하켄귀환] 스크린샷 스캔 중 예외 발생: {scan_err}")
-            
+
     if not harken_clicked:
         print("⚠️ [하켄귀환] 컬러 인식 실패. 1440x2560 표준 고정 좌표 (720, 1920) 강제 터치 주입!")
         safe_device_shell(device, "input tap 720 1920")
+        time.sleep(2.0)
+        # 🚨 [재검증] 폴백 좌표가 실제로 맞았는지 확인 없이 무조건 성공 처리하던 결함 완치.
+        # 폴백 탭 이후에도 여전히 귀환 화면이 잔류하면, 이번엔 실제 매칭 좌표로 한 번 더 정밀 재클릭한다.
+        try:
+            raw_verify = device.screencap()
+            if raw_verify:
+                img_np_v = np.array(Image.open(io.BytesIO(raw_verify)))
+                if check_color_template_present(img_np_v, t_harken_return, 0.75):
+                    print("⚠️ [하켄귀환] 폴백 좌표 이후에도 귀환 목록 화면 잔류 감지! 실제 매칭 좌표로 정밀 재클릭을 시도합니다.")
+                    find_and_click_color_template_in_bot(device, img_np_v, t_harken_return, 0.75)
+                    time.sleep(2.0)
+        except Exception as verify_err:
+            print(f"⚠️ [하켄귀환] 폴백 재검증 중 예외 발생: {verify_err}")
         harken_clicked = True
-        
+
     time.sleep(4.0)  # 퇴장 연출 대기
     return True
 
