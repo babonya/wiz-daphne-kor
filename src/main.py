@@ -1293,6 +1293,7 @@ def start_grand_orchestrator():
     t_passport_anchor = load_template("templates/anchor_passport_popup.png")
     t_passport_close = load_template("templates/close_passport_popup.png")
     t_error_to_title = load_template("templates/Error_to_title.png")
+    t_re_retry = load_template("templates/reboot/retry.png")
 
     print("=======================================")
 
@@ -1505,6 +1506,15 @@ def start_grand_orchestrator():
                 last_action_time = time.time()
                 continue
 
+            # 💡 [재시도 팝업 가드] Error_to_title.png와 동일한 사유(recover_app_startup() 전용으로만 체크되고
+            # 메인 루프엔 없었음)로 같이 추가. 언제든 뜰 수 있는 일반 네트워크/서버 재시도 팝업.
+            if check_template_present(img_np, t_re_retry, 0.70):
+                print("🌐 [네트워크 재시도] 'retry.png' 감지! 즉시 터치합니다.")
+                find_and_click_template(device, img_np, t_re_retry, 0.70)
+                time.sleep(3.0)
+                last_action_time = time.time()
+                continue
+
             score_village = get_grayscale_match_score(img_np, t_village)
             score_world = get_grayscale_match_score(img_np, t_world_map)
             score_dung_sel = get_match_score(img_np, t_dungeon_sel)
@@ -1649,6 +1659,13 @@ def start_grand_orchestrator():
         if check_template_present(img_np, t_error_to_title, 0.70):
             print("👉 [타이틀 복귀 확인] 'Error_to_title.png' 감지! 즉시 탭합니다.")
             find_and_click_template(device, img_np, t_error_to_title, 0.70)
+            time.sleep(3.0)
+            last_action_time = time.time()
+            continue
+
+        if check_template_present(img_np, t_re_retry, 0.70):
+            print("🌐 [네트워크 재시도] 'retry.png' 감지! 즉시 터치합니다.")
+            find_and_click_template(device, img_np, t_re_retry, 0.70)
             time.sleep(3.0)
             last_action_time = time.time()
             continue
