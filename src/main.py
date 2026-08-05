@@ -1292,6 +1292,7 @@ def start_grand_orchestrator():
     t_arrow_clean = load_template("templates/inn_sleep/arrow_clean.png")
     t_passport_anchor = load_template("templates/anchor_passport_popup.png")
     t_passport_close = load_template("templates/close_passport_popup.png")
+    t_error_to_title = load_template("templates/Error_to_title.png")
 
     print("=======================================")
 
@@ -1493,7 +1494,17 @@ def start_grand_orchestrator():
                 time.sleep(4.0)
                 last_action_time = time.time()
                 continue
-            
+
+            # 💡 [갱신 데이터 확인 팝업 가드] 이 팝업이 village_common/inn.png와 그레이스케일 0.72로 오탐되어
+            # "VILLAGE"로 오판정되고 여관 도장을 무한 반복 터치하던 결함 발견(실사용 로그로 확인). recover_app_startup()
+            # 에서만 체크하던 Error_to_title.png를 메인 루프에도 동일하게 추가해, 점검류 팝업 체크보다 먼저 걸러냅니다.
+            if check_template_present(img_np, t_error_to_title, 0.70):
+                print("👉 [타이틀 복귀 확인] 'Error_to_title.png' 감지! 즉시 탭합니다.")
+                find_and_click_template(device, img_np, t_error_to_title, 0.70)
+                time.sleep(3.0)
+                last_action_time = time.time()
+                continue
+
             score_village = get_grayscale_match_score(img_np, t_village)
             score_world = get_grayscale_match_score(img_np, t_world_map)
             score_dung_sel = get_match_score(img_np, t_dungeon_sel)
@@ -1630,6 +1641,16 @@ def start_grand_orchestrator():
                     else: device.shell("input tap 713 273")
                 time.sleep(2.0)
 
+            continue
+
+        # 💡 [갱신 데이터 확인 팝업 가드 - 상시 체크] 위쪽 30초 정체 감지 블록은 last_action_time이 최근이면(예: 던전에서
+        # 막 돌아온 직후) 통째로 스킵되어, 그 다음 줄부터 시작되는 상시 판별 로직(마을/월드맵/던전선택)이 이 팝업을 못 보고
+        # village_common/inn.png와 오탐(0.72)될 수 있음(실사용 중 하켄 귀환 직후 발생 확인). 여기서도 동일하게 최우선 체크.
+        if check_template_present(img_np, t_error_to_title, 0.70):
+            print("👉 [타이틀 복귀 확인] 'Error_to_title.png' 감지! 즉시 탭합니다.")
+            find_and_click_template(device, img_np, t_error_to_title, 0.70)
+            time.sleep(3.0)
+            last_action_time = time.time()
             continue
 
         # 💡 [던전선택 범용 인식] "세계지도를 연다" 공용 버튼(ROI 제한)으로 "여기가 어떤 던전이든 던전선택 화면이다"를 우선 판별.
