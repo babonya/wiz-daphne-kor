@@ -6,12 +6,13 @@
 # - 이 폴더(remote_control/)를 통째로 지워도 매크로 본체(src/main.py) 동작에는 전혀 지장이 없습니다.
 # - 현재 버전: 1.17.1 (최초 도입)
 # ==============================================================================
+import glob
 import http.server
 import json
 import os
 import secrets
 import subprocess
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, quote
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
@@ -19,14 +20,9 @@ CONFIG_PATH = os.path.join(SCRIPT_DIR, "config.local.json")
 PID_FILE = os.path.join(PROJECT_ROOT, "macro.pid")
 GUIDE_PATH = os.path.join(SCRIPT_DIR, "설정안내.txt")
 
-PLACEHOLDER = "여기에 본인 배치파일 절대경로를 적으세요 (예: C:\\\\Users\\\\내이름\\\\Wiz_Daphne_with_Antigravity\\\\Daphne Antigravity.bat)"
-
 DEFAULT_CONFIG = {
     "port": 8765,
     "token": None,
-    "targets": {
-        "기본": PLACEHOLDER
-    }
 }
 
 CONFIG = {}
@@ -42,6 +38,17 @@ def load_or_create_config():
         return cfg
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def discover_targets():
+    # 💡 프로젝트 루트(remote_control/의 부모 폴더)에 있는 모든 .bat 파일을 자동으로 원격 시작 대상으로 등록합니다.
+    # 새 프리셋 조합용 배치파일(예: 백아2.bat, 유령성2층채굴.bat)을 그냥 루트 폴더에 추가하기만 하면,
+    # config.local.json을 손댈 필요 없이 다음 /start 요청부터 바로 인식됩니다. (요청마다 매번 새로 스캔)
+    targets = {}
+    for bat_path in glob.glob(os.path.join(PROJECT_ROOT, "*.bat")):
+        name = os.path.splitext(os.path.basename(bat_path))[0]
+        targets[name] = bat_path
+    return targets
 
 
 def get_tailscale_ip():
@@ -62,8 +69,11 @@ def print_and_save_guide(cfg, bind_ip):
     lines.append("=" * 70)
     lines.append("📱 폰 크롬에서 '홈 화면에 추가'로 아래 URL을 그대로 등록하세요")
     lines.append("=" * 70)
-    for name in cfg.get("targets", {}).keys():
-        lines.append(f"▶ 시작 ({name}): http://{host}:{port}/start?target={name}&token={token}")
+    targets = discover_targets()
+    if not targets:
+        lines.append(f"⚠️ {PROJECT_ROOT} 에서 .bat 파일을 찾지 못했습니다. 시작 URL을 만들 수 없습니다.")
+    for name in targets.keys():
+        lines.append(f"▶ 시작 ({name}): http://{host}:{port}/start?target={quote(name)}&token={token}")
     lines.append(f"■ 정지        : http://{host}:{port}/stop?token={token}")
     lines.append(f"❔ 상태확인   : http://{host}:{port}/status?token={token}")
     lines.append("=" * 70)
@@ -133,7 +143,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         if parsed.path == "/start":
             target = qs.get("target", [None])[0]
-            targets = CONFIG.get("targets", {})
+            targets = discover_targets()
             if not target or target not in targets:
                 self._respond(400, f"알 수 없는 target입니다. 사용 가능: {list(targets.keys())}")
                 return
@@ -184,10 +194,9 @@ def main():
     global CONFIG
     CONFIG = load_or_create_config()
 
-    unset_targets = [name for name, path in CONFIG.get("targets", {}).items() if path == PLACEHOLDER]
-    if unset_targets:
-        print(f"⚠️ config.local.json의 targets 경로가 아직 기본 안내문구 그대로입니다: {unset_targets}")
-        print(f"   {CONFIG_PATH} 파일을 열어서 실제 배치파일 절대경로로 수정한 뒤 다시 실행해 주세요.")
+    if not discover_targets():
+        print(f"⚠️ {PROJECT_ROOT} 에서 .bat 파일을 하나도 찾지 못했습니다.")
+        print("   원격으로 시작할 배치파일을 프로젝트 루트 폴더(remote_control/의 부모 폴더)에 두어야 합니다.")
         input("\n아무 키나 누르면 종료합니다...")
         return
 

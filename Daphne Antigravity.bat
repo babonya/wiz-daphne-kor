@@ -4,4 +4,3 @@ cd /d "%~dp0"
 set MACRO_SESSION_START=%date% %time%
 echo Starting Wizardry Daphne Bot...
 python src/main.py
-pause

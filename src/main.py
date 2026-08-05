@@ -500,7 +500,10 @@ def is_daphne_app_foreground(device):
     # 이미지 기반 판정은 안드로이드 홈 화면처럼 낯선(가로도 아니고 인게임도 아닌) 상태를 놓칠 수 있어, 앱 자체가 아예 안 켜져 있는
     # 상황에서는 여기서 즉시 잡아내 launch_daphne_app을 곧바로 격발할 수 있도록 하는 빠른 사전 점검용입니다.
     try:
-        result = device.shell("dumpsys activity activities | grep mResumedActivity") or ""
+        # 💡 안드로이드 버전에 따라 이 항목의 키 이름이 mResumedActivity(구버전) 또는 topResumedActivity(신버전)로 다르게 출력되어,
+        # "mResumedActivity"로만 grep하면 신버전에서 항상 빈 결과가 나와 매번 "최상단 아님"으로 오판하는 결함이 있었음.
+        # 접두어를 떼고 "ResumedActivity"로 grep하면 양쪽 버전 모두, 그리고 요약용 "ResumedActivity:" 라인까지 안전하게 포착됨.
+        result = device.shell("dumpsys activity activities | grep ResumedActivity") or ""
         return "jp.co.drecom.wizardry.daphne" in result
     except Exception:
         return False

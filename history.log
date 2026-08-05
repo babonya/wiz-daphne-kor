@@ -2,6 +2,16 @@
 📋 [프로젝트: Daphne 매크로 통합 히스토리 로그]
 =============================================================================
 
+[1.17.1] 2026-08-05 - 버그 수정/기능 개선 - 원격 제어 실사용 검증 중 발견된 결함 완치 및 배치파일 자동탐지 도입 (로컬 커밋 전용, 미푸시)
+- 내용: remote_control 기능을 실제로 켜고 끄며 검증하는 과정에서, 그 검증 로그를 통해 원격 제어와 무관한 기존 결함 하나를 추가로 발견했고, 원격 제어 자체의 UX 문제 2건도 함께 발견해 모두 완치.
+- 상세:
+  1. [문제] is_daphne_app_foreground()가 "mResumedActivity" 문자열만 grep했는데, 이번에 검증에 쓰인 MuMu의 Android 버전은 dumpsys 출력에서 이 항목을 "topResumedActivity"로 표기함 - grep이 항상 빈 결과를 반환해, 게임이 실제로 최상단에 떠 있어도 매번 "최상단 아님"으로 오판하고 앱을 불필요하게 강제 재시작시키던 결함. 실제 dumpsys 원본 출력으로 재현 후, grep 패턴을 "ResumedActivity"(접두어 제거)로 교정해 신구 버전 모두 대응하도록 완치. 재검증 결과 정상 인식 확인.
+  2. [문제] 원격 /stop이 taskkill로 python.exe 자식 프로세스만 종료하고 부모 cmd.exe 창(Daphne Antigravity.bat)은 살아남아, 그다음 줄인 pause에 걸려 "계속하려면 아무 키나 누르십시오"로 무한 대기하던 결함(크래시로 죽었을 때도 동일 발생). 크래시 내용은 이미 logs/ 로그 파일에 별도 기록되고 있어 콘솔 pause가 불필요하다고 판단, Daphne Antigravity.bat의 pause를 제거.
+  3. [문제] remote_control/Start Remote Control.bat의 한글 echo 문구가 UTF-8로 저장된 파일을 콘솔이 cp949로 해석하면서 실행 시 깨져 보이던 결함(파이썬이 출력하는 부분은 정상). chcp 65001 추가로 완치.
+  4. [기능 개선] 배치파일 경로를 config.local.json에 수동으로 등록해야 했던 방식을, remote_control/server.py가 프로젝트 루트 폴더의 모든 .bat 파일을 매 요청마다 자동 스캔해 시작 대상으로 등록하는 방식(discover_targets())으로 전환. 향후 프리셋별 배치파일(백아.bat, 백아2.bat, 유령성2층채굴.bat 등)을 추가해도 config 수정이나 서버 재시작 없이 즉시 원격 시작 대상에 반영됨. config.local.json은 이제 port/token만 관리. 대상 이름에 공백이 포함될 수 있어(예: "Daphne Antigravity") 안내 URL 생성 시 urllib.parse.quote로 인코딩 처리.
+  5. 위 흐름 변경에 맞춰 README "원격 시작/정지" 설정 방법과 remote_control/config.example.json을 갱신.
+- 적용 파일: main.py, "Daphne Antigravity.bat", remote_control/server.py, "remote_control/Start Remote Control.bat", remote_control/config.example.json, README.md, history.log (로컬 커밋 전용, 미푸시)
+
 [1.17.1] 2026-08-05 - 문서/UX 정리 - README 사용자 친화적 재정리 및 프리셋 전환 방식을 # 토글로 단순화 (로컬 커밋 전용, 미푸시)
 - 내용: README가 개발자 관점의 내부 안정화 내역까지 담고 있어 실제 사용자에게 불필요한 정보가 많았고, 프리셋 전환도 오타 위험이 있는 직접 타이핑 방식이었음. 사용자가 읽을 필요 없는 부분을 걷어내고, 프리셋 전환을 "두 줄 중 원하는 줄의 # 만 지우기" 방식으로 단순화.
 - 상세:
