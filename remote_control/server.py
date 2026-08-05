@@ -61,13 +61,30 @@ def get_tailscale_ip():
         return None
 
 
-def print_and_save_guide(cfg, bind_ip):
-    host = bind_ip or "<PC의 테일스케일 IP를 admin.tailscale.com에서 확인하세요>"
+def get_tailscale_dns_name():
+    # 💡 URL에 실제 IP 숫자 대신, 테일스케일 MagicDNS가 이 PC에 부여한 고유 호스트네임(예: konuri.tail007636.ts.net)을
+    # 표시하기 위한 함수입니다. 서버 자체는 여전히 IP로 바인딩하며, 이건 안내 URL 표시용으로만 씁니다.
+    try:
+        # 💡 --json 출력에 한글 기기명(예: "한샘의 S25 Ultra")이 UTF-8로 섞여 나올 수 있어,
+        # text=True만 쓰면 시스템 로케일(한글 Windows는 cp949)로 디코딩을 시도하다 깨짐 → encoding 명시 필수.
+        result = subprocess.run(
+            ["tailscale", "status", "--self", "--json"],
+            capture_output=True, encoding="utf-8", timeout=5
+        )
+        data = json.loads(result.stdout)
+        dns_name = data.get("Self", {}).get("DNSName", "")
+        return dns_name.rstrip(".") if dns_name else None
+    except Exception:
+        return None
+
+
+def print_and_save_guide(cfg, bind_ip, dns_name=None):
+    host = dns_name or bind_ip or "<PC의 테일스케일 IP를 admin.tailscale.com에서 확인하세요>"
     port = cfg.get("port", 8765)
     token = cfg.get("token", "")
     lines = []
     lines.append("=" * 70)
-    lines.append("📱 폰 크롬에서 '홈 화면에 추가'로 아래 URL을 그대로 등록하세요")
+    lines.append("📱 스마트폰의 웹 브라우저에서 '홈 화면에 추가'로 아래 URL을 그대로 등록하세요")
     lines.append("=" * 70)
     targets = discover_targets()
     if not targets:
@@ -201,7 +218,8 @@ def main():
         return
 
     bind_ip = get_tailscale_ip()
-    print_and_save_guide(CONFIG, bind_ip)
+    dns_name = get_tailscale_dns_name()
+    print_and_save_guide(CONFIG, bind_ip, dns_name)
 
     port = CONFIG.get("port", 8765)
     # 테일스케일 IP를 찾았으면 그 주소에만 바인딩(로컬 LAN 노출 최소화), 못 찾으면 0.0.0.0으로 폴백
