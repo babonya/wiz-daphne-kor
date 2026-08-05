@@ -1,0 +1,8 @@
+{
+  "_설명": "이 파일은 템플릿입니다. 실제 설정은 config.local.json에 자동 생성되며, 그 파일은 .gitignore로 제외되어 커밋되지 않습니다. 이 example 파일은 그냥 참고용이라 직접 수정하실 필요 없습니다.",
+  "port": 8765,
+  "token": "(server.py를 처음 실행하면 이 자리에 랜덤 토큰이 자동으로 채워집니다)",
+  "targets": {
+    "기본": "여기에 본인 배치파일 절대경로를 적으세요 (예: C:\\\\Users\\\\내이름\\\\Wiz_Daphne_with_Antigravity\\\\Daphne Antigravity.bat)"
+  }
+}

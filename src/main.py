@@ -7,7 +7,7 @@ import json
 # ==============================================================================
 # ⚙️ [Daphne 마스터 글로벌 제어 세팅 변수 구역 - 진짜 최상단 제어판]
 # ==============================================================================
-CURRENT_VERSION = "1.17.0-hotfix2" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
+CURRENT_VERSION = "1.17.1"         # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
 # 💡 [v1.17.0] FFXI 콜라보 던전/프리셋 연동, 3채널 BGR 컬러 매칭 수렴 루프 하켄 스턱 완치, 광석 파밍 체크포인트 1회 제한 + Redo 연동, 최초 기동 던전 직진입 안전 탈출
 
 LIMIT_DUNGEON_LOOPS = 2             # 🔄 [마을 회군 기준] 던전을 몇 바퀴 돌고 마을(여관)로 복귀할지 설정
@@ -77,11 +77,27 @@ else:
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.17.0-hotfix2
-# - 최근 수정일: 2026-08-05 14:35
+# - 현재 버전: 1.17.1
+# - 최근 수정일: 2026-08-05
 # - 수정 기록:
-#   1.17.0-hotfix2: dumpsys 기반 위저드리 앱 최상단 실행 여부 사전 점검(is_daphne_app_foreground) 추가로 MuMu만 켜진 상태 부팅 시 5분 정체 방지, 던전선택 층버튼 클릭 후 고정 5초 대기를 최대 10초 필드안착 폴링으로 교체하여 유령성 진입 지연 시 발생하던 하켄 귀환 무한루프(허위 최초기동감지) 완치, recover_app_startup 인게임 진입 판정 순서를 점검/다운로드/재시도/공지/주의/에러 팝업 체크보다 뒤로 재배치하여 village_common/inn.png 오탐(리소스 다운로드 화면 0.686)으로 다운로드 버튼 클릭이 누락되던 결함 완치
-#   1.17.0-hotfix1: 세계지도 버튼 그레이스케일 매칭 전환(유령성 스턱 완치), 던전선택 로그 던전명 표시, 월드맵 지그재그 Step1 스케일 보정, 광석파밍 회군을 need_pickaxe 전용 플래그로 전면 재설계(N주회 카운터 미참조 + 무한 재진입), LIMIT_DUNGEON_LOOPS=0 무한주회 지원, village_common 공용 도장(여관/캐릭터창닫기/월드맵아이콘)으로 마을 상태 판별 체계 전환, t_world_map 그레이스케일 전환 및 텍스트 크롭, recover_app_startup 가로화면 무한루프(탈출구 부재) 완치, 월드맵 분기 should_go_town을 need_pickaxe_refill과 동기화 및 지그재그 상태(worldmap_drag_step/worldmap_last_drag_time) 재진입 시 초기화, worldmap_icon 야간 배경 이진화 오탐(0,0 좌표) 완치(그레이스케일 전환) 및 마을 이탈 로그 보강, 프리셋 불일치 던전선택 화면 범용 인식(open_world_map_btn ROI 공용 판별) 및 자동 세계지도 이탈 추가, 재시작 직전 스턱 화면 증거 보존용 screencap(prefix=stuck) 캡처 및 로그 동기화 접미사 인식 추가
+#   1.17.1: 테일스케일 기반 원격 시작/정지 기능 추가 (macro.pid 자기기록, remote_control/ 신설)
+#   1.17.0-hotfix2:
+#     - dumpsys 기반 위저드리 앱 최상단 실행 여부 사전 점검 (MuMu만 켜진 상태 부팅 시 5분 정체 방지)
+#     - 던전선택 층버튼 클릭 후 고정 5초 대기를 최대 10초 필드안착 폴링으로 교체 (하켄 귀환 무한루프 완치)
+#     - recover_app_startup 인게임 진입 판정 순서 재배치 (리소스 다운로드 화면 인식 누락 완치)
+#   1.17.0-hotfix1:
+#     - 세계지도 버튼 그레이스케일 매칭 전환 (유령성 스턱 완치)
+#     - 던전선택 로그 던전명 표시
+#     - 월드맵 지그재그 Step1 스케일 보정
+#     - 광석파밍 회군을 need_pickaxe 전용 플래그로 전면 재설계 (N주회 카운터 미참조 + 무한 재진입)
+#     - LIMIT_DUNGEON_LOOPS=0 무한주회 지원
+#     - village_common 공용 도장(여관/캐릭터창닫기/월드맵아이콘)으로 마을 상태 판별 체계 전환
+#     - t_world_map 그레이스케일 전환 및 텍스트 크롭
+#     - recover_app_startup 가로화면 무한루프(탈출구 부재) 완치
+#     - 월드맵 분기 should_go_town을 need_pickaxe_refill과 동기화, 지그재그 상태 재진입 시 초기화
+#     - worldmap_icon 야간 배경 이진화 오탐(0,0 좌표) 완치 (그레이스케일 전환) 및 마을 이탈 로그 보강
+#     - 프리셋 불일치 던전선택 화면 범용 인식 (open_world_map_btn ROI 공용 판별) 및 자동 세계지도 이탈
+#     - 재시작 직전 스턱 화면 증거 보존용 screencap(prefix=stuck) 캡처 및 로그 동기화 접미사 인식
 #   1.17.0: FFXI 콜라보 북쪽의 유령선 2층 광석파밍(마이닝) 주회 상태 머신 및 presets.json 동적 가변 프리셋 로딩 엔진 구축, 층 매칭 오검출 방지 임계치 0.88 상향 튜닝
 #   1.16.0: 상자 대화창 우하단 화살표(dialogue_indicator.png) 감지 터치 개편, 공포 상태이상 캐릭 선택 시 "열 수 없다" 대화 팝업 복구 루프 추가, templates/chestopening/ 하위로 상자 관련 템플릿 폴더 정돈
 #   1.15.0: 지정 슬롯 따개(CHEST_OPENER_SLOT) 터치 개편, 상자공포 상태이상(chestfear.png) 자동 감지 및 주인공/타 슬롯 우회 회피 시퀀스 추가, whowillopenit 템플릿 의존성 제거 및 '열다' 버튼 소멸 기반 진입 판정 최적화
@@ -422,8 +438,20 @@ def timestamped_print(*args, **kwargs):
         sys.stdout.log.write(f"{current_time} {msg}")
         sys.stdout.log.flush()
 
+def write_pid_file():
+    # 💡 [v1.17.1 원격 제어 연동] remote_control/server.py가 이 파일을 읽어 매크로 프로세스를 식별합니다.
+    # 모듈 최상단(재시작마다 항상 재실행되는 위치)에 있어서, os.execv 자기재시작 시에도(윈도우는 PID가 바뀌므로)
+    # 매번 자동으로 최신 PID로 갱신됩니다. remote_control을 안 쓰면 이 파일은 그냥 무시하셔도 됩니다.
+    try:
+        pid_path = os.path.join(os.path.dirname(script_dir), "macro.pid")
+        with open(pid_path, "w", encoding="utf-8") as f:
+            f.write(str(os.getpid()))
+    except Exception:
+        pass  # 원격 제어를 안 쓰는 환경에서는 실패해도 매크로 동작에 지장 없음
+
 init_main_logger()
 print = timestamped_print
+write_pid_file()
 
 # ==============================================================================
 # 🔄 [마디 3] 로그 가드 인쇄 영역 (평생 건드릴 필요 없는 고정 파이프라인)
