@@ -2,6 +2,14 @@
 📋 [프로젝트: Daphne 매크로 통합 히스토리 로그]
 =============================================================================
 
+[1.17.0-hotfix2] 2026-08-05 - 릴리즈 빌드 - 버전 라벨 승격 및 최종 백업본 생성
+- 내용: 기존 releases/WizDapKor_v1.17.0-hotfix1.zip(2026-08-03 14:00 빌드) 이후에도 같은 "1.17.0-hotfix1" 라벨로 5개 커밋(하켄 귀환 관련 3건, MuMu 미실행 부팅 지연 방지, 스턱 스크린샷)이 추가로 쌓여, 코드상 버전 문자열과 실제 릴리즈 zip 내용물이 불일치하는 상태였음. AGENTS.md 규칙에 따라 기존 릴리즈는 덮어쓰지 않고, 버전을 1.17.0-hotfix2로 승격하여 최종 상태를 새 릴리즈로 백업.
+- 상세:
+  1. main.py/dungeon_bot.py의 CURRENT_VERSION 및 버전-히스토리 주석을 1.17.0-hotfix2로 승격. 기존 hotfix1 zip 빌드(2026-08-03 14:00) 시점 이후 추가된 항목만 신규 hotfix2 불릿으로 분리(dumpsys 앱 실행 사전점검, 던전선택 10초 폴링 하켄루프 완치, recover_app_startup 판정순서 재배치, trigger_harken_escape 재시도 상향).
+  2. Daphne Antigravity.bat 타이틀 및 README.md 버전 배너를 1.17.0-hotfix2로 동기화.
+  3. releases/WizDapKor_v1.17.0-hotfix2/ 폴더 및 .zip 신규 생성(git archive 기반, 기존 릴리즈는 무수정).
+- 적용 파일: main.py, dungeon_bot.py, Daphne Antigravity.bat, README.md, history.log, releases/WizDapKor_v1.17.0-hotfix2/ (로컬 커밋 전용, 미푸시)
+
 [1.17.0-hotfix1] 2026-08-05 14:35 - 버그 수정 - 리소스 다운로드 확인 화면 대기 시간 부족으로 인한 탈출 오판정(허위 성공) 완치 (로컬 커밋 전용, 미푸시)
 - 내용: 실사용 중 앱 재부팅 후 "리소스 다운로드 확인" 팝업이 뜬 상태에서 recover_app_startup()이 이를 인식 못 하고 "인게임 진입 성공"으로 오판정, 이후 메인 루프가 이 화면을 VILLAGE로 오인해 "여관 도장 인식 및 진입 터치 성공"을 12회 이상 반복 출력하며 실제로는 아무 진행도 못 하던 사례 발견.
 - 상세:
