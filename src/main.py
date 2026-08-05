@@ -78,9 +78,9 @@ else:
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
 # - 현재 버전: 1.17.0-hotfix1
-# - 최근 수정일: 2026-08-05 09:20
+# - 최근 수정일: 2026-08-05 14:35
 # - 수정 기록:
-#   1.17.0-hotfix1: 세계지도 버튼 그레이스케일 매칭 전환(유령성 스턱 완치), 던전선택 로그 던전명 표시, 월드맵 지그재그 Step1 스케일 보정, 광석파밍 회군을 need_pickaxe 전용 플래그로 전면 재설계(N주회 카운터 미참조 + 무한 재진입), LIMIT_DUNGEON_LOOPS=0 무한주회 지원, village_common 공용 도장(여관/캐릭터창닫기/월드맵아이콘)으로 마을 상태 판별 체계 전환, t_world_map 그레이스케일 전환 및 텍스트 크롭, recover_app_startup 가로화면 무한루프(탈출구 부재) 완치, 월드맵 분기 should_go_town을 need_pickaxe_refill과 동기화 및 지그재그 상태(worldmap_drag_step/worldmap_last_drag_time) 재진입 시 초기화, worldmap_icon 야간 배경 이진화 오탐(0,0 좌표) 완치(그레이스케일 전환) 및 마을 이탈 로그 보강, 프리셋 불일치 던전선택 화면 범용 인식(open_world_map_btn ROI 공용 판별) 및 자동 세계지도 이탈 추가, 재시작 직전 스턱 화면 증거 보존용 screencap(prefix=stuck) 캡처 및 로그 동기화 접미사 인식 추가, dumpsys 기반 위저드리 앱 최상단 실행 여부 사전 점검(is_daphne_app_foreground) 추가로 MuMu만 켜진 상태 부팅 시 5분 정체 방지, 던전선택 층버튼 클릭 후 고정 5초 대기를 최대 10초 필드안착 폴링으로 교체하여 유령성 진입 지연 시 발생하던 하켄 귀환 무한루프(허위 최초기동감지) 완치
+#   1.17.0-hotfix1: 세계지도 버튼 그레이스케일 매칭 전환(유령성 스턱 완치), 던전선택 로그 던전명 표시, 월드맵 지그재그 Step1 스케일 보정, 광석파밍 회군을 need_pickaxe 전용 플래그로 전면 재설계(N주회 카운터 미참조 + 무한 재진입), LIMIT_DUNGEON_LOOPS=0 무한주회 지원, village_common 공용 도장(여관/캐릭터창닫기/월드맵아이콘)으로 마을 상태 판별 체계 전환, t_world_map 그레이스케일 전환 및 텍스트 크롭, recover_app_startup 가로화면 무한루프(탈출구 부재) 완치, 월드맵 분기 should_go_town을 need_pickaxe_refill과 동기화 및 지그재그 상태(worldmap_drag_step/worldmap_last_drag_time) 재진입 시 초기화, worldmap_icon 야간 배경 이진화 오탐(0,0 좌표) 완치(그레이스케일 전환) 및 마을 이탈 로그 보강, 프리셋 불일치 던전선택 화면 범용 인식(open_world_map_btn ROI 공용 판별) 및 자동 세계지도 이탈 추가, 재시작 직전 스턱 화면 증거 보존용 screencap(prefix=stuck) 캡처 및 로그 동기화 접미사 인식 추가, dumpsys 기반 위저드리 앱 최상단 실행 여부 사전 점검(is_daphne_app_foreground) 추가로 MuMu만 켜진 상태 부팅 시 5분 정체 방지, 던전선택 층버튼 클릭 후 고정 5초 대기를 최대 10초 필드안착 폴링으로 교체하여 유령성 진입 지연 시 발생하던 하켄 귀환 무한루프(허위 최초기동감지) 완치, recover_app_startup 인게임 진입 판정 순서를 점검/다운로드/재시도/공지/주의/에러 팝업 체크보다 뒤로 재배치하여 village_common/inn.png 오탐(리소스 다운로드 화면 0.686)으로 다운로드 버튼 클릭이 누락되던 결함 완치
 #   1.17.0: FFXI 콜라보 북쪽의 유령선 2층 광석파밍(마이닝) 주회 상태 머신 및 presets.json 동적 가변 프리셋 로딩 엔진 구축, 층 매칭 오검출 방지 임계치 0.88 상향 튜닝
 #   1.16.0: 상자 대화창 우하단 화살표(dialogue_indicator.png) 감지 터치 개편, 공포 상태이상 캐릭 선택 시 "열 수 없다" 대화 팝업 복구 루프 추가, templates/chestopening/ 하위로 상자 관련 템플릿 폴더 정돈
 #   1.15.0: 지정 슬롯 따개(CHEST_OPENER_SLOT) 터치 개편, 상자공포 상태이상(chestfear.png) 자동 감지 및 주인공/타 슬롯 우회 회피 시퀀스 추가, whowillopenit 템플릿 의존성 제거 및 '열다' 버튼 소멸 기반 진입 판정 최적화
@@ -704,19 +704,6 @@ def recover_app_startup(device):
                 print(f"⚠️ [기동 복구 가드] need_heal 설정 실패: {e}")
             continue
             
-        if (check_field_anchor_present(img_np, t_field, 0.62) or
-            check_template_present(img_np, t_dungeon_sel, 0.70) or
-            check_grayscale_template_present_in_roi(img_np, t_open_world, 800, 1200, 1480, 1650, 0.85) or
-            get_combat_match_score(img_np, t_combat_in) > 0.80 or
-            get_combat_match_score(img_np, t_combat_slow) > 0.80 or
-            check_template_present(img_np, t_yeolda, 0.65) or
-            check_template_present(img_np, t_get_item, 0.65) or
-            check_template_present(img_np, t_inn_title, 0.83) or
-            check_grayscale_template_present(img_np, t_world_map, 0.70) or
-            check_grayscale_template_present(img_np, t_village_anchor, 0.65)):
-            print("✨ [앱 기동 복구 성공] 인게임 화면(필드/전투/던전선택/상자/여관/세계지도/마을 등) 진입 성공! 매크로를 복구합니다.")
-            return True
-            
         if check_template_present(img_np, t_re_maintenance, 0.70):
             print("🚨 [점검 경고] 점검 메시지 감지! 5분(300초) 대기 모드로 돌입합니다.")
             time.sleep(300.0)
@@ -772,6 +759,23 @@ def recover_app_startup(device):
             else: device.shell("input tap 1380 1720")
             time.sleep(4.0)
             continue
+
+        # 💡 [순서 재배치] "인게임 진입 성공" 판정을 모든 구체적 팝업(점검/다운로드/재시도/공지/주의/에러) 체크보다 뒤로 이동.
+        # village_common/inn.png("여관")가 리소스 다운로드 확인 화면 등 타이틀 팝업에서 0.65 문턱을 살짝 넘는 오탐(실측 0.686)이
+        # 있었는데, 이 판정이 맨 위에 있으면 오탐 즉시 return True로 함수가 끝나버려서 정작 필요한 다운로드 버튼 클릭 등
+        # 구체적 팝업 대응 코드에 도달하지도 못하는 결함이 있었음. 구체적 팝업들을 전부 먼저 걸러낸 뒤에만 범용 판정을 내리도록 완치.
+        if (check_field_anchor_present(img_np, t_field, 0.62) or
+            check_template_present(img_np, t_dungeon_sel, 0.70) or
+            check_grayscale_template_present_in_roi(img_np, t_open_world, 800, 1200, 1480, 1650, 0.85) or
+            get_combat_match_score(img_np, t_combat_in) > 0.80 or
+            get_combat_match_score(img_np, t_combat_slow) > 0.80 or
+            check_template_present(img_np, t_yeolda, 0.65) or
+            check_template_present(img_np, t_get_item, 0.65) or
+            check_template_present(img_np, t_inn_title, 0.83) or
+            check_grayscale_template_present(img_np, t_world_map, 0.70) or
+            check_grayscale_template_present(img_np, t_village_anchor, 0.65)):
+            print("✨ [앱 기동 복구 성공] 인게임 화면(필드/전투/던전선택/상자/여관/세계지도/마을 등) 진입 성공! 매크로를 복구합니다.")
+            return True
 
         if counter >= 4:
             print(f"💤 [스킵 가드] 로딩/타이틀 정체 감지 ({counter}/{max_try}). [1, 1] 터치를 주입합니다.")

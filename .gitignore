@@ -11,6 +11,9 @@ releases/
 # 실시간 구동 로그 파일 제외
 logs/
 
+# 매크로 런타임 상태 파일 (재시작 횟수 카운터, 자동 생성/갱신됨)
+restart_counter.txt
+
 # 분석 전용 외부 소스코드 제외
 wvd-master/
 
