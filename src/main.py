@@ -1499,10 +1499,12 @@ def start_grand_orchestrator():
             # 💡 [갱신 데이터 확인 팝업 가드] 이 팝업이 village_common/inn.png와 그레이스케일 0.72로 오탐되어
             # "VILLAGE"로 오판정되고 여관 도장을 무한 반복 터치하던 결함 발견(실사용 로그로 확인). recover_app_startup()
             # 에서만 체크하던 Error_to_title.png를 메인 루프에도 동일하게 추가해, 점검류 팝업 체크보다 먼저 걸러냅니다.
+            # ⚠️ "타이틀로"가 뜨면 버튼을 탭하는 대신 아예 앱을 강제 재기동시킵니다 - 버튼을 눌러도 결국 타이틀부터
+            # 로그인/로딩을 다시 거쳐야 해서 앱 재기동과 결과가 동일하고, 이 편이 더 확실합니다.
             if check_template_present(img_np, t_error_to_title, 0.70):
-                print("👉 [타이틀 복귀 확인] 'Error_to_title.png' 감지! 즉시 탭합니다.")
-                find_and_click_template(device, img_np, t_error_to_title, 0.70)
-                time.sleep(3.0)
+                print("👉 [타이틀 복귀 확인] 'Error_to_title.png' 감지! 앱을 강제 재기동합니다.")
+                launch_daphne_app(device)
+                recover_app_startup(device)
                 last_action_time = time.time()
                 continue
 
@@ -1657,9 +1659,9 @@ def start_grand_orchestrator():
         # 막 돌아온 직후) 통째로 스킵되어, 그 다음 줄부터 시작되는 상시 판별 로직(마을/월드맵/던전선택)이 이 팝업을 못 보고
         # village_common/inn.png와 오탐(0.72)될 수 있음(실사용 중 하켄 귀환 직후 발생 확인). 여기서도 동일하게 최우선 체크.
         if check_template_present(img_np, t_error_to_title, 0.70):
-            print("👉 [타이틀 복귀 확인] 'Error_to_title.png' 감지! 즉시 탭합니다.")
-            find_and_click_template(device, img_np, t_error_to_title, 0.70)
-            time.sleep(3.0)
+            print("👉 [타이틀 복귀 확인] 'Error_to_title.png' 감지! 앱을 강제 재기동합니다.")
+            launch_daphne_app(device)
+            recover_app_startup(device)
             last_action_time = time.time()
             continue
 
