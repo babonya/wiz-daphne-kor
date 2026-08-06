@@ -1499,14 +1499,14 @@ def start_grand_orchestrator():
             # 💡 [갱신 데이터 확인 팝업 가드] 이 팝업이 village_common/inn.png와 그레이스케일 0.72로 오탐되어
             # "VILLAGE"로 오판정되고 여관 도장을 무한 반복 터치하던 결함 발견(실사용 로그로 확인). recover_app_startup()
             # 에서만 체크하던 Error_to_title.png를 메인 루프에도 동일하게 추가해, 점검류 팝업 체크보다 먼저 걸러냅니다.
-            # ⚠️ "타이틀로"가 뜨면 버튼을 탭하는 대신 아예 앱을 강제 재기동시킵니다 - 버튼을 눌러도 결국 타이틀부터
-            # 로그인/로딩을 다시 거쳐야 해서 앱 재기동과 결과가 동일하고, 이 편이 더 확실합니다.
+            # ⚠️ "타이틀로"가 뜨면 게임이 로그인/로딩부터 다시 시작되어 자동전투 스킬 설정 등 세션 상태가 초기화되므로,
+            # 매크로도 같이 완전히 새로 시작합니다(파이썬 프로세스 자체를 재시작 - 새 프로세스의 recover_app_startup이
+            # 이 화면을 다시 감지해 탭까지 처리하므로 여기서 직접 탭할 필요 없음).
             if check_template_present(img_np, t_error_to_title, 0.70):
-                print("👉 [타이틀 복귀 확인] 'Error_to_title.png' 감지! 앱을 강제 재기동합니다.")
-                launch_daphne_app(device)
-                recover_app_startup(device)
-                last_action_time = time.time()
-                continue
+                print("👉 [타이틀 복귀 확인] 'Error_to_title.png' 감지! 매크로를 완전히 재시작합니다.")
+                take_screencap_backup(device, prefix="stuck")
+                write_restart_counter(read_restart_counter() + 1)
+                os.execv(sys.executable, [sys.executable] + sys.argv)
 
             # 💡 [재시도 팝업 가드] Error_to_title.png와 동일한 사유(recover_app_startup() 전용으로만 체크되고
             # 메인 루프엔 없었음)로 같이 추가. 언제든 뜰 수 있는 일반 네트워크/서버 재시도 팝업.
@@ -1659,11 +1659,10 @@ def start_grand_orchestrator():
         # 막 돌아온 직후) 통째로 스킵되어, 그 다음 줄부터 시작되는 상시 판별 로직(마을/월드맵/던전선택)이 이 팝업을 못 보고
         # village_common/inn.png와 오탐(0.72)될 수 있음(실사용 중 하켄 귀환 직후 발생 확인). 여기서도 동일하게 최우선 체크.
         if check_template_present(img_np, t_error_to_title, 0.70):
-            print("👉 [타이틀 복귀 확인] 'Error_to_title.png' 감지! 앱을 강제 재기동합니다.")
-            launch_daphne_app(device)
-            recover_app_startup(device)
-            last_action_time = time.time()
-            continue
+            print("👉 [타이틀 복귀 확인] 'Error_to_title.png' 감지! 매크로를 완전히 재시작합니다.")
+            take_screencap_backup(device, prefix="stuck")
+            write_restart_counter(read_restart_counter() + 1)
+            os.execv(sys.executable, [sys.executable] + sys.argv)
 
         if check_template_present(img_np, t_re_retry, 0.70):
             print("🌐 [네트워크 재시도] 'retry.png' 감지! 즉시 터치합니다.")
