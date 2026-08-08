@@ -20,6 +20,7 @@ CONFIG_PATH = os.path.join(SCRIPT_DIR, "config.local.json")
 PID_FILE = os.path.join(PROJECT_ROOT, "macro.pid")
 GUIDE_PATH = os.path.join(SCRIPT_DIR, "설정안내.txt")
 LOGS_DIR = os.path.join(PROJECT_ROOT, "logs")
+LAST_TARGET_PATH = os.path.join(SCRIPT_DIR, "last_target.txt")
 
 DEFAULT_CONFIG = {
     "port": 8765,
@@ -50,6 +51,23 @@ def discover_targets():
         name = os.path.splitext(os.path.basename(bat_path))[0]
         targets[name] = bat_path
     return targets
+
+
+def read_last_target():
+    # 💡 대시보드 접속 시 드롭다운에 "마지막으로 시작한 배치"가 미리 선택되어 있도록 기록해두는 용도입니다.
+    try:
+        with open(LAST_TARGET_PATH, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception:
+        return None
+
+
+def write_last_target(name):
+    try:
+        with open(LAST_TARGET_PATH, "w", encoding="utf-8") as f:
+            f.write(name)
+    except Exception:
+        pass
 
 
 def get_tailscale_ip():
@@ -164,8 +182,10 @@ def get_recent_log_lines(n=20):
 
 def render_dashboard_html(token):
     targets = discover_targets()
+    last_target = read_last_target()
     options_html = "\n".join(
-        f'<option value="{name}">{name}</option>' for name in targets.keys()
+        f'<option value="{name}"{" selected" if name == last_target else ""}>{name}</option>'
+        for name in targets.keys()
     ) or '<option value="">(루트 폴더에 .bat 파일 없음)</option>'
 
     return """<!DOCTYPE html>
@@ -456,6 +476,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     cwd=os.path.dirname(bat_path),
                     shell=True
                 )
+                write_last_target(target)
                 self._respond(200, f"'{target}' 매크로 시작 요청을 보냈습니다.")
                 print(f"▶ [원격 시작] target={target}")
             except Exception as e:
