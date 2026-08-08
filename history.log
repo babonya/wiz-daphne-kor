@@ -2,6 +2,11 @@
 📋 [프로젝트: Daphne 매크로 통합 히스토리 로그]
 =============================================================================
 
+[1.17.1-hotfix2] 2026-08-08 - 릴리즈 빌드 - 버전 승격 및 릴리즈 준비
+- 내용: v1.17.1-hotfix1 릴리즈 태그 이후 블로그 링크 추가, 원격 대시보드 신설, 마지막 실행 배치 기억 기능까지 3개 커밋이 쌓여 코드와 기존 릴리즈 태그가 어긋난 상태였음. 기존 v1.17.1-hotfix1 릴리즈는 그대로 두고, 버전을 1.17.1-hotfix2로 승격.
+- 상세: main.py/dungeon_bot.py/remote_control/server.py의 버전 및 버전-히스토리 주석을 1.17.1-hotfix2로 승격(main.py/dungeon_bot.py는 이번 변경사항이 remote_control/에만 해당되어 동기화 전용 기록). Daphne Antigravity.bat 타이틀 및 README.md 버전 배너 동기화.
+- 적용 파일: main.py, dungeon_bot.py, remote_control/server.py, Daphne Antigravity.bat, README.md, history.log
+
 [1.17.1-hotfix1] 2026-08-08 - 기능 개선 - 원격 대시보드 시작 드롭다운이 마지막 실행 배치를 기억하도록 개선 (로컬 커밋 전용, 미푸시)
 - 내용: 배치파일이 여러 개(백아1층/백아2층/유령성 등)일 때, 대시보드를 다시 열 때마다 매번 드롭다운에서 원하는 프리셋을 다시 골라야 하는 불편함을 사용자가 지적. 마지막으로 실제 시작에 성공한 배치명을 기록해두고, 다음 접속 시 드롭다운에 미리 선택되어 있도록 개선.
 - 상세: remote_control/last_target.txt(신설, gitignore 처리)에 성공적으로 /start된 target명을 기록. render_dashboard_html()이 이 값을 읽어 해당 <option>에 selected 속성을 부여. "이미 실행 중" 응답 등 실제로 새 프로세스를 띄우지 않은 /start 호출에서는 기록을 남기지 않도록 write_last_target 호출 위치를 subprocess.Popen 성공 직후로 한정(의도적 설계 - "마지막으로 실제 시작한 배치"만 기억).
