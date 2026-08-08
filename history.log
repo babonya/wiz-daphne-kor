@@ -2,6 +2,33 @@
 📋 [프로젝트: Daphne 매크로 통합 히스토리 로그]
 =============================================================================
 
+[1.17.1-hotfix2] 2026-08-08 - 버그 수정 - 백그라운드(pythonw) 실행 시 대시보드 폴링마다 콘솔 창이 깜빡이던 결함 완치
+- 내용: Start Remote Control (Background).bat으로 실행 후 대시보드를 열어두면 5초마다 터미널 같은 창이 순간 떴다 사라지는 현상을 사용자가 제보. 원인 확인 결과, 대시보드가 5초마다 GET /api/state를 호출 -> is_macro_running()이 is_our_python_process()를 거쳐 tasklist 명령어를 subprocess로 실행하는데, 콘솔이 없는 pythonw.exe 밑에서는 tasklist.exe 자신이 새 콘솔 창을 스스로 띄웠다 닫음(python.exe 콘솔 모드에서는 부모의 기존 콘솔에 붙어서 문제없었음).
+- 상세:
+  1. NO_WINDOW = subprocess.CREATE_NO_WINDOW 상수 신설(매크로 본체를 띄우는 /start의 Popen에는 적용 금지 - 그 창은 사용자에게 보여야 함을 주석으로 명시).
+  2. get_tailscale_ip(), get_tailscale_dns_name(), is_our_python_process()의 tasklist 호출, stop_background_server()와 /stop 핸들러의 taskkill 호출까지 총 5곳의 유틸리티성 subprocess.run()에 creationflags=NO_WINDOW 적용.
+  3. py_compile로 문법 검증 후, pythonw로 서버를 직접 띄워 /api/state를 5초 간격 3회 폴링해 전부 정상 응답(200) 확인. 이후 사용자가 실제 배치파일로 재실행하여 깜빡임이 사라졌음을 육안으로 최종 확인.
+- 적용 파일: remote_control/server.py, history.log (로컬 커밋 전용, 미푸시)
+
+[1.17.1-hotfix2] 2026-08-08 - 기능 추가 - 원격 제어 서버 백그라운드(창 없이) 실행/종료 배치파일 추가 (로컬 커밋 전용, 미푸시)
+- 내용: 사용자가 콘솔 창을 실수로 닫아서 원격 제어가 꺼질까 봐 불안하다고 지적. python.exe 대신 pythonw.exe로 실행하면 창 자체가 안 뜨는 방식으로 실수 방지가 가능하다고 안내 후, 요청에 따라 백그라운드 시작/종료용 배치파일 한 쌍을 신설.
+- 상세:
+  1. remote_control/server.py에 write_own_pid()(자기 PID를 remote_server.pid에 기록, python.exe/pythonw.exe 어느 쪽으로 실행되든 항상 기록됨) 및 stop_background_server()(remote_server.pid를 읽어 is_our_python_process로 안전 검증 후 taskkill) 신설. is_our_python_process()는 기존에 "python.exe"만 검증하던 것을 이미지명 목록을 받도록 일반화(python.exe/pythonw.exe 둘 다 대응).
+  2. remote_control/Start Remote Control (Background).bat, remote_control/Stop Remote Control (Background).bat 신설.
+  3. [문제 발견]: pythonw.exe로 실제 테스트해보니, 콘솔이 없는 상태에서 print()가 이모지를 만나는 즉시 UnicodeEncodeError로 죽는 결함을 발견(sys.stdout이 None이거나, 존재해도 콘솔 미부착 시 시스템 로케일(cp949)로 인코딩을 시도함 - 아직 python.exe 콘솔 모드에서는 PEP 528 덕에 문제없었으나 pythonw는 그 경로를 안 탐).
+  4. [해법]: 모듈 최상단에서 sys.stdout/stderr가 None이면 버려지는 더미 스트림으로 교체하고, 존재하면 encoding="utf-8", errors="replace"로 강제 재설정하여 어떤 실행 방식에서도 죽지 않도록 완치.
+  5. print_and_save_guide()에 "정상 접속 확인되면 백그라운드 버전으로 전환하세요" 안내 문구 추가(콘솔 출력 및 설정안내.txt 파일 모두에 반영).
+  6. 실제 pythonw 실행 → remote_server.pid 기록 → /api/state 정상 응답 → stop_background_server() 호출 → 프로세스 종료 및 pid 파일 삭제까지 전체 흐름 실측 검증 완료.
+- 적용 파일: remote_control/server.py, "remote_control/Start Remote Control (Background).bat", "remote_control/Stop Remote Control (Background).bat", .gitignore, README.md, history.log (로컬 커밋 전용, 미푸시)
+
+[1.17.1-hotfix2] 2026-08-08 - 버그 수정 - 콘솔에 출력되는 대시보드 URL이 줄바꿈되어 토큰에 공백이 섞이던 결함 완치 (로컬 커밋 전용, 미푸시)
+- 내용: 실사용 중 대시보드 접속 시 403(forbidden)이 발생. 원인 확인 결과, "🕹️ 대시보드(실시간 로그+시작/정지) : " 라벨이 다른 안내 줄(■ 정지, ❔ 상태확인 등)보다 훨씬 길어서, 콘솔 창 너비를 넘는 부분에서 줄바꿈이 발생 - 사용자가 그 줄을 복사할 때 줄바꿈 지점이 공백으로 붙어 토큰 중간에 스페이스가 끼어들었음(예: "...Ibb7W qJqIKqX3GU"). 같은 실행에서 출력된 다른 URL 줄들(공백 없음)과 대조해 원인을 특정.
+- 상세:
+  1. print_and_save_guide()의 대시보드 안내 줄 라벨을 "🕹️ 대시보드(실시간 로그+시작/정지) :" -> "🕹️ 대시보드 :"로 대폭 단축. 부가 설명은 안내 헤더 줄(URL을 포함하지 않아 줄바꿈되어도 무해함)로 이동.
+  2. 재발 방지를 위해 코드에 "이 줄은 짧게 유지" 주석 추가.
+  3. 검증 중, 포트 8765에 원격 제어 서버 프로세스가 두 개(이전 테스트 잔여 프로세스 포함) 동시에 LISTENING 상태였던 것을 추가로 발견(HTTPServer의 SO_REUSEADDR로 인해 중복 바인딩이 조용히 성공했던 것으로 추정) - 정리 후 단일 프로세스로 재기동.
+- 적용 파일: remote_control/server.py, history.log (로컬 커밋 전용, 미푸시)
+
 [1.17.1-hotfix2] 2026-08-08 - 릴리즈 빌드 - 버전 승격 및 릴리즈 준비
 - 내용: v1.17.1-hotfix1 릴리즈 태그 이후 블로그 링크 추가, 원격 대시보드 신설, 마지막 실행 배치 기억 기능까지 3개 커밋이 쌓여 코드와 기존 릴리즈 태그가 어긋난 상태였음. 기존 v1.17.1-hotfix1 릴리즈는 그대로 두고, 버전을 1.17.1-hotfix2로 승격.
 - 상세: main.py/dungeon_bot.py/remote_control/server.py의 버전 및 버전-히스토리 주석을 1.17.1-hotfix2로 승격(main.py/dungeon_bot.py는 이번 변경사항이 remote_control/에만 해당되어 동기화 전용 기록). Daphne Antigravity.bat 타이틀 및 README.md 버전 배너 동기화.

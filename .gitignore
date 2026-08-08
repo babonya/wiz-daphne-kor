@@ -19,6 +19,7 @@ macro.pid
 remote_control/config.local.json
 remote_control/설정안내.txt
 remote_control/last_target.txt
+remote_control/remote_server.pid
 
 # 분석 전용 외부 소스코드 제외
 wvd-master/

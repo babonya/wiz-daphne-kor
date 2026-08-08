@@ -11,11 +11,26 @@
 # ==============================================================================
 import glob
 import http.server
+import io
 import json
 import os
 import secrets
 import subprocess
+import sys
 from urllib.parse import urlparse, parse_qs, quote
+
+# 💡 [pythonw.exe/백그라운드 실행 대응] 콘솔이 없는 pythonw.exe로 실행되면 sys.stdout/stderr가 None이거나
+# (또는 존재해도) 시스템 로케일(한글 Windows는 cp949)로 인코딩을 시도하다 print()의 이모지에서 그대로 죽어버립니다.
+# None이면 버려지는 더미 스트림으로, 존재하면 UTF-8로 강제 재설정해 어떤 실행 방식에서도 죽지 않게 합니다.
+if sys.stdout is None:
+    sys.stdout = io.TextIOWrapper(io.BytesIO(), encoding="utf-8")
+if sys.stderr is None:
+    sys.stderr = io.TextIOWrapper(io.BytesIO(), encoding="utf-8")
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
@@ -24,6 +39,13 @@ PID_FILE = os.path.join(PROJECT_ROOT, "macro.pid")
 GUIDE_PATH = os.path.join(SCRIPT_DIR, "설정안내.txt")
 LOGS_DIR = os.path.join(PROJECT_ROOT, "logs")
 LAST_TARGET_PATH = os.path.join(SCRIPT_DIR, "last_target.txt")
+SERVER_PID_PATH = os.path.join(SCRIPT_DIR, "remote_server.pid")
+
+# 💡 [pythonw.exe/백그라운드 실행 대응] 콘솔 없는 pythonw.exe 밑에서 tasklist/tailscale 같은 콘솔 유틸리티를
+# subprocess로 호출하면, 붙을 콘솔이 없어 Windows가 매번 새 콘솔 창을 잠깐 띄웠다 닫습니다(5초마다 폴링되는
+# /api/state가 tasklist를 호출할 때마다 화면이 깜빡이는 원인이었음). CREATE_NO_WINDOW로 이를 원천 차단합니다.
+# (실제 매크로를 띄우는 /start의 "start"는 사용자가 봐야 하는 창이라 의도적으로 이 플래그를 안 씁니다.)
+NO_WINDOW = subprocess.CREATE_NO_WINDOW
 
 DEFAULT_CONFIG = {
     "port": 8765,
@@ -76,7 +98,7 @@ def write_last_target(name):
 def get_tailscale_ip():
     # 테일스케일 CLI가 PATH에 없는 환경도 있어서, 실패해도 조용히 None 반환 (0.0.0.0 폴백)
     try:
-        result = subprocess.run(["tailscale", "ip", "-4"], capture_output=True, text=True, timeout=5)
+        result = subprocess.run(["tailscale", "ip", "-4"], capture_output=True, text=True, timeout=5, creationflags=NO_WINDOW)
         out = result.stdout.strip()
         return out.splitlines()[0] if out else None
     except Exception:
@@ -91,7 +113,7 @@ def get_tailscale_dns_name():
         # text=True만 쓰면 시스템 로케일(한글 Windows는 cp949)로 디코딩을 시도하다 깨짐 → encoding 명시 필수.
         result = subprocess.run(
             ["tailscale", "status", "--self", "--json"],
-            capture_output=True, encoding="utf-8", timeout=5
+            capture_output=True, encoding="utf-8", timeout=5, creationflags=NO_WINDOW
         )
         data = json.loads(result.stdout)
         dns_name = data.get("Self", {}).get("DNSName", "")
@@ -107,8 +129,11 @@ def print_and_save_guide(cfg, bind_ip, dns_name=None):
     lines = []
     lines.append("=" * 70)
     lines.append("📱 스마트폰의 웹 브라우저에서 '홈 화면에 추가'로 아래 대시보드 URL을 등록하세요")
+    lines.append("   (실시간 로그 확인 + 시작/정지 버튼이 모두 있는 페이지입니다)")
     lines.append("=" * 70)
-    lines.append(f"🕹️ 대시보드(실시간 로그+시작/정지) : http://{host}:{port}/dashboard?token={token}")
+    # ⚠️ 이 줄은 짧게 유지하세요! 라벨이 길어지면 콘솔 창 너비를 넘어가 줄바꿈이 발생하고,
+    # 그 줄바꿈 지점을 복사할 때 토큰 중간에 공백이 끼어드는 문제가 실사용 중 발견됨(대시보드 접속 403 원인).
+    lines.append(f"🕹️ 대시보드 : http://{host}:{port}/dashboard?token={token}")
     lines.append("=" * 70)
     lines.append("(참고) 대시보드 없이 개별 URL만 쓰고 싶다면 아래도 그대로 동작합니다:")
     targets = discover_targets()
@@ -118,6 +143,11 @@ def print_and_save_guide(cfg, bind_ip, dns_name=None):
         lines.append(f"▶ 시작 ({name}): http://{host}:{port}/start?target={quote(name)}&token={token}")
     lines.append(f"■ 정지        : http://{host}:{port}/stop?token={token}")
     lines.append(f"❔ 상태확인   : http://{host}:{port}/status?token={token}")
+    lines.append("=" * 70)
+    lines.append("💡 URL을 북마크에 등록하고 정상 접속까지 확인하셨다면, 다음부터는 이 창(Start Remote")
+    lines.append('   Control.bat) 대신 "Start Remote Control (Background).bat"를 사용하시는 걸 권장합니다.')
+    lines.append("   창이 아예 뜨지 않아 실수로 닫아버릴 걱정이 없습니다. 끌 때는")
+    lines.append('   "Stop Remote Control (Background).bat"를 실행하시면 됩니다.')
     lines.append("=" * 70)
     text = "\n".join(lines)
     print(text)
@@ -139,18 +169,18 @@ def read_pid():
         return None
 
 
-def is_our_python_process(pid):
-    # taskkill 대상이 정말 python.exe가 맞는지 한 번 더 확인 (PID 재활용으로 엉뚱한 프로세스를 죽이는 사고 방지)
+def is_our_python_process(pid, valid_images=("python.exe",)):
+    # taskkill 대상이 정말 python.exe(또는 지정한 이미지명)가 맞는지 한 번 더 확인 (PID 재활용으로 엉뚱한 프로세스를 죽이는 사고 방지)
     try:
         result = subprocess.run(
             ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
-            capture_output=True, text=True, timeout=5
+            capture_output=True, text=True, timeout=5, creationflags=NO_WINDOW
         )
         out = result.stdout.strip()
         if not out or out.upper().startswith("INFO:"):
             return False
-        image_name = out.split(",")[0].strip('"')
-        return image_name.lower() == "python.exe"
+        image_name = out.split(",")[0].strip('"').lower()
+        return image_name in valid_images
     except Exception:
         return False
 
@@ -162,6 +192,45 @@ def is_macro_running():
     if is_our_python_process(pid):
         return True, pid
     return False, None
+
+
+def write_own_pid():
+    # 💡 이 서버 자신의 PID를 기록해둡니다. python.exe(창 있음)/pythonw.exe(창 없음, 백그라운드) 어느 쪽으로
+    # 실행되든 항상 기록되므로, "Stop Remote Control (Background).bat"가 창이 없는 상태에서도 정확히 이 프로세스만
+    # 골라서 종료할 수 있습니다.
+    try:
+        with open(SERVER_PID_PATH, "w", encoding="utf-8") as f:
+            f.write(str(os.getpid()))
+    except Exception:
+        pass
+
+
+def stop_background_server():
+    # 💡 "Stop Remote Control (Background).bat"에서 `python -c "import server; server.stop_background_server()"`로 호출합니다.
+    if not os.path.exists(SERVER_PID_PATH):
+        print("⚠️ 실행 중인 원격 제어 서버를 찾지 못했습니다 (remote_server.pid 없음).")
+        return
+    try:
+        with open(SERVER_PID_PATH, "r", encoding="utf-8") as f:
+            pid = int(f.read().strip())
+    except Exception:
+        print("⚠️ remote_server.pid 파일을 읽지 못했습니다.")
+        return
+
+    if not is_our_python_process(pid, valid_images=("python.exe", "pythonw.exe")):
+        print(f"⚠️ PID {pid}가 이미 종료된 것 같습니다. (오래된 pid 파일 정리)")
+        try:
+            os.remove(SERVER_PID_PATH)
+        except Exception:
+            pass
+        return
+
+    try:
+        subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True, timeout=5, creationflags=NO_WINDOW)
+        os.remove(SERVER_PID_PATH)
+        print(f"✅ 백그라운드 원격 제어 서버(PID {pid})를 종료했습니다.")
+    except Exception as e:
+        print(f"⚠️ 종료 실패: {e}")
 
 
 def get_recent_log_lines(n=20):
@@ -491,7 +560,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._respond(200, "이미 정지 상태입니다.")
                 return
             try:
-                subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True, timeout=5)
+                subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True, timeout=5, creationflags=NO_WINDOW)
                 if os.path.exists(PID_FILE):
                     os.remove(PID_FILE)
                 self._respond(200, f"매크로(PID {pid})를 정지했습니다.")
@@ -522,6 +591,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 def main():
     global CONFIG
+    write_own_pid()
     CONFIG = load_or_create_config()
 
     if not discover_targets():
@@ -543,11 +613,18 @@ def main():
         print(f"⚠️ {host}:{port} 바인딩 실패({e}), 0.0.0.0으로 재시도합니다.")
         server = http.server.HTTPServer(("0.0.0.0", port), Handler)
 
-    print(f"\n🚀 원격 제어 서버가 {host}:{port} 에서 대기 중입니다. (창을 닫거나 Ctrl+C로 종료)")
+    print(f"\n🚀 원격 제어 서버가 {host}:{port} 에서 대기 중입니다.")
+    print('   (창이 보이는 상태로 실행 중이라면 창을 닫거나 Ctrl+C로 종료 / 백그라운드 실행 중이라면 "Stop Remote Control (Background).bat" 사용)')
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("\n서버를 종료합니다.")
+    finally:
+        try:
+            if os.path.exists(SERVER_PID_PATH):
+                os.remove(SERVER_PID_PATH)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
