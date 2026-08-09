@@ -19,9 +19,15 @@ came_from_chest = False
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.17.1-hotfix3
-# - 최근 수정일: 2026-08-08
+# - 현재 버전: 1.17.1-hotfix3 (아래 하켄의 가호 대응은 미배포 작업 중 - 버전 미승격)
+# - 최근 수정일: 2026-08-09
 # - 수정 기록:
+#   (작업중) 하켄의 가호(연 1회, 자정 이후 하켄 귀환 시 3지선다 팝업) 대응 신설: "아무것도 안 한다" 도장
+#     (templates/Field/harken_blessing_donothing.png)으로 팝업 감지 → 감지 시 증거 스크린샷(파일명에 harken 포함,
+#     기기 /sdcard/Screenshots/) 저장 후, 3개 선택지의 텍스트 색상 등급(흰<녹<파<보라<빨강, 실측 확인은 흰/녹뿐이라
+#     파/보라/빨강은 추정 범위)을 비교해 최고 등급을 자동 선택. 특정 던전 우선순위(유령성→데몬 특화 등) 도장 매칭은
+#     아직 해당 도장이 없어 추후 연동 예정(resolve_and_click_harken_blessing의 priority_template 인자로 이미 자리는 마련).
+#     실전에서 이 팝업이 뜬 적이 아직 없어(연 1회 이벤트) 실기 검증은 못한 상태 - 다음 등장 시 확인 필요.
 #   1.17.1-hotfix3: (동기화, 이 파일 자체는 변경 없음 - 이번 핫픽스는 remote_control/server.py의 백그라운드 실행 기능에만 연동됨)
 #   1.17.1-hotfix2: (동기화, 이 파일 자체는 변경 없음 - 이번 핫픽스는 remote_control/server.py의 대시보드 기능에만 연동됨)
 #   1.17.1-hotfix1: (동기화, 이 파일 자체는 변경 없음 - 이번 핫픽스는 main.py의 팝업 인식/재시작 로직에만 연동됨)
@@ -531,7 +537,111 @@ def find_and_click_color_template_in_bot(device, img_np, color_temp, threshold_v
         return False
     except: return False
 
-def trigger_harken_escape(device, t_harken_return, t_move_exit):
+# 🎁 [하켄의 가호] 하루 한 번(자정 이후) 하켄 귀환 시 뜨는 3지선다 가호 팝업 대응.
+# 좌표는 1440x2560 기준 고정 (dev/ROI_check/필드-하켄의가호.png 실측): 3개 선택지 + "아무것도 안 한다".
+HARKEN_BLESSING_ROWS = [(720, 1580), (720, 1750), (720, 1915)]
+
+def save_device_screencap_evidence(device, prefix):
+    """
+    take_screencap_backup(main.py)과 동일한 방식(안드로이드 셸을 통한 백그라운드 캡처)을
+    dungeon_bot.py 자체적으로 수행합니다 (main.py를 임포트하면 순환참조가 생기므로 로컬 중복 구현).
+    """
+    try:
+        time_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"screencap_{prefix}_{time_str}.png"
+        device.shell("mkdir -p /sdcard/Screenshots")
+        print(f"📸 [{prefix.upper()} 스크린샷] 안드로이드 셸을 통해 화면을 백그라운드로 캡처합니다: {filename}")
+        device.shell(f"screencap -p /sdcard/Screenshots/{filename}")
+    except Exception as err:
+        print(f"⚠️ [{prefix.upper()} 스크린샷 실패] {err}")
+
+def sample_text_color(img_np, x, y, box=18, brightness_floor=90):
+    """
+    (x, y) 주변 작은 영역에서 배경(어두움)을 제외한 글자 획(밝은 픽셀)만 골라 평균 RGB를 구합니다.
+    """
+    h, w = img_np.shape[:2]
+    x0, x1 = max(0, x - box), min(w, x + box)
+    y0, y1 = max(0, y - 8), min(h, y + 8)
+    region = img_np[y0:y1, x0:x1, :3].reshape(-1, 3).astype(np.int32)
+    brightness = region.sum(axis=1)
+    bright_pixels = region[brightness > brightness_floor * 3]
+    if len(bright_pixels) == 0:
+        return None
+    r, g, b = bright_pixels.mean(axis=0)
+    return int(r), int(g), int(b)
+
+def classify_blessing_tier(rgb):
+    """
+    가호 등급을 텍스트 색상으로 판정합니다 (흰 < 녹 < 파 < 보라 < 빨강).
+    실측 확인(2026-08-09): 흰=(244,244,244)류, 녹=(122~124,164~165,103~105)류.
+    파/보라/빨강은 실전에서 아직 못 봐서 색상 범위가 추정치입니다 - 실제로 뜨면
+    콘솔에 찍히는 RGB 값을 보고 아래 분기를 보정해주세요.
+    """
+    if rgb is None:
+        return 0, "판정불가(흰색 취급)"
+    r, g, b = rgb
+    max_c, min_c = max(r, g, b), min(r, g, b)
+    sat = (max_c - min_c) / max_c if max_c > 0 else 0
+    if sat < 0.15:
+        return 0, f"흰({rgb})"
+    if g >= r and g >= b:
+        return 1, f"녹({rgb})"
+    if b >= r and b > g:
+        return 2, f"파-추정({rgb})"
+    if r > g and b > g:
+        return 3, f"보라-추정({rgb})"
+    return 4, f"빨강-추정({rgb})"
+
+def resolve_and_click_harken_blessing(device, img_np, priority_template=None):
+    """
+    하켄의 가호 3지선다 중 최선의 선택지를 탭합니다.
+    1. priority_template(예: 특정 던전 전용 "데몬 특화 가호" 도장)이 주어지고 실제로 매칭되면 최우선 선택.
+       (💡 아직 해당 도장이 없어 현재는 항상 None으로 호출됨 - 프리셋별 우선순위는 추후 연동 예정)
+    2. 아니면 3개 선택지의 텍스트 색상 등급(흰<녹<파<보라<빨강)을 비교해 가장 높은 등급을 선택.
+    """
+    if priority_template is not None:
+        coords = find_and_get_coords(img_np, priority_template, 0.75)
+        if coords:
+            print(f"⭐ [하켄가호] 우선순위 가호(도장 매칭) 발견! 좌표 {coords} 터치")
+            safe_device_shell(device, f"input tap {coords[0]} {coords[1]}")
+            return True
+
+    ranked = []
+    for x, y in HARKEN_BLESSING_ROWS:
+        tier, label = classify_blessing_tier(sample_text_color(img_np, x, y))
+        print(f"   [하켄가호] ({x},{y}) 줄 등급 판정: {label}")
+        ranked.append((tier, x, y))
+
+    best_tier, best_x, best_y = max(ranked, key=lambda t: t[0])
+    print(f"🎁 [하켄가호] 최고 등급(tier={best_tier}) 선택지 터치: ({best_x}, {best_y})")
+    safe_device_shell(device, f"input tap {best_x} {best_y}")
+    return True
+
+def check_and_resolve_harken_blessing(device, t_harken_blessing_donothing, priority_template=None):
+    """
+    하켄 귀환 직후 화면을 확인해 '하켄의 가호' 팝업(연 1회, 자정 이후)이 떴는지 검사하고,
+    떴으면 증거 스크린샷을 남긴 뒤(파일명에 harken 포함) 최선의 가호를 선택해 터치합니다.
+    """
+    if t_harken_blessing_donothing is None:
+        return False
+    try:
+        raw = device.screencap()
+        if not raw:
+            return False
+        img_np = np.array(Image.open(io.BytesIO(raw)))
+        if not check_template_present(img_np, t_harken_blessing_donothing, 0.70):
+            return False
+
+        print("🎁 [하켄가호] '하켄의 가호' 팝업 감지! 증거 스크린샷 저장 후 선택지를 고릅니다.")
+        save_device_screencap_evidence(device, prefix="harken")
+        resolve_and_click_harken_blessing(device, img_np, priority_template)
+        time.sleep(2.0)
+        return True
+    except Exception as err:
+        print(f"⚠️ [하켄가호] 팝업 판정/처리 중 예외 발생: {err}")
+        return False
+
+def trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing=None):
     """
     하켄 탈출 수렴 루프: 3채널 BGR 컬러 매칭으로 하켄 귀환 창이 뜰 때까지 대기하며, 
     만약 보이지 않으면 출구이동(미니맵 2번) 터치를 재시도하며 안정적으로 귀환 버튼을 클릭하고 탈출합니다.
@@ -585,6 +695,10 @@ def trigger_harken_escape(device, t_harken_return, t_move_exit):
         harken_clicked = True
 
     time.sleep(4.0)  # 퇴장 연출 대기
+
+    # 🎁 [하켄의 가호] 연 1회(자정 이후) 등장하는 팝업 대응 - 매번 호출되지만 미검출 시 오버헤드는 스캔 1회뿐.
+    check_and_resolve_harken_blessing(device, t_harken_blessing_donothing)
+
     return True
 
 def fire_target_monster_body(device, img_np, t_next, t_arrow):
@@ -618,9 +732,10 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     print("\n=======================================")
     print("🎨 [dungeon_bot] 코어 마스크 도장을 로드합니다...")
     # 🗺️ [1.14.1 버전 신규 필드 UI 템플릿 연동부]
-    t_field = load_grayscale_template("templates/Field/field_anchor.png") 
+    t_field = load_grayscale_template("templates/Field/field_anchor.png")
     t_open_minimap = load_grayscale_template("templates/Field/open_minimap.png")
     t_move_exit = load_grayscale_template("templates/Field/exit_dungeon.png")
+    t_harken_blessing_donothing = load_grayscale_template("templates/Field/harken_blessing_donothing.png")
     
     t_move_chest_act = load_grayscale_template("templates/Field/chest_act.png")
     t_move_chest_deact = load_grayscale_template("templates/Field/chest_deact.png")
@@ -786,7 +901,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     safe_device_shell(device, "input tap 1140 572")
                 
                 last_state_changed_time = time.time()
-                trigger_harken_escape(device, t_harken_return, t_move_exit)
+                trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing)
                 last_state_changed_time = time.time()
                 return False, skill_mission_success_this_combat, need_pickaxe_refill
 
@@ -1076,7 +1191,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     safe_device_shell(device, "input tap 1140 572")
                 
                 last_state_changed_time = time.time()
-                trigger_harken_escape(device, t_harken_return, t_move_exit)
+                trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing)
                 last_state_changed_time = time.time()
                 return False, skill_mission_success_this_combat, need_pickaxe_refill
 
@@ -1225,7 +1340,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                             safe_device_shell(device, "input tap 1140 572") # 고정
                                         
                                         last_state_changed_time = time.time()
-                                        trigger_harken_escape(device, t_harken_return, t_move_exit)
+                                        trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing)
                                         last_state_changed_time = time.time()
                                         return False, skill_mission_success_this_combat, need_pickaxe_refill
                                     
@@ -1243,7 +1358,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                             safe_device_shell(device, "input tap 1140 572")
                                         
                                         last_state_changed_time = time.time()
-                                        trigger_harken_escape(device, t_harken_return, t_move_exit)
+                                        trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing)
                                         last_state_changed_time = time.time()
                                         return False, skill_mission_success_this_combat, need_pickaxe_refill
                                 
@@ -1258,7 +1373,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                     safe_device_shell(device, "input tap 1140 572")
                                 
                                 last_state_changed_time = time.time()
-                                trigger_harken_escape(device, t_harken_return, t_move_exit)
+                                trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing)
                                 last_state_changed_time = time.time()
                                 return False, skill_mission_success_this_combat, need_pickaxe_refill
                         continue
