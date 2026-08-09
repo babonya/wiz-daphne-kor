@@ -24,6 +24,11 @@ remote_control/remote_server.pid
 # 분석 전용 외부 소스코드 제외
 wvd-master/
 
+# 자동 스킬캐스트 기능 개발 중 - 기능 완성 전까지는 커밋/공개하지 않음
+# (완성되면 이 줄을 지우고 커밋하되, templates/SkillCast/ 안의 *_wvd.* 파일들은
+#  wvd 자산 재배포 문제 때문에 완성 후에도 계속 릴리즈 zip에서는 제외해야 함 - rezip 스크립트에 필터 추가 필요)
+templates/SkillCast/
+
 # 개발 중인 폴더 및 임시 메모
 dev/
 image_matching_discussion.txt

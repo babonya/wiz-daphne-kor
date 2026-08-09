@@ -19,9 +19,17 @@ came_from_chest = False
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.17.1-hotfix4
-# - 최근 수정일: 2026-08-09
+# - 현재 버전: 1.17.1-hotfix5
+# - 최근 수정일: 2026-08-10
 # - 수정 기록:
+#   1.17.1-hotfix5: 실전에서 하켄의 가호 오탐지 발견 및 완치. 하켄 구역 이동 목록 화면에도 "아무것도 안 한다"가
+#     동일하게 있어 가호 팝업으로 오인식 → 잘못된 좌표(구역 텔레포트 항목)를 터치하는 결함이 실제 로그로 확인됨.
+#     "귀환" 텍스트가 함께 있으면 구역 이동 목록으로 판단해 무시하도록 check_and_resolve_harken_blessing()에
+#     t_harken_return 파라미터 추가(오탐지됐던 실제 스샷으로 검증 완료). 증거 스샷은 원래대로 터치 전에 저장.
+#     추가로, 실전 로그 전체 대조 결과 자정 직후 첫 하켄귀환 시도에서만 재시도가 실패한 걸 발견 - 진짜 가호
+#     팝업이 그 타이밍에 떴는데, trigger_harken_escape()의 재시도 루프가 "귀환" 미검출 시 미니맵을 맹목적으로
+#     재탭하다가 팝업을 건드려버린 것으로 추정. 재시도 루프 안에서도 매 회차 가호 팝업 여부를 먼저 확인해
+#     맹목적 재탭 전에 감지·처리하도록 개선.
 #   1.17.1-hotfix4: 하켄의 가호(연 1회, 자정 이후 하켄 귀환 시 3지선다 팝업) 대응 신설: "아무것도 안 한다" 도장
 #     (templates/Field/harken_blessing_donothing.png)으로 팝업 감지 → 감지 시 증거 스크린샷(파일명에 harken 포함,
 #     기기 /sdcard/Screenshots/) 저장 후, 3개 선택지의 텍스트 색상 등급(흰<녹<파<보라<빨강, 실측 확인은 흰/녹뿐이라
@@ -617,22 +625,33 @@ def resolve_and_click_harken_blessing(device, img_np, priority_template=None):
     safe_device_shell(device, f"input tap {best_x} {best_y}")
     return True
 
-def check_and_resolve_harken_blessing(device, t_harken_blessing_donothing, priority_template=None):
+def check_and_resolve_harken_blessing(device, t_harken_blessing_donothing, t_harken_return, priority_template=None, img_np=None):
     """
-    하켄 귀환 직후 화면을 확인해 '하켄의 가호' 팝업(연 1회, 자정 이후)이 떴는지 검사하고,
-    떴으면 증거 스크린샷을 남긴 뒤(파일명에 harken 포함) 최선의 가호를 선택해 터치합니다.
+    하켄 귀환 직후(또는 귀환 대기 루프 도중) 화면을 확인해 '하켄의 가호' 팝업(연 1회, 자정 이후)이
+    떴는지 검사하고, 떴으면 최선의 가호를 선택해 터치한 뒤 증거 스크린샷을 남깁니다(파일명에 harken 포함).
+    img_np를 주면(예: 재시도 루프에서 이미 찍어둔 화면) 새로 스크린샷을 찍지 않고 그걸 그대로 검사합니다.
     """
     if t_harken_blessing_donothing is None:
         return False
     try:
-        raw = device.screencap()
-        if not raw:
-            return False
-        img_np = np.array(Image.open(io.BytesIO(raw)))
+        if img_np is None:
+            raw = device.screencap()
+            if not raw:
+                return False
+            img_np = np.array(Image.open(io.BytesIO(raw)))
         if not check_template_present(img_np, t_harken_blessing_donothing, 0.70):
             return False
 
+        # 🚨 [오탐 방지] 하켄 귀환 "구역 이동" 목록 화면에도 "아무것도 안 한다"가 동일하게 존재해서
+        # (실전에서 확인된 오탐 사례) 위 체크만으로는 진짜 가호 팝업인지 구분이 안 됨. 그 목록 화면에는
+        # "귀환" 항목이 같이 있는 반면 가호 팝업에는 "귀환" 텍스트 자체가 없다는 차이로 구분한다.
+        if check_color_template_present(img_np, t_harken_return, 0.75):
+            print("ℹ️ [하켄가호] '아무것도 안 한다' 감지됐지만 '귀환' 텍스트도 같이 있어 구역 이동 목록 화면으로 판단, 무시합니다.")
+            return False
+
         print("🎁 [하켄가호] '하켄의 가호' 팝업 감지! 증거 스크린샷 저장 후 선택지를 고릅니다.")
+        # 💡 증거 스샷은 반드시 터치 전에 찍어야 함 - 터치 후에 찍으면 이미 선택이 반영되거나
+        # 팝업이 닫힌 "결과" 화면만 남아서, 정작 필요한 "3개 선택지가 무엇이었는지"를 기록하지 못함.
         save_device_screencap_evidence(device, prefix="harken")
         resolve_and_click_harken_blessing(device, img_np, priority_template)
         time.sleep(2.0)
@@ -663,7 +682,16 @@ def trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessin
                     print(f"🚪 [하켄귀환] 귀환 버튼 BGR 컬러 인식 및 터치 성공! (대기 {h_wait+1}회차)")
                     harken_clicked = True
                     break
-                elif h_wait < 2:
+
+                # 🎁 [하켄의 가호] "귀환"이 안 보이는 이유가 단순 대기가 아니라, 하켄의 가호 팝업이
+                # 대신 떠있는 것일 수 있음(실전 확인: 자정 직후 첫 귀환 시도에서 10회 재시도 실패 후
+                # 아래 미니맵 재탭이 팝업을 건드려 우리 판정 로직이 개입 못 하고 지나가버린 사례 발견).
+                # 아래 미니맵 재탭/무작정 대기로 넘어가기 전에 먼저 확인해서, 발견 즉시 처리한다.
+                if check_and_resolve_harken_blessing(device, t_harken_blessing_donothing, t_harken_return, img_np=img_np_h):
+                    print(f"🎁 [하켄귀환] 재시도 도중 하켄의 가호 팝업을 감지해 처리했습니다. 귀환 목록 재확인을 계속합니다.")
+                    continue
+
+                if h_wait < 2:
                     # 처음 1~2회차에만 미니맵 2번 재타격 (그 이후엔 이미 하켄 목록 화면일 가능성이 높아 재탭 생략)
                     print(f"🔄 [하켄귀환] 귀환 버튼 미검출로 미니맵 2번 터치 재주입 시도 ({h_wait+1}/10)")
                     exit_coords = find_and_get_field_btn_coords(img_np_h, t_move_exit, 0.70)
@@ -697,7 +725,7 @@ def trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessin
     time.sleep(4.0)  # 퇴장 연출 대기
 
     # 🎁 [하켄의 가호] 연 1회(자정 이후) 등장하는 팝업 대응 - 매번 호출되지만 미검출 시 오버헤드는 스캔 1회뿐.
-    check_and_resolve_harken_blessing(device, t_harken_blessing_donothing)
+    check_and_resolve_harken_blessing(device, t_harken_blessing_donothing, t_harken_return)
 
     return True
 

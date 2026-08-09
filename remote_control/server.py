@@ -4,8 +4,9 @@
 #         PC의 매크로를 시작/정지/상태확인 하기 위한 개인용 도구입니다.
 # - 표준 라이브러리만 사용합니다 (pip install 추가 불필요).
 # - 이 폴더(remote_control/)를 통째로 지워도 매크로 본체(src/main.py) 동작에는 전혀 지장이 없습니다.
-# - 현재 버전: 1.17.1-hotfix4
+# - 현재 버전: 1.17.1-hotfix5
 # - 수정 기록:
+#   1.17.1-hotfix5: (이 파일 자체는 변경 없음, 버전 동기화용) dungeon_bot.py의 하켄의 가호 오탐지 완치. 상세는 dungeon_bot.py 참고.
 #   1.17.1-hotfix4: (이 파일 자체는 변경 없음, 버전 동기화용) dungeon_bot.py에 하켄의 가호 대응 신설. 상세는 dungeon_bot.py 참고.
 #   1.17.1-hotfix3: 백그라운드(pythonw) 실행 지원(시작/종료 배치파일, PID 자기기록), 대시보드 URL 줄바꿈으로
 #     토큰에 공백이 섞이던 403 결함 완치, pythonw 하에서 5초마다 콘솔 창이 깜빡이던 결함(CREATE_NO_WINDOW) 완치

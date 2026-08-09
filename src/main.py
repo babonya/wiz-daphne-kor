@@ -4,7 +4,7 @@ import datetime
 import time
 import json
 
-CURRENT_VERSION = "1.17.1-hotfix4" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
+CURRENT_VERSION = "1.17.1-hotfix5" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
 
 # ==============================================================================
 # ⚙️ [Daphne 마스터 글로벌 제어 세팅 변수 구역 - 진짜 최상단 제어판]
@@ -76,9 +76,12 @@ else:
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.17.1-hotfix4
-# - 최근 수정일: 2026-08-09
+# - 현재 버전: 1.17.1-hotfix5
+# - 최근 수정일: 2026-08-10
 # - 수정 기록:
+#   1.17.1-hotfix5: 실전에서 하켄의 가호 오탐지(구역 이동 목록 화면을 가호 팝업으로 오인식, 잘못된 구역 텔레포트 유발)
+#     확인 및 완치는 dungeon_bot.py에서 처리. main.py 자체는 sync_screenshots_loop()가 "screencap_harken" 접미사를
+#     인식 못 해 하켄 증거 스샷이 로그 폴더에 뭉뚱그려 저장되던 결함만 완치. 상세는 dungeon_bot.py 참고.
 #   1.17.1-hotfix4: (main.py 자체는 변경 없음, 버전 동기화용) dungeon_bot.py에 하켄의 가호(연 1회 3지선다 팝업)
 #     대응 신설. 상세는 dungeon_bot.py 참고.
 #   1.17.1-hotfix3: (main.py 자체는 변경 없음, 버전 동기화용) remote_control/server.py에 백그라운드(pythonw) 실행
@@ -301,6 +304,8 @@ def sync_screenshots_loop(session_start_ts, log_dir):
                                 suffix = match.group(1) if match else "reboot"
                             elif "screencap_restart" in item_lower:
                                 suffix = "restart"
+                            elif "screencap_harken" in item_lower:
+                                suffix = "harken"
                             else:
                                 suffix = "screenshot"
                                 
