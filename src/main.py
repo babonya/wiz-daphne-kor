@@ -4,7 +4,7 @@ import datetime
 import time
 import json
 
-CURRENT_VERSION = "1.17.1-hotfix5" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
+CURRENT_VERSION = "1.17.1-hotfix6" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
 
 # ==============================================================================
 # ⚙️ [Daphne 마스터 글로벌 제어 세팅 변수 구역 - 진짜 최상단 제어판]
@@ -76,9 +76,28 @@ else:
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.17.1-hotfix5
-# - 최근 수정일: 2026-08-10
+# - 현재 버전: 1.17.1-hotfix6
+# - 최근 수정일: 2026-08-11
 # - 수정 기록:
+#   1.17.1-hotfix6: 실전(뮤뮤 완전 동결 6시간 방치 사고)에서 발견된 자가복구 결함 2건 완치 + 그 여파로
+#     드러난 동결감지 구조적 오탐 3건 완치.
+#     (1) restart_process()의 증거 스크린샷 캡처(device.shell)가 자가복구를 격발시킨 원인(ADB 소켓 블로킹)에
+#     똑같이 걸려 진짜 복구 절차에 도달 못 하던 결함 - daemon 스레드로 fire-and-forget 처리해 완치.
+#     (2) "통화면 동결 감지" 엔진이 진짜 동결을 정확히 감지하고도 보정 터치+재스캔만 반복하고 restart_process()로
+#     승격되는 경로가 없던 구조적 결함 - consecutive_freeze_count 2회 연속 시 자가복구로 승격하도록 완치.
+#     (3) [2026-08-11] 위 (2) 배포 직후 재시작이 하루 70건 이상(약 10분 간격)으로 폭증. 원인 규명 결과, 동결감지가
+#     사는 바깥 대순환 루프는 dungeon_bot.start_main_macro() 안에 있는 동안(채굴/귀환/재진입 사이클 전체) 아예 돌지
+#     않는데, 그 블로킹이 끝나고 귀환으로 던전을 빠져나와 루프가 재개되는 순간 "최근 90초 변화"를 체크하면서 비교
+#     기준이 몇 분 전(이번 던전 사이클 시작 전)에 찍힌 스냅샷이었음 - 귀환 직후 화면은 매번 똑같이 생긴 "던전선택"
+#     화면으로 복귀하므로 그 사이 실제 활동이 다 있었어도 픽셀 차이가 0에 가깝게 나와 필연적 오탐. 마지막 점검 후
+#     경과가 150초를 넘으면(=루프가 다른 작업으로 오래 비어있었다는 뜻) 비교를 생략하고 조용히 기준만 재설정하도록
+#     완치, 임계값도 정황 추정으로 올렸던 6회 연속(9분)에서 원래 의도인 2회 연속(3분)으로 원복.
+#     (4) take_screencap_backup()이 device.shell()로 기기에 저장 후 sync_screenshots_loop()의 30초 폴링에 의존하던
+#     경로에 무결성 검증이 전혀 없어, 실전 stuck 증거 스샷 74개 중 거의 전부가 완전히 새까만 빈 이미지였음(확인됨).
+#     메인 루프가 쓰던 신뢰도 높은 방식(device.screencap() 직접 pull + 즉시 디코드 검증)으로 교체해 완치.
+#     (5) dungeon_bot.py의 하켄 앵커 로직을 "귀환" 1차 앵커 + 별도 가호 재확인의 이중 구조에서, "아무것도 안 한다"
+#     (귀환목록/가호팝업 공통 앵커) 1차 확인 후 "귀환" 유무로 분기하는 단일 구조로 재구성(check_and_handle_harken_menu).
+#     상세는 dungeon_bot.py 참고.
 #   1.17.1-hotfix5: 실전에서 하켄의 가호 오탐지(구역 이동 목록 화면을 가호 팝업으로 오인식, 잘못된 구역 텔레포트 유발)
 #     확인 및 완치는 dungeon_bot.py에서 처리. main.py 자체는 sync_screenshots_loop()가 "screencap_harken" 접미사를
 #     인식 못 해 하켄 증거 스샷이 로그 폴더에 뭉뚱그려 저장되던 결함만 완치. 상세는 dungeon_bot.py 참고.
@@ -839,18 +858,27 @@ def recover_app_startup(device):
 global_device = None
 
 def take_screencap_backup(device, prefix="start"):
+    # 🚨 [2026-08-11 증거 스샷 신뢰성 완치] 예전엔 device.shell()로 기기에 파일로만 저장해두고
+    # sync_screenshots_loop()가 30초마다 폴링해서 나중에 복사해오는 구조였는데, 이 경로엔 무결성
+    # 검증이 전혀 없어 실전 stuck 증거 스샷 74개 중 거의 전부가 완전히 새까만 빈 이미지였음(확인됨).
+    # 메인 루프 자체가 쓰는 신뢰도 높은 방식(device.screencap() 직접 pull)으로 교체해, 지연/폴링
+    # 없이 즉시 로컬 logs/ 폴더에 저장하고 디코드까지 검증한다.
     try:
-        import datetime
         reboot_cnt = read_restart_counter()
         if prefix in ["start", "restart"]:
             prefix = "start" if reboot_cnt == 0 else f"reboot{reboot_cnt}"
-            
-        # 안전하게 스크린샷 폴더 생성 가드
-        device.shell("mkdir -p /sdcard/Screenshots")
-        time_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"screencap_{prefix}_{time_str}.png"
-        print(f"📸 [{prefix.upper()} 스크린샷] 안드로이드 셸을 통해 화면을 백그라운드로 캡처합니다: {filename}")
-        device.shell(f"screencap -p /sdcard/Screenshots/{filename}")
+
+        raw = device.screencap()
+        if not raw:
+            print(f"⚠️ [{prefix.upper()} 스크린샷 실패] screencap이 빈 데이터를 반환함")
+            return
+        img = Image.open(io.BytesIO(raw))
+        img.load()  # 즉시 디코드 검증 - 손상된 데이터면 여기서 예외 발생
+        os.makedirs("logs", exist_ok=True)
+        time_str = datetime.datetime.now().strftime("%Y-%m-%d-%H%M-%S")
+        out_path = os.path.join("logs", f"{time_str}_{prefix}.png")
+        img.save(out_path)
+        print(f"📸 [{prefix.upper()} 스크린샷] 저장 완료: {out_path}")
     except Exception as err:
         print(f"⚠️ [{prefix.upper()} 스크린샷 실패] {err}")
 
@@ -859,8 +887,16 @@ def restart_process(reason):
 
     # 📸 [스턱 증거 보존] 재시작/리부팅으로 화면이 바뀌기 전, 마지막으로 연결됐던 디바이스 기준으로 현재 화면을 캡처합니다.
     # NPC 대화 선택창 등 아직 대응 도장이 없는 미지의 정체 상황을 나중에 분석해 새 도장을 채집할 수 있도록 남겨두는 용도입니다.
+    # 🚨 [2026-08-10 실전 사고 완치] 이 캡처(device.shell)가 정확히 자가복구를 격발시킨 원인(ADB 소켓
+    # 블로킹)에 그대로 다시 걸려서, 복구 로직이 진짜 조치(adb 재시작/에뮬레이터 리부트)에 도달하지 못하고
+    # 통째로 멈춰버린 사고 발생(뮤뮤 동결 후 6시간 넘게 방치됨). 별도 스레드로 fire-and-forget 처리해서
+    # 이게 멈추더라도 아래 진짜 복구 절차는 반드시 진행되도록 함 - 실패해도 증거 스샷 하나 못 남기는 것뿐,
+    # 복구 자체가 막히는 일은 없어야 함.
     if global_device is not None:
-        take_screencap_backup(global_device, prefix="stuck")
+        import threading
+        threading.Thread(
+            target=take_screencap_backup, args=(global_device,), kwargs={"prefix": "stuck"}, daemon=True
+        ).start()
 
     # 💾 디스크 파일 연동 연속 재시작 횟수 누적
     consecutive_restart_count = read_restart_counter() + 1
@@ -1330,6 +1366,7 @@ def start_grand_orchestrator():
     # 🛑 [Daphne 마스터 섀도우 통화면 동결 감지 엔진 변수]
     last_full_screen_shadow = None
     last_freeze_check_time = time.time()
+    consecutive_freeze_count = 0  # 🚨 [2026-08-10 실전 사고 완치] 연속 동결 감지 시 진짜 복구로 승격시키기 위한 카운터
 
     print("\n====================================================")
     print(f"위저드리 다프네 [그랜드 마스터 순환 컨트롤러 v{CURRENT_VERSION}] 가동")
@@ -1408,32 +1445,60 @@ def start_grand_orchestrator():
         # 👑 [Daphne 완성형 엔진: 1분 30초 전체 화면 동결 시 인지 복구 레이더 강제 부팅]
         # ======================================================================
         if current_time - last_freeze_check_time > 90.0:
+            freeze_check_gap = current_time - last_freeze_check_time
             current_gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
             current_shadow = cv2.resize(current_gray, (int(width/4), int(height/4)))
-            
-            if last_full_screen_shadow is not None:
+
+            # 🚨 [2026-08-11 구조적 오탐 완치] 이 바깥 루프는 dungeon_bot.start_main_macro() 안에 있는 동안은
+            # 아예 돌지 않는다(채굴/귀환/재진입 사이클 전체가 그 블로킹 호출 하나에서 처리됨, 실전 로그로 확인:
+            # 몇 분씩 이 루프가 완전히 멈춰있다가 귀환으로 던전을 빠져나온 직후 딱 1번 재개됨). 그 순간 last_full_screen_shadow는
+            # 이번 던전 사이클이 시작되기 전(최대 수 분 전)에 찍힌 스냅샷인데, 귀환 직후 화면은 항상 똑같이 생긴
+            # "던전선택" 화면으로 복귀하므로 그 사이 실제로는 채굴/전투/이동이 다 있었어도 픽셀 차이가 0에 가깝게
+            # 나와 필연적으로 오탐이 발생하던 구조였음(하루 70건 이상, 전부 귀환 성공 로그 직후·간격이 90초를
+            # 훨씬 초과). 간격이 150초를 넘으면 "루프가 다른 작업으로 오래 비어있었다"는 뜻이므로 비교 자체를
+            # 생략하고 조용히 기준만 재설정한다. 90~150초 구간은 루프가 계속 초 단위로 돌던 정상적인 아웃게임
+            # 정체 상황이므로 기존 로직 그대로 유지해 진짜 동결(2026-08-10 6시간 방치 사고 같은 경우)은 계속 잡아낸다.
+            if last_full_screen_shadow is not None and freeze_check_gap <= 150.0:
                 frame_diff = cv2.absdiff(current_shadow, last_full_screen_shadow)
                 pixel_alteration = np.count_nonzero(frame_diff > 30)
-                
+
                 if pixel_alteration < 200:
-                    if not first_stuck_time_str:
-                        first_stuck_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    print(f"\n🚨💀 [사령탑 통화면 동결 감지!!] 1분 30초간 프레임 변화 없음 (동결 판정).")
-                    print(f"      -> 최초 정체 유발 시각: {first_stuck_time_str} / 미세 변동률: {pixel_alteration} px")
+                    consecutive_freeze_count += 1
+                    frozen_seconds_min = consecutive_freeze_count * 90
+                    freeze_started_estimate = (datetime.datetime.now() - datetime.timedelta(seconds=frozen_seconds_min)).strftime("%Y-%m-%d %H:%M:%S")
+                    print(f"\n🚨💀 [사령탑 통화면 동결 감지!!] 최근 90초간 프레임 변화 없음 (동결 판정, 연속 {consecutive_freeze_count}회차).")
+                    print(f"      -> 최소 동결 지속: {frozen_seconds_min}초 (추정 시작: {freeze_started_estimate} 경) / 미세 변동률: {pixel_alteration} px")
+
+                    # 🚨 [2026-08-10 실전 사고 완치] 예전엔 이 감지 이후 그냥 보정 터치 + 재스캔만 반복해서,
+                    # 뮤뮤가 진짜로 완전히 멈췄을 땐(다음 90초 뒤에도 여전히 0px 변화) 똑같은 얼어붙은 화면을
+                    # 영원히 재확인만 하고 진짜 복구(adb 재시작/에뮬레이터 리부트)로 못 넘어가던 결함이 있었음
+                    # (뮤뮤 동결 후 6시간 넘게 방치된 실제 사고로 확인). 연속 2회(3분)에서 승격.
+                    # (참고: 8/11에 관측된 대량 오탐/재시작은 이 임계값이 아니라 위 freeze_check_gap 가드가
+                    # 없어서 생긴 구조적 결함이었음 - 원인 규명 후 완치, 임계값은 원래 의도대로 2 유지)
+                    if consecutive_freeze_count >= 2:
+                        restart_process(f"화면 동결이 {consecutive_freeze_count}회 연속(약 {consecutive_freeze_count * 90}초) 감지되어 보정 터치로도 해소되지 않음")
+                        return
+
                     print("      🔄 [사령탑 인지 복구] 엇박자 교정을 위해 강제 전수조사 감별 시퀀스를 전격 유도합니다!!")
-                    
+
                     # 1. 아웃게임 상태 조건문 타이밍 강제 오픈 및 해제
                     force_first_analysis = True
                     last_action_time = current_time - 40.0
-                    
+
                     # 2. 렉 유실 가드를 위한 화면 정중앙 보정 터치 가동
                     device.shell("input tap 720 1280")
                     time.sleep(1.0)
-                    
+
                     last_freeze_check_time = time.time()
                     last_full_screen_shadow = None
                     continue
-                    
+                else:
+                    consecutive_freeze_count = 0
+            else:
+                if last_full_screen_shadow is not None:
+                    print(f"ℹ️ [사령탑 동결감지 재기준] 마지막 점검 후 {freeze_check_gap:.0f}초 경과(던전 등 다른 작업으로 바깥 루프가 오래 비어있었음) - 비교 기준이 낡아 동결판정을 건너뛰고 현재 화면으로 기준을 새로 잡습니다.")
+                consecutive_freeze_count = 0
+
             last_full_screen_shadow = current_shadow
             last_freeze_check_time = current_time
         # ======================================================================
