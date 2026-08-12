@@ -19,6 +19,7 @@ import http.server
 import io
 import json
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -238,23 +239,31 @@ def stop_background_server():
         print(f"⚠️ 종료 실패: {e}")
 
 
-def get_recent_log_lines(n=20):
+def get_recent_log_lines(n=15):
     # 💡 logs/ 안의 파일명은 "YYYY-MM-DD-HHMM-0SS_접미사.txt" 형태라, 문자열 정렬 = 시간순 정렬이 그대로 성립함.
     try:
         files = [f for f in os.listdir(LOGS_DIR) if f.endswith(".txt")]
     except Exception:
-        return None, []
+        return None, [], None
     if not files:
-        return None, []
+        return None, [], None
     latest = sorted(files)[-1]
     path = os.path.join(LOGS_DIR, latest)
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             lines = f.readlines()
+        # 💡 [실행 시작 시각] init_main_logger()가 매 로그 파일 3번째 줄에 남기는
+        # "Log Created: YYYY-MM-DD HH:MM:SS"를 그대로 파싱해, 대시보드에서 "몇 시간째 실행 중"을 계산하는 기준으로 씁니다.
+        started_at = None
+        for line in lines[:5]:
+            m = re.search(r"Log Created:\s*([\d-]{10} [\d:]{8})", line)
+            if m:
+                started_at = m.group(1)
+                break
         tail = [line.rstrip("\n") for line in lines[-n:] if line.strip()]
-        return latest, tail
+        return latest, tail, started_at
     except Exception:
-        return latest, []
+        return latest, [], None
 
 
 def render_dashboard_html(token):
@@ -301,8 +310,9 @@ def render_dashboard_html(token):
   .status-pill.off .dot { background: var(--ink-faint); box-shadow: none; }
   .status-pill span.label { color: var(--good); }
   .status-pill.off span.label { color: var(--ink-dim); }
+  .uptime { font-size: 0.76rem; color: var(--ink-dim); text-align: center; min-height: 1.1em; }
   .log-card { background: var(--bg-raised); border: 1px solid var(--line); border-radius: var(--radius);
-    display: flex; flex-direction: column; overflow: hidden; flex: 1; min-height: 320px; }
+    display: flex; flex-direction: column; overflow: hidden; flex: 0 0 auto; height: 260px; }
   .log-card-head { display: flex; align-items: center; justify-content: space-between;
     padding: 9px 12px; border-bottom: 1px solid var(--line); }
   .log-card-head .eyebrow { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em;
@@ -355,6 +365,8 @@ def render_dashboard_html(token):
     <div class="status-pill off" id="statusPill"><span class="dot"></span><span class="label">확인 중…</span></div>
   </div>
 
+  <div class="uptime" id="uptimeInfo">&nbsp;</div>
+
   <div class="log-card">
     <div class="log-card-head">
       <span class="eyebrow" id="logEyebrow">최근 로그</span>
@@ -388,7 +400,22 @@ def render_dashboard_html(token):
   const logEyebrow = document.getElementById('logEyebrow');
   const liveTag = document.getElementById('liveTag');
   const targetSelect = document.getElementById('targetSelect');
+  const uptimeInfo = document.getElementById('uptimeInfo');
   let polling = null;
+
+  function renderUptime(data) {
+    if (!data.running || !data.log_started_at) { uptimeInfo.innerHTML = '&nbsp;'; return; }
+    const started = new Date(data.log_started_at.replace(' ', 'T'));
+    if (isNaN(started.getTime())) { uptimeInfo.innerHTML = '&nbsp;'; return; }
+    const diffMin = Math.floor((Date.now() - started.getTime()) / 60000);
+    if (diffMin < 0) { uptimeInfo.innerHTML = '&nbsp;'; return; }
+    const h = Math.floor(diffMin / 60);
+    const m = diffMin % 60;
+    const durText = h > 0 ? `${h}시간 ${m}분째` : `${m}분째`;
+    const hh = String(started.getHours()).padStart(2, '0');
+    const mm = String(started.getMinutes()).padStart(2, '0');
+    uptimeInfo.textContent = `⏱️ ${durText} 실행 중 (${hh}:${mm} 시작)`;
+  }
 
   function tagFor(line) {
     if (line.includes('⚠️') || line.includes('🚨')) return 'tag-warn';
@@ -448,6 +475,7 @@ def render_dashboard_html(token):
       const data = await res.json();
       setRunning(data.running, data.pid);
       renderLogs(data.log_file, data.log_lines);
+      renderUptime(data);
     } catch (e) {
       toast.textContent = '서버에 연결할 수 없습니다.';
     }
@@ -582,12 +610,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         elif parsed.path == "/api/state":
             running, pid = is_macro_running()
-            log_file, log_lines = get_recent_log_lines(20)
+            log_file, log_lines, log_started_at = get_recent_log_lines(15)
             self._respond_json(200, {
                 "running": running,
                 "pid": pid,
                 "log_file": log_file,
                 "log_lines": log_lines,
+                "log_started_at": log_started_at,
             })
 
         else:

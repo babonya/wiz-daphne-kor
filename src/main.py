@@ -1495,9 +1495,15 @@ def start_grand_orchestrator():
                 else:
                     consecutive_freeze_count = 0
             else:
-                if last_full_screen_shadow is not None:
+                # 🚨 [2026-08-12 무한루프 완치] last_full_screen_shadow가 None인 경우(바로 위에서 동결 1회차를
+                # 감지한 직후 재시도를 위해 일부러 None으로 초기화한 상태)까지 여기서 매번 count=0으로 되돌리면,
+                # 진짜로 계속 멈춰있는 화면조차 다음 재기준 사이클마다 카운터가 리셋되어 영원히 2회차에 도달하지
+                # 못해 restart_process()로 승격이 안 되는 결함이 있었음(실전 확인: 동결 1회차만 반복 감지하며
+                # 하켄탈출→실패→재검증→하켄탈출을 몇 분씩 무한 반복, 승격 없음). "간격이 비정상적으로 커서
+                # 비교 자체가 무의미한" 경우(last_full_screen_shadow가 있는데도 gap>150)에만 리셋한다.
+                if last_full_screen_shadow is not None and freeze_check_gap > 150.0:
                     print(f"ℹ️ [사령탑 동결감지 재기준] 마지막 점검 후 {freeze_check_gap:.0f}초 경과(던전 등 다른 작업으로 바깥 루프가 오래 비어있었음) - 비교 기준이 낡아 동결판정을 건너뛰고 현재 화면으로 기준을 새로 잡습니다.")
-                consecutive_freeze_count = 0
+                    consecutive_freeze_count = 0
 
             last_full_screen_shadow = current_shadow
             last_freeze_check_time = current_time
