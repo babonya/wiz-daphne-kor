@@ -667,12 +667,16 @@ def check_and_handle_harken_menu(device, t_harken_blessing_donothing, t_harken_r
         print(f"⚠️ [하켄메뉴] 판정/처리 중 예외 발생: {err}")
         return "not_present"
 
-def trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing=None):
+def trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing=None, t_combat_in=None, t_combat_slow=None):
     """
-    하켄 탈출 수렴 루프: 3채널 BGR 컬러 매칭으로 하켄 귀환 창이 뜰 때까지 대기하며, 
+    하켄 탈출 수렴 루프: 3채널 BGR 컬러 매칭으로 하켄 귀환 창이 뜰 때까지 대기하며,
     만약 보이지 않으면 출구이동(미니맵 2번) 터치를 재시도하며 안정적으로 귀환 버튼을 클릭하고 탈출합니다.
     """
     harken_clicked = False
+    harken_stuck_count = 0
+    harken_first_stuck_time = None
+    harken_recovery_attempted = False
+    prev_minimap = None
     # 💡 [v1.17.0-hotfix1] wvd 원본(script.py)의 동일 화면("ReturnText"/"leaveDung"/"donothing" 하켄 목록) 대응 로직을
     # 확인해보니 대기시간 3.75초 자체는 wvd에서 맞게 가져온 값이었지만, 실제 재시도 횟수는 wvd의 MAX_TRY_LIMIT(기본 25회)인데
     # 이식 과정에서 3회로 축소되어 있었음. 구역이 많이 열린 던전은 하켄 목록 렌더링이 오래 걸려 11.25초 안에 못 뜨는 경우가 있어
@@ -684,6 +688,18 @@ def trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessin
             raw_h = device.screencap()
             if raw_h:
                 img_np_h = np.array(Image.open(io.BytesIO(raw_h)))
+
+                # ⚔️ [2026-08-12 정체오판 방지] 전투 조우는 그 자체로 "먹통이 아니다"라는 증거이므로(사용자 지적),
+                # 정체 카운트/워치독을 리셋만 하고 이번 회차는 하켄 메뉴 체크 없이 넘어간다 - 전투를 대신 치러주진
+                # 않고, 다음 회차부터 다시 하켄 메뉴 확인을 재개한다.
+                if check_combat_template_present(img_np_h, t_combat_in, 0.80) or check_combat_template_present(img_np_h, t_combat_slow, 0.80):
+                    print(f"⚔️ [하켄귀환] 이동 중 전투 조우 감지 - 정체 아님, 판정 리셋 ({h_wait+1}/10)")
+                    harken_stuck_count = 0
+                    harken_first_stuck_time = None
+                    harken_recovery_attempted = False
+                    prev_minimap = None
+                    continue
+
                 # "아무것도 안 한다" 앵커로 하켄 메뉴 유무를 먼저 확인하고, "귀환" 유무로 귀환목록/가호 팝업을 구분한다.
                 menu_state = check_and_handle_harken_menu(device, t_harken_blessing_donothing, t_harken_return, img_np=img_np_h)
                 if menu_state == "returned":
@@ -693,7 +709,53 @@ def trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessin
 
                 if menu_state == "blessing":
                     print(f"🎁 [하켄귀환] 재시도 도중 하켄의 가호 팝업을 감지해 처리했습니다. 귀환 목록 재확인을 계속합니다.")
+                    harken_stuck_count = 0
+                    harken_first_stuck_time = None
+                    harken_recovery_attempted = False
+                    prev_minimap = None
                     continue
+
+                # 🚨 [2026-08-12 하켄 정체 복구 이식] TRIGGER_EXIT(계단/던전탈출)이 이미 쓰던, 미니맵 영역만 잘라
+                # (Y:115~315, X:1117~1317) 직전 스캔과 비교하는 방식을 그대로 재사용 - 4장 대설지대 같은 시야
+                # 제한 구역에서도 미니맵의 노란 현재위치 커서는 가려지지 않아 신뢰도 높은 정체 판정 기준이 된다.
+                h_img, w_img = img_np_h.shape[:2]
+                scale_x, scale_y = w_img / 1440.0, h_img / 2560.0
+                gray_h = cv2.cvtColor(img_np_h, cv2.COLOR_RGB2GRAY)
+                current_mini = gray_h[int(115 * scale_y):int(315 * scale_y), int(1117 * scale_x):int(1317 * scale_x)]
+                if prev_minimap is not None:
+                    mean_diff = np.mean(cv2.absdiff(current_mini, prev_minimap)) / 255.0
+                    if mean_diff < 0.05:
+                        harken_stuck_count += 1
+                        if harken_first_stuck_time is None:
+                            harken_first_stuck_time = time.time()
+                        elapsed = time.time() - harken_first_stuck_time
+                        print(f"⚠️ [하켄귀환] 미니맵 정지 감지 ({harken_stuck_count}회, 누적 경과 {elapsed:.0f}초)")
+
+                        # 정체 3회 누적 시 백스텝 스와이프(물리 후진) 후 출구 단추 재탭 - TRIGGER_EXIT와 동일 제스처.
+                        # 이번 정체 구간에서 1회만 시도(연타 방지).
+                        if harken_stuck_count >= 3 and not harken_recovery_attempted:
+                            harken_recovery_attempted = True
+                            print("🔙 [하켄귀환] 정체 복구: 백스텝 스와이프 후 출구 단추 재탭")
+                            sx = int(720 * scale_x)
+                            sy1, sy2 = int(1200 * scale_y), int(1600 * scale_y)
+                            safe_device_shell(device, f"input swipe {sx} {sy1} {sx} {sy2} 300")
+                            time.sleep(1.0)
+                            exit_coords = find_and_get_field_btn_coords(img_np_h, t_move_exit, 0.70)
+                            if exit_coords:
+                                safe_device_shell(device, f"input tap {exit_coords[0]} {exit_coords[1]}")
+                            else:
+                                safe_device_shell(device, "input tap 1140 572")
+                            prev_minimap = None  # 후진/재접근 연출 대기 1턴 스킵 (TRIGGER_EXIT와 동일)
+                            continue
+
+                        # 절대 워치독: 백스텝 복구까지 거쳤는데도 정체 최초 감지 후 60초를 넘기면 진짜 먹통으로 판단해
+                        # 실패를 전파한다(예전엔 여기서도 그냥 재시도만 반복 - 무한루프 원인). main.py의 restart_process()로
+                        # 이어지도록 dungeon_bot.py 안에서 잡지 않고 그대로 던진다.
+                        if elapsed >= 60.0:
+                            raise RuntimeError(f"하켄 탈출 실패: 정체 최초 감지 후 {elapsed:.0f}초 경과, 백스텝 복구로도 해소되지 않아 강제 앱 재시작을 요청합니다.")
+                    else:
+                        harken_stuck_count = 0
+                prev_minimap = current_mini
 
                 if h_wait < 2:
                     # 처음 1~2회차에만 미니맵 2번 재타격 (그 이후엔 이미 하켄 목록 화면일 가능성이 높아 재탭 생략)
@@ -705,6 +767,8 @@ def trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessin
                         safe_device_shell(device, "input tap 1140 572")
                 else:
                     print(f"🔄 [하켄귀환] 귀환 버튼 미검출, 화면 안착 대기 재시도 ({h_wait+1}/10)")
+        except RuntimeError:
+            raise  # 절대 워치독 예외는 그대로 상위(main.py의 restart_process)로 전파
         except Exception as scan_err:
             print(f"⚠️ [하켄귀환] 스크린샷 스캔 중 예외 발생: {scan_err}")
 
@@ -724,7 +788,16 @@ def trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessin
                     time.sleep(2.0)
         except Exception as verify_err:
             print(f"⚠️ [하켄귀환] 폴백 재검증 중 예외 발생: {verify_err}")
-        harken_clicked = True
+
+        # 🚨 [2026-08-12 무한 성공처리 완치] 예전엔 여기서 그냥 무조건 harken_clicked=True로 성공 처리했는데,
+        # 실전(모바일 로그인으로 세션이 끊긴 상황)에서 이게 "실패를 호출부에 전혀 못 알리는" 결함으로 확인됨.
+        # 최종 재확인까지 거치고도 여전히 미확인이면 RuntimeError로 실패를 전파한다.
+        final_state = check_and_handle_harken_menu(device, t_harken_blessing_donothing, t_harken_return)
+        if final_state in ("returned", "blessing"):
+            harken_clicked = True
+        else:
+            elapsed = (time.time() - harken_first_stuck_time) if harken_first_stuck_time else 0.0
+            raise RuntimeError(f"하켄 탈출 실패: 정체 최초 감지 후 {elapsed:.0f}초 경과, 백스텝 복구로도 해소되지 않아 강제 앱 재시작을 요청합니다.")
 
     time.sleep(4.0)  # 퇴장 연출 대기
 
@@ -860,6 +933,9 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     exit_clicked_once = False
     exit_first_start_time = None
     exit_recovery_retry_count = 0
+    # 🚨 [2026-08-12 워치독 단축] 기존 5분(300초)은 실전 감각상 너무 길다는 피드백 - 채굴(광석파밍)은
+    # 복귀 동선이 짧아 1분30초, 그 외(상자파밍 등 백아류)는 동선이 더 길 수 있어 3분으로 구분.
+    exit_watchdog_seconds = 90.0 if farming_method == "광석파밍" else 180.0
     minimap_expanded = False
     checkpoint_pressed_count = 0
     is_initial_start = True
@@ -933,7 +1009,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     safe_device_shell(device, "input tap 1140 572")
                 
                 last_state_changed_time = time.time()
-                trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing)
+                trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing, t_combat_in, t_combat_slow)
                 last_state_changed_time = time.time()
                 return False, skill_mission_success_this_combat, need_pickaxe_refill
 
@@ -1223,7 +1299,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     safe_device_shell(device, "input tap 1140 572")
                 
                 last_state_changed_time = time.time()
-                trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing)
+                trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing, t_combat_in, t_combat_slow)
                 last_state_changed_time = time.time()
                 return False, skill_mission_success_this_combat, need_pickaxe_refill
 
@@ -1372,7 +1448,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                             safe_device_shell(device, "input tap 1140 572") # 고정
                                         
                                         last_state_changed_time = time.time()
-                                        trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing)
+                                        trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing, t_combat_in, t_combat_slow)
                                         last_state_changed_time = time.time()
                                         return False, skill_mission_success_this_combat, need_pickaxe_refill
                                     
@@ -1390,7 +1466,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                             safe_device_shell(device, "input tap 1140 572")
                                         
                                         last_state_changed_time = time.time()
-                                        trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing)
+                                        trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing, t_combat_in, t_combat_slow)
                                         last_state_changed_time = time.time()
                                         return False, skill_mission_success_this_combat, need_pickaxe_refill
                                 
@@ -1405,7 +1481,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                     safe_device_shell(device, "input tap 1140 572")
                                 
                                 last_state_changed_time = time.time()
-                                trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing)
+                                trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing, t_combat_in, t_combat_slow)
                                 last_state_changed_time = time.time()
                                 return False, skill_mission_success_this_combat, need_pickaxe_refill
                         continue
@@ -1526,13 +1602,14 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                 if time.time() - last_click_time > 4.0: state = "FIELD_WAIT"
 
         if state == "TRIGGER_EXIT":
-            # 🚨 [v1.14.0-hotfix4] 독립형 5분 절대 Watchdog 가드 이식:
-            # 백스텝 복구 드래그 동작 등으로 인해 미니맵이 강제로 움직여 exit_stuck_count가 0으로 도중에 초기화되더라도, 
-            # 최초 정체 발생 시점(exit_first_start_time) 기준으로 5분(300초) 동안 필드를 벗어나지 못했다면 무조건 강제 앱 리셋 복구 프로세스를 작동시킵니다.
+            # 🚨 [v1.14.0-hotfix4] 독립형 절대 Watchdog 가드 이식:
+            # 백스텝 복구 드래그 동작 등으로 인해 미니맵이 강제로 움직여 exit_stuck_count가 0으로 도중에 초기화되더라도,
+            # 최초 정체 발생 시점(exit_first_start_time) 기준으로 exit_watchdog_seconds 동안 필드를 벗어나지 못했다면 무조건 강제 앱 리셋 복구 프로세스를 작동시킵니다.
+            # 🚨 [2026-08-12] 기준 시간을 고정 5분(300초)에서 farming_method별 단축값(exit_watchdog_seconds)으로 교체.
             if exit_first_start_time is not None:
                 elapsed_exit_time = int(time.time() - exit_first_start_time)
-                if elapsed_exit_time >= 300:
-                    raise RuntimeError(f"탈출 5분 초과 앱 강제 재시작: {elapsed_exit_time}초 동안 탈출하지 못하여 프로세스 강제 리셋을 수행합니다.")
+                if elapsed_exit_time >= exit_watchdog_seconds:
+                    raise RuntimeError(f"탈출 {exit_watchdog_seconds:.0f}초 초과 앱 강제 재시작: {elapsed_exit_time}초 동안 탈출하지 못하여 프로세스 강제 리셋을 수행합니다.")
 
             # 💡 [기습 방어 인터럽트] 탈출 중 전투 발생 즉시 0.1초 만에 전투 태세 전환
             if check_combat_template_present(img_np, t_combat_in, 0.80) or check_combat_template_present(img_np, t_combat_slow, 0.80):
@@ -1631,8 +1708,8 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                 
                 if exit_stuck_count >= 5:
                     elapsed_exit_time = int(time.time() - exit_first_start_time)
-                    if elapsed_exit_time >= 300:
-                        raise RuntimeError(f"탈출 5분 초과 앱 강제 재시작: {elapsed_exit_time}초 동안 탈출하지 못하여 프로세스 강제 리셋을 수행합니다.")
+                    if elapsed_exit_time >= exit_watchdog_seconds:
+                        raise RuntimeError(f"탈출 {exit_watchdog_seconds:.0f}초 초과 앱 강제 재시작: {elapsed_exit_time}초 동안 탈출하지 못하여 프로세스 강제 리셋을 수행합니다.")
                     
                     exit_recovery_retry_count += 1
                     print(f"🚪🚨 [탈출 정체 복구 작동] 정지 감지로 백스텝 후 출구단추 0.1초 연사 터치를 단행합니다. (누적 경과: {elapsed_exit_time}초, 복구 시도 {exit_recovery_retry_count}회)")
