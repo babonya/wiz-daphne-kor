@@ -1444,7 +1444,14 @@ def start_grand_orchestrator():
         # ======================================================================
         # 👑 [Daphne 완성형 엔진: 1분 30초 전체 화면 동결 시 인지 복구 레이더 강제 부팅]
         # ======================================================================
-        if current_time - last_freeze_check_time > 90.0:
+        # 🚨 [2026-08-12 광석파밍 한정 비활성화] 이 바깥 루프 동결감지는 dungeon_bot.start_main_macro() 안에
+        # 있는 동안 아예 안 도는 구조적 한계(2026-08-11 완치 시도) 때문에, 채굴 사이클이 짧아지면(30~100초) 여러
+        # 성공 사이클이 150초 재기준 문턱 안에 다 들어가버려 "몇 사이클 전 던전선택 화면"과 "지금 던전선택 화면"을
+        # 비교하는 격 - 문턱값을 더 늘려도 근본적으로 해소가 안 되는 구조적 오탐(실전 확인: 하켄 메뉴는 매번
+        # 1~2회차에 정상 성공했는데도 귀환 직후 반복 오탐). 광석파밍은 이제 dungeon_bot.py 내부에 훨씬 정확한
+        # 자체 워치독이 2개(trigger_harken_escape 60초, TRIGGER_EXIT 90초) 있으므로, 이 범용 감지는 광석파밍에서만
+        # 끄고 상자파밍 등 다른 방식에서는 그대로 유지한다. 문제가 재발하면 그때 다시 검토.
+        if FARMING_METHOD != "광석파밍" and current_time - last_freeze_check_time > 90.0:
             freeze_check_gap = current_time - last_freeze_check_time
             current_gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
             current_shadow = cv2.resize(current_gray, (int(width/4), int(height/4)))
