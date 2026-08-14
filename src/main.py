@@ -901,7 +901,15 @@ def restart_process(reason):
     # 💾 디스크 파일 연동 연속 재시작 횟수 누적
     consecutive_restart_count = read_restart_counter() + 1
     print(f"      ➔ 💾 [연속 재시작 누적 카운트]: {consecutive_restart_count}회")
-    
+    # 🚨 [2026-08-14 카운터 미기록 결함 완치] 예전엔 이 카운터를 launch_daphne_app()/recover_app_startup() 등
+    # ADB 통신을 거치는 위험한 복구 단계까지 다 끝난 뒤에야 저장했음 - 그런데 정작 뮤뮤가 완전히 먹통이면
+    # 바로 그 복구 단계 자체가 멈춰버려서 카운터가 기록될 기회조차 없었음(실전 확인: 첫 재시작 시도가
+    # recover_app_startup()에서 멈춘 채 4분 뒤 Watchdog이 두 번째 재시작을 걸었는데도 카운터가 여전히
+    # "1회"로 남아있어 에뮬레이터 강제 리부트(>=2 조건)로 못 넘어감). 이제 어떤 위험한 작업도 시도하기 전,
+    # 카운트를 계산한 직후 즉시 저장한다 - 이 시도 자체가 멈추더라도 다음 시도(Watchdog 등)는 정확한
+    # 누적 횟수를 보고 판단할 수 있음.
+    write_restart_counter(consecutive_restart_count)
+
     # 조건 A: 연속 2회 이상 재시작 시도 시 즉시 에뮬레이터 콜드 리부트 단행
     if ENABLE_EMULATOR_REBOOT and consecutive_restart_count >= 2:
         print(f"      🚨 [연속 재시작 한계 도달] 재시작 시도가 {consecutive_restart_count}회 연속 격발되었습니다. 에뮬레이터 완전 재시작으로 강제 극복합니다.")
@@ -963,12 +971,9 @@ def restart_process(reason):
             time.sleep(1.5) # 디스크 동기화 대기 마진
         except Exception as f9_err:
             print(f"⚠️ [자가 복구 기동/스샷 실패] {f9_err}")
-            
-        # 연속 재시작 카운터를 텍스트 파일에 안전 저장
-        write_restart_counter(consecutive_restart_count)
+        # 💾 카운터는 함수 상단에서 이미 저장했으므로 여기선 재저장 불필요.
     else:
         print("⚠️ [자가 복구 실패] 리셋 후 디바이스 객체 획득 불가")
-        write_restart_counter(consecutive_restart_count)
             
     print("      ➔ 🚀 파이썬 프로세스를 전격 재시작합니다.")
     os.execv(sys.executable, [sys.executable] + sys.argv)
