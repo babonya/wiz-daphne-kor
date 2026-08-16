@@ -219,6 +219,54 @@ def check_template_present_dynamic(img_np, thresh_temp, threshold_val=0.68, min_
 def check_template_present(img_np, thresh_temp, threshold_val=0.68):
     return check_template_present_dynamic(img_np, thresh_temp, threshold_val, 160)
 
+# 🩸 [2026-08-16 피장막(딸피 연출) 관통 다중 이진화 패스]
+# 주인공이 빈사가 되면 화면 전체에 붉은 피안개 연출이 씌워지는데, 이때 흰 글씨(예: "열다")의
+# 그레이스케일 밝기가 통째로 내려앉는다(실측: 안개 화면의 UI 텍스트 영역 최대 밝기 165, 기존
+# 이진화 문턱 160에서 살아남는 픽셀이 0.01%뿐 - 사실상 글씨가 지워진 채로 매칭하고 있었음).
+#
+# 과거 v1.13.x에 "밝기<85면 이진화 문턱을 65로" 방식이 있었으나 v1.14.1-hotfix10에서 제거됨.
+# 이번 실측으로 그 방식이 실패했던 이유 2가지를 확인:
+#   (1) 이 게임은 정상 화면도 평균밝기 40~70이라 "밝기<85 = 안개" 판정이 상시 참이 됨
+#       (당시 함께 있던 "어두우면 필드로 간주(or is_low_hp_dark_mode)" 우회들이 항상 발동 -> 엉뚱한 앵커 오인식).
+#   (2) 문턱 65는 값 자체가 부적합 - 어떤 안개 농도에서도 매칭 점수가 0.54를 넘지 못함.
+#
+# 그래서 안개를 "감지"해서 문턱을 바꾸는 대신, 여러 문턱으로 각각 시도해 하나라도 판정선을
+# 넘으면 인정하는 방식으로 간다. 판정 신뢰도(threshold_val)는 그대로 유지하므로 ROI 기반
+# 오인식 방지 장치들도 영향받지 않는다.
+# 실측 근거(진짜 상자 화면에 농도별 피장막을 합성해 측정한 점수):
+#   안개없음 -> bin160:0.967 / 옅음 -> bin160:0.722 / 중간 -> bin100:0.718
+#   진함 -> bin100:0.806 / 매우진함 -> bin85:0.815   (전 구간에서 최소 한 패스가 판정선 통과)
+# 오탐 검증: 상자가 없는 실제 스샷 89장에 3패스를 전부 적용해도 최고점 0.541 (판정선 0.65 미달, 오탐 0건).
+FOG_BIN_PASSES = (160, 100, 85)
+
+def check_template_present_multipass(img_np, thresh_temp, threshold_val=0.68, bin_passes=FOG_BIN_PASSES):
+    """피장막 유무와 무관하게 인식되도록 여러 이진화 문턱으로 순차 시도한다(하나라도 통과하면 True)."""
+    if thresh_temp is None or img_np is None: return False
+    for bin_th in bin_passes:
+        if check_template_present_dynamic(img_np, thresh_temp, threshold_val, bin_th):
+            return True
+    return False
+
+# 🩸 [빈사(딸피) 감지용 파티창 주황픽셀 기준]
+# 빈사 캐릭터는 파티창의 이름/HP가 주황빛으로 바뀐다. 안개까지 낀 상태에서 실측한 색이 RGB 약 (140,53,16)로
+# 상당히 어두워서, 과거 detect_orange_danger_hp()가 쓰던 HSV 범위(명도 210 이상)로는 0픽셀로 잡혔음(무용지물).
+# 실측 분포: 빈사/안개 화면 6109·12092픽셀 vs 정상 화면 최대 2114픽셀 -> 그 사이를 넉넉히 잡아 4000으로 설정.
+# (빈사 샘플이 아직 2건뿐이라, 발동 시 실제 픽셀수를 로그로 남겨 추후 조정할 수 있게 한다.)
+DANGER_HP_PIXEL_LIMIT = 4000
+
+def count_danger_hp_pixels(img_np):
+    """파티창 구역에서 빈사 표시(주황빛 이름/HP) 픽셀 수를 센다."""
+    if img_np is None: return 0
+    try:
+        h, w = img_np.shape[:2]
+        if h < 2560 or w < 1440: return 0
+        zone = img_np[1900:2560, :, :3].astype(np.int16)
+        R, G, B = zone[:, :, 0], zone[:, :, 1], zone[:, :, 2]
+        mask = (R > 90) & (R > G * 1.55) & (R > B * 2.0)
+        return int(mask.sum())
+    except Exception:
+        return 0
+
 def check_dialogue_indicator_present(img_np, template, threshold=0.75):
     if img_np is None or template is None:
         return False
@@ -637,7 +685,7 @@ def resolve_and_click_harken_blessing(device, img_np, priority_template=None):
     safe_device_shell(device, f"input tap {best_x} {best_y}")
     return True
 
-def check_and_handle_harken_menu(device, t_harken_blessing_donothing, t_harken_return, priority_template=None, img_np=None):
+def check_and_handle_harken_menu(device, t_harken_blessing_donothing, t_harken_return, priority_template=None, img_np=None, t_yeolda=None):
     """
     "아무것도 안 한다"(귀환목록 화면과 가호 팝업에 공통으로 존재)를 1차 앵커로 삼아
     하켄 메뉴 자체가 떠 있는지 먼저 확인하고, 그 다음 "귀환" 텍스트 유무로 두 화면을 구분해 처리합니다.
@@ -654,6 +702,14 @@ def check_and_handle_harken_menu(device, t_harken_blessing_donothing, t_harken_r
                 return "not_present"
             img_np = np.array(Image.open(io.BytesIO(raw)))
         if not check_template_present(img_np, t_harken_blessing_donothing, 0.70):
+            return "not_present"
+
+        # 🚨 [2026-08-16 상자 오판 완치] 상자 대화창("열다" / "아무것도 안 한다")에도 "아무것도 안 한다"가
+        # 그대로 있어서, donothing=True & 귀환=False 조건이 성립해 상자 화면을 가호 팝업으로 오판하고 있었음
+        # (실전 확인: 2026-08-16 20:26~20:27 2분 사이에만 상자 화면을 찍은 harken 증거 스샷 10장 발생,
+        # 실제로는 가호 줄 좌표를 엉뚱하게 탭하고 있었음). 상자 화면에는 "열다"가 같이 있고 가호 팝업에는
+        # 없다는 차이로 구분해 차단한다.
+        if t_yeolda is not None and check_template_present_multipass(img_np, t_yeolda, 0.65):
             return "not_present"
 
         # "아무것도 안 한다"만으로는 귀환목록 화면과 가호 팝업을 구분할 수 없음(실전 오탐 사례로 확인) -
@@ -673,7 +729,7 @@ def check_and_handle_harken_menu(device, t_harken_blessing_donothing, t_harken_r
         print(f"⚠️ [하켄메뉴] 판정/처리 중 예외 발생: {err}")
         return "not_present"
 
-def trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing=None, t_combat_in=None, t_combat_slow=None):
+def trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing=None, t_combat_in=None, t_combat_slow=None, t_yeolda=None):
     """
     하켄 탈출 수렴 루프: 3채널 BGR 컬러 매칭으로 하켄 귀환 창이 뜰 때까지 대기하며,
     만약 보이지 않으면 출구이동(미니맵 2번) 터치를 재시도하며 안정적으로 귀환 버튼을 클릭하고 탈출합니다.
@@ -707,7 +763,7 @@ def trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessin
                     continue
 
                 # "아무것도 안 한다" 앵커로 하켄 메뉴 유무를 먼저 확인하고, "귀환" 유무로 귀환목록/가호 팝업을 구분한다.
-                menu_state = check_and_handle_harken_menu(device, t_harken_blessing_donothing, t_harken_return, img_np=img_np_h)
+                menu_state = check_and_handle_harken_menu(device, t_harken_blessing_donothing, t_harken_return, img_np=img_np_h, t_yeolda=t_yeolda)
                 if menu_state == "returned":
                     print(f"🚪 [하켄귀환] 귀환 버튼 BGR 컬러 인식 및 터치 성공! (대기 {h_wait+1}회차)")
                     harken_clicked = True
@@ -798,7 +854,7 @@ def trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessin
         # 🚨 [2026-08-12 무한 성공처리 완치] 예전엔 여기서 그냥 무조건 harken_clicked=True로 성공 처리했는데,
         # 실전(모바일 로그인으로 세션이 끊긴 상황)에서 이게 "실패를 호출부에 전혀 못 알리는" 결함으로 확인됨.
         # 최종 재확인까지 거치고도 여전히 미확인이면 RuntimeError로 실패를 전파한다.
-        final_state = check_and_handle_harken_menu(device, t_harken_blessing_donothing, t_harken_return)
+        final_state = check_and_handle_harken_menu(device, t_harken_blessing_donothing, t_harken_return, t_yeolda=t_yeolda)
         if final_state in ("returned", "blessing"):
             harken_clicked = True
         else:
@@ -808,7 +864,7 @@ def trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessin
     time.sleep(4.0)  # 퇴장 연출 대기
 
     # 🎁 [하켄의 가호] 연 1회(자정 이후) 등장하는 팝업 대응 - 매번 호출되지만 미검출 시 오버헤드는 스캔 1회뿐.
-    check_and_handle_harken_menu(device, t_harken_blessing_donothing, t_harken_return)
+    check_and_handle_harken_menu(device, t_harken_blessing_donothing, t_harken_return, t_yeolda=t_yeolda)
 
     return True
 
@@ -1015,7 +1071,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     safe_device_shell(device, "input tap 1140 572")
                 
                 last_state_changed_time = time.time()
-                trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing, t_combat_in, t_combat_slow)
+                trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing, t_combat_in, t_combat_slow, t_yeolda)
                 last_state_changed_time = time.time()
                 return False, skill_mission_success_this_combat, need_pickaxe_refill
 
@@ -1169,7 +1225,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     continue
 
             if not combat_active:
-                if check_template_present_dynamic(img_np, t_yeolda, yeolda_threshold, 160):
+                if check_template_present_multipass(img_np, t_yeolda, yeolda_threshold):
                     transition_delay_count = 0
                     if yeolda_stuck_retry_count < 3:
                         yeolda_stuck_retry_count += 1
@@ -1273,7 +1329,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     continue
 
         if state in ["FIELD_WAIT", "AUTO_MOVING"]:
-            if check_template_present_dynamic(img_np, t_yeolda, 0.65, 160):
+            if check_template_present_multipass(img_np, t_yeolda, 0.65):
                 print("📦 [메인] '열다' 감지! 상자 해제 시퀀스로 진입.")
                 if chest_opener.open_and_disarm_chest(device, img_np, t_yeolda, chest_opener_slot=chest_opener_slot, masked_adventurer_slot=masked_adventurer_slot):
                     state = "BRANCH_CHECK"
@@ -1305,7 +1361,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     safe_device_shell(device, "input tap 1140 572")
                 
                 last_state_changed_time = time.time()
-                trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing, t_combat_in, t_combat_slow)
+                trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing, t_combat_in, t_combat_slow, t_yeolda)
                 last_state_changed_time = time.time()
                 return False, skill_mission_success_this_combat, need_pickaxe_refill
 
@@ -1328,9 +1384,21 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                         print("📦 [상자 정산 완료 필드 안착] need_heal = True로 전환합니다.")
                         need_heal = True
 
+                # 2-1. 🩸 [피장막(딸피) 감지 -> 즉시 정비] 주인공이 빈사가 되면 화면에 붉은 피안개 연출이 씌워지는데,
+                # 이건 연출일 뿐이고 실제 해법은 그냥 힐을 주는 것(사용자 확인). 다만 안개 자체를 화면 통계로
+                # 판별하려던 과거 방식은 실패했음 - 실측 결과 이 게임은 정상 화면도 평균밝기 40~70이라 밝기 기준이
+                # 무용지물이고, 붉은 색조 역시 황금 상자 화면(+6.7~14.7)이 실제 안개 화면(+5.0)보다 오히려 더 붉어
+                # 구분이 안 됨. 그래서 안개(결과) 대신 원인인 "빈사 상태"를 직접 본다 - 빈사 캐릭터는 파티창의
+                # 이름/HP가 주황빛으로 바뀌므로(실측 RGB 약 (140,53,16)), 파티창 구역에서 그 색 픽셀을 센다.
+                if not need_heal:
+                    danger_px = count_danger_hp_pixels(img_np)
+                    if danger_px >= DANGER_HP_PIXEL_LIMIT:
+                        print(f"🩸 [빈사 감지] 파티창 빈사색 픽셀 {danger_px}개 (기준 {DANGER_HP_PIXEL_LIMIT}) - 피장막 유발 상태로 판단해 정비를 격발합니다.")
+                        need_heal = True
+
                 # 3. 통합 힐링 기동: 안전 필드 안착 및 힐링 플래그 감지 시 작동
                 if need_heal:
-                    if check_template_present(img_np, t_yeolda, 0.65):
+                    if check_template_present_multipass(img_np, t_yeolda, 0.65):
                         print("📦 [상자 발견 가드] 화면에 '열다' 버튼이 노출되어 있어 상자 해제를 우선 처리하고 힐링을 다음 루프로 유예합니다.")
                     else:
                         print("💊 [통합 힐링 기동] 안전 필드 안착 확인. 정비 시퀀스를 시작합니다.")
@@ -1352,7 +1420,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     continue
                 
                 # 🚨 [던전 공통 최우선 철칙] 화면에 상자 "열다" (t_yeolda) 앵커 포착 시 즉시 상자 해제 구동
-                if check_template_present_dynamic(img_np, t_yeolda, 0.65, 160):
+                if check_template_present_multipass(img_np, t_yeolda, 0.65):
                     print("📦 [공통 상자 감지] 던전 필드에서 '열다' 버튼 포착! 상자 해제/개봉 시퀀스를 최우선 격발합니다.")
                     if chest_opener.open_and_disarm_chest(device, img_np, t_yeolda, chest_opener_slot=chest_opener_slot, masked_adventurer_slot=masked_adventurer_slot):
                         came_from_chest = True
@@ -1408,7 +1476,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                             except: pass
                             
                             # 🚨 [이동 안착 지점 2차 상자 포착 가드]
-                            if check_template_present_dynamic(img_np, t_yeolda, 0.65, 160):
+                            if check_template_present_multipass(img_np, t_yeolda, 0.65):
                                 print("📦 [이동 도중 상자 발견!] 광석 이동 도착 지점/경로에서 '열다' 상자 포착! 상자 해제 시퀀스를 단행합니다.")
                                 if chest_opener.open_and_disarm_chest(device, img_np, t_yeolda, chest_opener_slot=chest_opener_slot, masked_adventurer_slot=masked_adventurer_slot):
                                     came_from_chest = True
@@ -1454,7 +1522,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                             safe_device_shell(device, "input tap 1140 572") # 고정
                                         
                                         last_state_changed_time = time.time()
-                                        trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing, t_combat_in, t_combat_slow)
+                                        trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing, t_combat_in, t_combat_slow, t_yeolda)
                                         last_state_changed_time = time.time()
                                         return False, skill_mission_success_this_combat, need_pickaxe_refill
                                     
@@ -1472,7 +1540,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                             safe_device_shell(device, "input tap 1140 572")
                                         
                                         last_state_changed_time = time.time()
-                                        trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing, t_combat_in, t_combat_slow)
+                                        trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing, t_combat_in, t_combat_slow, t_yeolda)
                                         last_state_changed_time = time.time()
                                         return False, skill_mission_success_this_combat, need_pickaxe_refill
                                 
@@ -1487,7 +1555,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                     safe_device_shell(device, "input tap 1140 572")
                                 
                                 last_state_changed_time = time.time()
-                                trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing, t_combat_in, t_combat_slow)
+                                trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing, t_combat_in, t_combat_slow, t_yeolda)
                                 last_state_changed_time = time.time()
                                 return False, skill_mission_success_this_combat, need_pickaxe_refill
                         continue
@@ -1528,7 +1596,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                 except:
                                     continue
                                 
-                                if check_template_present_dynamic(img_np_sub, t_yeolda, 0.65, 160):
+                                if check_template_present_multipass(img_np_sub, t_yeolda, 0.65):
                                     opened = True
                                     img_np = img_np_sub
                                     break
@@ -1590,7 +1658,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
         elif state == "AUTO_MOVING":
             toast_detected = False
             for scan_step in range(5):
-                if check_template_present_dynamic(img_np, t_yeolda, 0.65, 160): break
+                if check_template_present_multipass(img_np, t_yeolda, 0.65): break
                 if check_template_present(img_np, t_no_chest, 0.55):
                     toast_detected = True
                     break
@@ -1753,7 +1821,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
             exit_prev_minimap = current_mini
             
             if not check_field_anchor_present(img_np, t_field, 0.62):
-                if check_template_present_dynamic(img_np, t_yeolda, 0.65, 160) or chest_opener.is_minigame_screen(img_np, height, width):
+                if check_template_present_multipass(img_np, t_yeolda, 0.65) or chest_opener.is_minigame_screen(img_np, height, width):
                     print("⚠️ [탈출 감시] 필드가 미검출되었으나, 상자 선택창('열다') 또는 미니게임 화면이 감지되었습니다. 탈출 복귀를 취소하고 상자 해제로 이행합니다.")
                 else:
                     print("🎉 [탈출 무결점 성공] 던전 필드 화면이 완전히 소멸되었습니다! 사령탑 무대로 복귀합니다.")

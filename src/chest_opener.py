@@ -56,19 +56,27 @@ def load_color_template(file_path):
     except:
         return None
 
-def check_text_by_user_template(img_np, thresh_temp, threshold_val=0.68):
-    """ 도장 뼈대 대조 공통 함수 """
+# 🩸 [2026-08-16 피장막 관통] dungeon_bot.check_template_present_multipass와 동일한 취지.
+# 주인공 빈사 시 붉은 피안개가 씌워지면 흰 글씨의 그레이스케일 밝기가 통째로 내려앉아
+# 고정 이진화 문턱 160에서는 글씨가 지워진 채 매칭된다(실측: 안개 화면 텍스트 영역 최대 밝기 165).
+# 여러 문턱으로 시도해 하나라도 판정선을 넘으면 인정한다(판정 신뢰도는 그대로 유지).
+FOG_BIN_PASSES = (160, 100, 85)
+
+def check_text_by_user_template(img_np, thresh_temp, threshold_val=0.68, bin_passes=FOG_BIN_PASSES):
+    """ 도장 뼈대 대조 공통 함수 (피장막 대응 다중 이진화 패스) """
     if thresh_temp is None or img_np is None: return False
     h_img, w_img = img_np.shape[:2]
     h_temp, w_temp = thresh_temp.shape[:2]
     if h_img < h_temp or w_img < w_temp: return False
-    
+
     gray_img = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-    _, thresh_img = cv2.threshold(gray_img, 160, 255, cv2.THRESH_BINARY)
-    
-    result = cv2.matchTemplate(thresh_img, thresh_temp, cv2.TM_CCOEFF_NORMED)
-    _, max_val, _, _ = cv2.minMaxLoc(result)
-    return max_val > threshold_val
+    for bin_th in bin_passes:
+        _, thresh_img = cv2.threshold(gray_img, bin_th, 255, cv2.THRESH_BINARY)
+        result = cv2.matchTemplate(thresh_img, thresh_temp, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, _ = cv2.minMaxLoc(result)
+        if max_val > threshold_val:
+            return True
+    return False
 
 def check_gray_template_present(img_np, gray_temp, threshold_val=0.70):
     if gray_temp is None or img_np is None: return False
