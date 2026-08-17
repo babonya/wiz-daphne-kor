@@ -1330,7 +1330,14 @@ def start_grand_orchestrator():
             t_enter_dungeon = load_template("templates/WolfCave/Wolf_B2_btn.png")
         else:
             t_enter_dungeon = load_template("templates/WolfCave/Wolf_B1_btn.png")
-    
+
+    # 🚨 [2026-08-18 하켄 메뉴 시작 인식 결함 완치] 매크로를 하켄 메뉴(귀환목록/가호팝업)가 떠 있는 상태에서
+    # (재)시작하면, 아래 스캐너가 마을/세계지도/던전선택/여관/필드/상자 등 알려진 앵커 어느 것과도 안 맞아
+    # "아웃게임 무반응 정체"만 무한 반복하며 아무 행동도 못 하던 실전 결함 확인(2026-08-18 01:16~, 5분 절대
+    # 워치독이 걸릴 때까지 방치됨). dungeon_bot.py가 이미 갖고 있는 하켄 메뉴 판정 함수를 그대로 재사용한다.
+    t_harken_blessing_donothing = dungeon_bot.load_grayscale_template("templates/Field/harken_blessing_donothing.png")
+    t_harken_return = dungeon_bot.load_color_template("templates/FFXI/harken_return.png")
+
     t_field = load_grayscale_template("templates/Field/field_anchor.png")
     t_yeolda = load_template("templates/chestopening/yeolda_clean.png")
     t_get_item = load_template("templates/chestopening/get_item.png")
@@ -1655,6 +1662,19 @@ def start_grand_orchestrator():
                 else:
                     device.shell("input tap 540 930")
                 time.sleep(2.5)
+                last_action_time = time.time()
+                continue
+
+            # 🚨 [2026-08-18 하켄 메뉴 시작 인식 결함 완치] 위 4개 아웃게임 앵커 판정 전에 먼저 확인 -
+            # "아무것도 안 한다"는 상자 대화창에도 있지만 t_yeolda를 같이 넘겨 상자는 여기서 걸러진다.
+            harken_menu_state = dungeon_bot.check_and_handle_harken_menu(
+                device, t_harken_blessing_donothing, t_harken_return, img_np=img_np, t_yeolda=t_yeolda
+            )
+            if harken_menu_state in ("returned", "blessing"):
+                print(f"   ➔ 🚪 [사령탑 하켄 가드] 하켄 메뉴 화면에서 시작/정체된 것을 인지, '{harken_menu_state}' 처리 완료.")
+                first_outgame_stuck_time_str = ""
+                first_outgame_stuck_start_time = None
+                time.sleep(2.0)
                 last_action_time = time.time()
                 continue
 
