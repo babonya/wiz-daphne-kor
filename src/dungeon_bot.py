@@ -660,12 +660,63 @@ def classify_blessing_tier(rgb):
         return 3, f"보라-추정({rgb})"
     return 4, f"빨강-추정({rgb})"
 
+# 🎁 [2026-08-19 유령성 하켄 가호 이름 우선순위] 색상 등급(흰<녹<파<보라<빨강)이 실제 유용도와 항상
+# 일치하지 않는다는 게 실전 데이터로 확인됨(예: "오드의 가호"는 녹색인데 파란색 "민첩의 가호"보다 우선해야
+# 하고, "데몬족 헌터"도 다른 녹색 가호들보다 우선해야 함 - 색상 하나만 보면 뒤바뀜). 이름으로 먼저 식별하고
+# 안 맞으면 색상 등급으로 폴백한다. 우선순위 점수는 색상 등급(0~4) 범위보다 항상 높게 잡아서, 이름이
+# 인식되면 색상과 무관하게 항상 이긴다.
+# 도장은 실제 컬러 가호 텍스트(흰 제외 전부 그레이스케일 밝기가 낮음, 실측 최저 약 95)를 놓치지 않도록
+# load_dead_template()(이진화 문턱 65)로 로드한다 - load_template()의 기본 문턱 160으로는 컬러 텍스트가
+# 통째로 사라져 매칭 자체가 불가능함(실측으로 확인).
+NAMED_BLESSING_PRIORITY = [
+    # (도장 경로, 우선순위 점수 - 높을수록 우선, 색상등급 최대치 4보다 항상 큼, 라벨)
+    ("templates/HarkenBlessing/demon_hunter.png", 100, "데몬족 헌터"),
+    ("templates/HarkenBlessing/od_blessing.png", 90, "오드의 가호"),
+]
+_named_blessing_templates_cache = None
+
+def _load_named_blessing_templates():
+    global _named_blessing_templates_cache
+    if _named_blessing_templates_cache is None:
+        _named_blessing_templates_cache = []
+        for path, score, label in NAMED_BLESSING_PRIORITY:
+            temp = load_dead_template(path)
+            if temp is not None:
+                _named_blessing_templates_cache.append((temp, score, label))
+    return _named_blessing_templates_cache
+
+def classify_blessing_named_priority(img_np, y, match_threshold=0.85):
+    """
+    지정된 가호 줄(y 좌표)이 이름 우선순위 목록의 어떤 가호와 일치하는지 확인합니다.
+    가로 전체 폭에서 이진화(문턱 65) 매칭을 시도 - 색상과 무관하게 텍스트 모양으로 식별합니다.
+    일치하면 (우선순위 점수, 라벨), 아니면 None을 반환합니다.
+    """
+    h, w = img_np.shape[:2]
+    y1, y2 = max(0, y - 70), min(h, y + 70)
+    band = img_np[y1:y2, 0:w]
+    if band.shape[0] < 10:
+        return None
+    gray = cv2.cvtColor(band, cv2.COLOR_RGB2GRAY)
+    _, thresh_band = cv2.threshold(gray, 65, 255, cv2.THRESH_BINARY)
+
+    best = None
+    for temp, score, label in _load_named_blessing_templates():
+        h_t, w_t = temp.shape[:2]
+        if thresh_band.shape[0] < h_t or thresh_band.shape[1] < w_t:
+            continue
+        result = cv2.matchTemplate(thresh_band, temp, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, _ = cv2.minMaxLoc(result)
+        if max_val > match_threshold and (best is None or score > best[0]):
+            best = (score, f"{label}(이름 매칭 {max_val:.2f})")
+    return best
+
 def resolve_and_click_harken_blessing(device, img_np, priority_template=None):
     """
     하켄의 가호 3지선다 중 최선의 선택지를 탭합니다.
-    1. priority_template(예: 특정 던전 전용 "데몬 특화 가호" 도장)이 주어지고 실제로 매칭되면 최우선 선택.
-       (💡 아직 해당 도장이 없어 현재는 항상 None으로 호출됨 - 프리셋별 우선순위는 추후 연동 예정)
-    2. 아니면 3개 선택지의 텍스트 색상 등급(흰<녹<파<보라<빨강)을 비교해 가장 높은 등급을 선택.
+    1. 각 줄을 이름 우선순위 목록(NAMED_BLESSING_PRIORITY)과 먼저 대조 - 일치하면 색상과 무관하게
+       그 우선순위 점수(항상 색상등급보다 높음)를 사용.
+    2. priority_template(레거시 단일 도장 인자, 호출부에서 넘겨줄 경우)이 매칭되면 그것도 즉시 최우선 선택.
+    3. 위 어느 것도 안 맞으면 텍스트 색상 등급(흰<녹<파<보라<빨강)으로 폴백.
     """
     if priority_template is not None:
         coords = find_and_get_coords(img_np, priority_template, 0.75)
@@ -676,12 +727,17 @@ def resolve_and_click_harken_blessing(device, img_np, priority_template=None):
 
     ranked = []
     for x, y in HARKEN_BLESSING_ROWS:
-        tier, label = classify_blessing_tier(sample_text_color(img_np, x, y))
-        print(f"   [하켄가호] ({x},{y}) 줄 등급 판정: {label}")
-        ranked.append((tier, x, y))
+        named = classify_blessing_named_priority(img_np, y)
+        if named is not None:
+            score, label = named
+            print(f"   [하켄가호] ({x},{y}) 줄 이름 우선판정: {label}")
+        else:
+            score, label = classify_blessing_tier(sample_text_color(img_np, x, y))
+            print(f"   [하켄가호] ({x},{y}) 줄 등급 판정: {label}")
+        ranked.append((score, x, y))
 
     best_tier, best_x, best_y = max(ranked, key=lambda t: t[0])
-    print(f"🎁 [하켄가호] 최고 등급(tier={best_tier}) 선택지 터치: ({best_x}, {best_y})")
+    print(f"🎁 [하켄가호] 최고 우선순위(score={best_tier}) 선택지 터치: ({best_x}, {best_y})")
     safe_device_shell(device, f"input tap {best_x} {best_y}")
     return True
 
