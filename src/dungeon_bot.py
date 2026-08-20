@@ -1032,6 +1032,10 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     previous_state = "FIELD_WAIT"
     exit_start_time = 0
     prev_minimap_zone = None
+    # 🚨 [2026-08-21 무한 정체 탈출 결함 완치] 아래 '일반 정체 복구' 블라인드 뒤로가기 전용 페이싱 타이머.
+    # 실전 확인(2026-08-21 03:38~07:15, 3시간 37분): 이 블라인드 포크가 last_state_changed_time을 같이
+    # 리셋해버려서 5분 하드 리밋이 영원히 도달 못 하는 결함이 있었음(상세는 아래 해당 분기 주석 참고).
+    last_blind_poke_time = 0
     
     global need_heal, came_from_chest
     need_heal = False
@@ -1234,10 +1238,19 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     continue
 
                 # 🚨 [v1.14.0-hotfix5] 일반 정체 30초 지속 시 비상 뒤로가기(KEYCODE_BACK)를 날려 팝업 갇힘을 극복
-                print("⏰ [일반 정체 복구] 30초간 정체 지속되어 비상 뒤로가기(KEYCODE_BACK)를 1회 주입합니다.")
-                safe_device_shell(device, "input keyevent 4")
-                time.sleep(1.0)
-                last_state_changed_time = time.time()
+                # 🚨 [2026-08-21 무한 정체 탈출 결함 완치] 예전엔 이 블라인드 포크 직후 last_state_changed_time을
+                # 같이 리셋해버려서, 뒤로가기가 실제로 효과가 있었는지와 무관하게 위 300초 하드 리밋이 영원히
+                # 도달하지 못하는 구조적 결함이 있었음(실전 확인: 2026-08-21 03:38~07:15, 뮤뮤 동결 추정 상황에서
+                # 3시간 37분간 이 30초 사이클만 무한 반복하며 방치됨). 이제 이 블라인드 포크는 진짜 정체 타이머
+                # (last_state_changed_time)를 건드리지 않고, 포크 자체의 재시도 간격만 별도 타이머로 페이싱한다.
+                # 뒤로가기가 실제로 화면을 바꿨다면 다음 루프에서 정상적으로 앵커가 인식되며 last_state_changed_time이
+                # 그 지점(state 전이 또는 위쪽의 실제 탐지 성공 분기)에서 리셋되고, 아무 효과가 없었다면
+                # stuck_duration이 계속 누적되어 결국 300초 하드 리밋(RuntimeError → 강제 재시작)으로 정상 승격된다.
+                if time.time() - last_blind_poke_time >= 30.0:
+                    print("⏰ [일반 정체 복구] 30초간 정체 지속되어 비상 뒤로가기(KEYCODE_BACK)를 1회 주입합니다.")
+                    safe_device_shell(device, "input keyevent 4")
+                    time.sleep(1.0)
+                    last_blind_poke_time = time.time()
                 continue
 
             # 💀 [주인공 사망 부활 가드] 전멸 또는 부활 대기 화면 감지 시
