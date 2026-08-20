@@ -712,6 +712,16 @@ def recover_app_startup(device):
     counter = 0
     max_try = 35
     startup_landscape_fail_counter = 0  # 🚨 [v1.17.0-hotfix1] 가로화면 무한루프 완치용 전용 카운터 (기존 counter는 이 분기의 continue로 인해 증가하지 않아 탈출구가 없었음)
+    # 🚨 [2026-08-20 대용량 다운로드 타임아웃 완치] 목요일 콘텐츠 추가 점검 등으로 리소스 다운로드가 기가바이트
+    # 단위로 나오면, 다운로드 확인 버튼을 눌러도 그 뒤 진행률 화면엔 아는 앵커가 하나도 없어 빈 [1,1] 탭만
+    # 반복하며 35회(약 2분) 예산을 그대로 소진 - 실전 확인(2026-08-20 13시): 다운로드 버튼을 누르고도 카운터가
+    # 안 줄어들어 5분 뒤 "아웃게임 정체" 절대 워치독까지 걸려 다운로드 도중 에뮬레이터 강제 리부트가 발생함.
+    # 다운로드 확인 버튼을 감지한 시점을 기록해두고, 그 뒤 일정 시간(DOWNLOAD_GRACE_SECONDS) 동안은 35회 예산이
+    # 소진되지 않도록 유예한다 - 진행률 화면처럼 아는 앵커가 없는 정적 화면이 계속 떠도 시간만으로 강제 실패
+    # 처리되지 않게 함. 유예 시간이 다 지나도록 인게임 진입을 못 하면 그때는 원래대로 실패 처리(원인 불명 정체와
+    # 구분 못 할 이유가 없으므로 무한정 봐주지는 않음).
+    download_started_at = None
+    DOWNLOAD_GRACE_SECONDS = 1200.0  # 20분 - 기가바이트급 다운로드도 넉넉히 커버, 필요시 조정 가능
 
     while counter < max_try:
         try:
@@ -800,18 +810,25 @@ def recover_app_startup(device):
             print("👉 [점검 경고] 타이틀 이동(점검) 버튼 감지! 즉시 클릭합니다.")
             find_and_click_template(device, img_np, t_re_maintain_title, 0.70)
             time.sleep(3.0)
+            counter = 0  # 🚨 [2026-08-20] 실제 진행이 있었으니 정체 예산 리셋 (사용자 제안)
             continue
-            
+
         if check_template_present(img_np, t_re_download, 0.70):
             print("📥 [리소스 다운로드] 다운로드 확인 버튼 감지! 즉시 터치합니다.")
             find_and_click_template(device, img_np, t_re_download, 0.70)
             time.sleep(5.0)
+            counter = 0
+            # 🚨 [2026-08-20 대용량 다운로드 타임아웃 완치] 다운로드 시작 시점 기록 - 아래 예산 소진 로직이
+            # 이 시점 이후 DOWNLOAD_GRACE_SECONDS 동안은 진행률 화면(아는 앵커 없음)이 계속 떠도 예산을
+            # 안 깎도록 참조한다.
+            download_started_at = time.time()
             continue
-            
+
         if check_template_present(img_np, t_re_retry, 0.70):
             print("🌐 [네트워크 재시도] 에러 재시도 버튼 감지! 즉시 터치합니다.")
             find_and_click_template(device, img_np, t_re_retry, 0.70)
             time.sleep(3.0)
+            counter = 0
             continue
 
         if check_template_present(img_np, t_title_notice, 0.75):
@@ -821,18 +838,21 @@ def recover_app_startup(device):
             else:
                 device.shell("input tap 540 2360")
             time.sleep(3.0)
+            counter = 0
             continue
 
         if check_template_present(img_np, t_title_warning, 0.75):
             print("⚠️ [주의 가드] 게임 최초 기동 '주의' 경고 화면 포착! 구석 터치로 진행을 격발합니다.")
             device.shell("input tap 10 10")
             time.sleep(3.0)
+            counter = 0
             continue
 
         if check_template_present(img_np, t_error_to_title, 0.70):
             print("👉 [타이틀 복귀 확인] 'Error_to_title.png' 감지! 즉시 탭합니다.")
             find_and_click_template(device, img_np, t_error_to_title, 0.70)
             time.sleep(3.0)
+            counter = 0
             continue
 
         if check_template_present(img_np, t_net_error, 0.75):
@@ -841,6 +861,7 @@ def recover_app_startup(device):
             if net_coords: device.shell(f"input tap {net_coords[0]} {net_coords[1]}")
             else: device.shell("input tap 1380 1720")
             time.sleep(4.0)
+            counter = 0
             continue
 
         # 💡 [순서 재배치] "인게임 진입 성공" 판정을 모든 구체적 팝업(점검/다운로드/재시도/공지/주의/에러) 체크보다 뒤로 이동.
@@ -866,9 +887,15 @@ def recover_app_startup(device):
             time.sleep(3.5)
         else:
             time.sleep(2.0)
-            
-        counter += 1
-        
+
+        # 🚨 [2026-08-20 대용량 다운로드 타임아웃 완치] 다운로드 확인 버튼을 누른 뒤 DOWNLOAD_GRACE_SECONDS(20분)
+        # 이내라면, 진행률 화면에 아는 앵커가 하나도 없어도 예산을 깎지 않는다 - 그래야 while 루프가 시간만으로
+        # 조기 실패 처리되지 않고 다운로드가 실제로 끝날 때까지 버틸 수 있다. 유예 시간이 지나면 그대로 정상 소진 재개.
+        if download_started_at is not None and (time.time() - download_started_at) < DOWNLOAD_GRACE_SECONDS:
+            pass
+        else:
+            counter += 1
+
     print("⚠️ [앱 기동 복구 실패] 제한 시간 내 인게임 진입에 실패했습니다. 강제 앱 재시작을 다시 시도합니다.")
     return False
 
