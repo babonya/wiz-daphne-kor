@@ -682,6 +682,13 @@ def recover_app_startup(device):
     t_inn_title = load_template("templates/inn_sleep/inn_title.png")
     t_world_map = load_grayscale_template("templates/Worldmap/world_map_anchor.png")
 
+    # 🚨 [2026-08-25 기동 복구 하켄 인식 결함 완치] 실전 확인: 하켄 메뉴(귀환목록/이동목록/가호팝업)가 떠 있는
+    # 상태에서 매크로를 원격으로 재시작하면, 이 함수는 아래 known-popup 목록과 인게임 앵커 OR 판정 어디에도
+    # 하켄 관련 앵커가 없어 35회 예산을 전부 빈 (1,1) 탭으로 허비하고 실패함 - 아웃게임 스캐너(1369행 부근)에는
+    # 이미 이식됐던 check_and_handle_harken_menu()를 여기 기동 복구 루프에도 동일하게 재사용한다.
+    t_harken_blessing_donothing = dungeon_bot.load_grayscale_template("templates/Field/harken_blessing_donothing.png")
+    t_harken_return = dungeon_bot.load_color_template("templates/FFXI/harken_return.png")
+
     # 💡 [항목5] 마을별 개별 앵커(!!vill_FFXI.png 등) 대신 어떤 마을에나 있는 공용 여관 도장으로 통일
     t_village_anchor = load_grayscale_template("templates/village_common/inn.png")
 
@@ -770,7 +777,6 @@ def recover_app_startup(device):
             time.sleep(10.0)
             
             try:
-                import dungeon_bot
                 dungeon_bot.need_heal = True
                 print("💊 [기동 복구 가드] 부활 성공. dungeon_bot.need_heal = True 설정 완료.")
             except Exception as e:
@@ -790,7 +796,6 @@ def recover_app_startup(device):
                 time.sleep(1.0)
                 
             try:
-                import dungeon_bot
                 dungeon_bot.need_heal = True
                 print("💊 [기동 복구 가드] 부활 성공. dungeon_bot.need_heal = True 설정 완료.")
             except Exception as e:
@@ -862,6 +867,17 @@ def recover_app_startup(device):
             else: device.shell("input tap 1380 1720")
             time.sleep(4.0)
             counter = 0
+            continue
+
+        # 🚨 [2026-08-25 기동 복구 하켄 인식 결함 완치] 하켄 메뉴가 떠 있으면 처리하고 카운터를 리셋한다.
+        # "returned"(귀환목록/이동목록 화면)는 함수 내부에서 이미 귀환 버튼을 클릭까지 완료한 상태로 반환된다.
+        harken_state = dungeon_bot.check_and_handle_harken_menu(
+            device, t_harken_blessing_donothing, t_harken_return, img_np=img_np, t_yeolda=t_yeolda
+        )
+        if harken_state in ("returned", "blessing"):
+            print(f"🚪 [기동 복구 하켄 가드] 하켄 메뉴 화면에서 재시작된 것을 인지, '{harken_state}' 처리 완료.")
+            counter = 0
+            time.sleep(2.0)
             continue
 
         # 💡 [순서 재배치] "인게임 진입 성공" 판정을 모든 구체적 팝업(점검/다운로드/재시도/공지/주의/에러) 체크보다 뒤로 이동.
