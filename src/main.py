@@ -4,7 +4,7 @@ import datetime
 import time
 import json
 
-CURRENT_VERSION = "1.17.1-hotfix9" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
+CURRENT_VERSION = "1.17.1-hotfix10" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
 
 # ==============================================================================
 # ⚙️ [Daphne 마스터 글로벌 제어 세팅 변수 구역 - 진짜 최상단 제어판]
@@ -76,9 +76,16 @@ else:
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.17.1-hotfix9
-# - 최근 수정일: 2026-08-25
+# - 현재 버전: 1.17.1-hotfix10
+# - 최근 수정일: 2026-08-26
 # - 수정 기록:
+#   1.17.1-hotfix10: 유령성 던전선택 '2nd' 층 버튼 미인식 결함 완치 - 던전선택 화면 배경의 반투명 유령
+#     연출(캐릭터 전신 스노우노이즈)이 버튼 텍스트 배경에도 옅게 묻어, 고정 이진화 문턱 160에서 매칭
+#     점수가 0.72까지 떨어져(임계값 0.88 미달) 밤새(2026-08-26 00:03~10:23, 7시간+) 단 한 번도 던전에
+#     진입하지 못하고 2초 간격 무한 재시도만 반복하던 실전 결함 완치. 신규 `find_and_click_template_multipass()`
+#     로 교체해 문턱 160/150을 순차 시도(신뢰도 임계값 0.88은 그대로 유지) - 실측 검증 결과 문턱 150에서
+#     점수 0.90으로 회복, 다른 구역 버튼과의 오탐 여유도 0.10 이상 확보. 이 계기로 "배경이 바뀔 수 있는
+#     선택지형 화면은 멀티패스를 기본으로" 컨벤션을 CLAUDE.md/AGENTS.md에 문서화.
 #   1.17.1-hotfix9: (1) 목요일 콘텐츠 추가 점검 후 리소스 다운로드가 기가바이트 단위로 나오면 recover_app_startup()의
 #     35회(약 2분) 스킵가드 예산이 그대로 소진돼 다운로드 도중 에뮬레이터가 강제 리부트되던 결함 완치 - 알려진 팝업
 #     처리 시마다 예산 리셋 + 다운로드 확인 버튼 클릭 시점부터 20분(DOWNLOAD_GRACE_SECONDS) 유예 추가.
@@ -1317,6 +1324,30 @@ def find_and_click_template(device, img_np, thresh_temp, threshold_val=0.70):
         return True
     return False
 
+# 🚨 [2026-08-26 유령성 던전선택 '2nd' 층 버튼 미인식 결함 완치] 실전 확인: 던전선택 화면 배경의 반투명
+# 유령 연출(캐릭터 전신 스노우노이즈)이 UI 텍스트 배경에도 옅게 깔려, 고정 이진화 문턱 160에서 글자 획이
+# 끊겨 매칭 점수가 0.72까지 떨어짐(원래 0.88 임계값은 이 정도 여유를 두고 튜닝된 값이었음) - 밤새(00:03~10:23,
+# 7시간+) 단 한 번도 진입하지 못하고 2초 간격으로 무한 재시도만 반복함. 실측 결과 이 화면에서는 이진화 문턱을
+# 150으로 살짝만 낮추면 점수가 0.90까지 회복되고(다른 구역 행과의 오탐 여유도 0.10 이상 유지), 문턱 160(기존
+# 정상 화면 기준)과 150(이 노이즈 화면 기준) 두 패스를 순차 시도하면 양쪽 다 커버된다. 신뢰도 임계값 자체는
+# 건드리지 않고 이진화 문턱만 다르게 시도 - 상자/피안개 대응 때 쓴 것과 동일한 원칙(check_template_present_multipass).
+def find_and_click_template_multipass(device, img_np, thresh_temp, threshold_val=0.70, bin_passes=(160, 150)):
+    if thresh_temp is None or img_np is None: return False
+    h_img, w_img = img_np.shape[:2]
+    h_temp, w_temp = thresh_temp.shape[:2]
+    if h_img < h_temp or w_img < w_temp: return False
+
+    gray_img = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+    for bin_th in bin_passes:
+        _, thresh_img = cv2.threshold(gray_img, bin_th, 255, cv2.THRESH_BINARY)
+        result = cv2.matchTemplate(thresh_img, thresh_temp, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, max_loc = cv2.minMaxLoc(result)
+        if max_val > threshold_val:
+            h, w = thresh_temp.shape[:2]
+            device.shell(f"input tap {max_loc[0] + int(w / 2)} {max_loc[1] + int(h / 2)}")
+            return True
+    return False
+
 def find_and_click_grayscale_template(device, img_np, thresh_temp, threshold_val=0.70):
     # 이진화 없이 순수 그레이스케일 매칭 (마을/던전마다 조명 차이가 큰 도장용, load_grayscale_template와 짝을 이룸)
     if thresh_temp is None or img_np is None: return False
@@ -1884,8 +1915,10 @@ def start_grand_orchestrator():
                 
                 if DUNGEON_NAME == "북쪽의 유령선":
                     # 파판 던전 층계 버튼 이진화 매치 터치 (오검출 방지를 위해 임계값을 0.88로 대폭 상향 튜닝)
+                    # 🚨 [2026-08-26] 유령성 배경의 반투명 노이즈 연출로 문턱 160만으로는 밤새 매칭 실패하던 결함 완치 -
+                    # 문턱 160/150 순차 시도로 교체(신뢰도 임계값 0.88은 그대로 유지).
                     print(f"📋 [던전선택 - FFXI] '{DUNGEON_FLOOR_NAME}' 층 버튼 도장 정밀 조준을 시도합니다.")
-                    if find_and_click_template(device, img_np, t_enter_dungeon, 0.88):
+                    if find_and_click_template_multipass(device, img_np, t_enter_dungeon, 0.88, bin_passes=(160, 150)):
                         print(f"👉 [던전선택 - FFXI] '{DUNGEON_FLOOR_NAME}' 진입 버튼 격파 성공!")
                         click_success = True
                     else:
