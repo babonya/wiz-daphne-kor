@@ -199,6 +199,28 @@ def is_our_python_process(pid, valid_images=("python.exe",)):
         return False
 
 
+def find_parent_cmd_pid(pid):
+    # 💡 [2026-08-28] /start가 `start "" "bat"`로 새 cmd.exe 창을 띄우고 그 안에서 python.exe를 구동하는데,
+    # /stop이 python.exe PID만 taskkill하면 이 창을 띄운 부모 cmd.exe는 빈 채로(검은 화면) 남아있었음
+    # (사용자 실전 확인). python.exe PID를 죽이기 전에 미리 부모 PID를 조회해두고, 그 부모가 실제로
+    # cmd.exe일 때만(다른 방식으로 기동됐을 경우 엉뚱한 창을 건드리지 않도록) 반환한다.
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             f'(Get-CimInstance Win32_Process -Filter "ProcessId={pid}").ParentProcessId'],
+            capture_output=True, text=True, timeout=5, creationflags=NO_WINDOW
+        )
+        ppid_str = result.stdout.strip()
+        if not ppid_str.isdigit():
+            return None
+        ppid = int(ppid_str)
+        if is_our_python_process(ppid, valid_images=("cmd.exe",)):
+            return ppid
+        return None
+    except Exception:
+        return None
+
+
 def is_macro_running():
     pid = read_pid()
     if pid is None:
@@ -601,11 +623,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._respond(200, "이미 정지 상태입니다.")
                 return
             try:
+                # 💡 부모 cmd.exe 창(있다면)까지 같이 닫기 위해, python.exe를 죽이기 전에 미리 부모 PID를
+                # 조회해둔다(죽인 뒤엔 프로세스가 사라져 WMI 조회가 안 됨).
+                parent_cmd_pid = find_parent_cmd_pid(pid)
                 subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True, timeout=5, creationflags=NO_WINDOW)
+                if parent_cmd_pid:
+                    subprocess.run(["taskkill", "/PID", str(parent_cmd_pid), "/F"], capture_output=True, timeout=5, creationflags=NO_WINDOW)
                 if os.path.exists(PID_FILE):
                     os.remove(PID_FILE)
                 self._respond(200, f"매크로(PID {pid})를 정지했습니다.")
-                print(f"■ [원격 정지] PID={pid}")
+                print(f"■ [원격 정지] PID={pid}" + (f" (콘솔창 PID={parent_cmd_pid}도 함께 종료)" if parent_cmd_pid else ""))
             except Exception as e:
                 self._respond(500, f"정지 실패: {e}")
 
