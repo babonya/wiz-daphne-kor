@@ -1,5 +1,6 @@
 @echo off
-title Wizardry Daphne Antigravity Bot - 1.17.1-hotfix10
+echo GHOST_2F_MINE> "%~dp0daphne_preset_id.txt"
+title Daphne - Ghost2F Mine
 cd /d "%~dp0"
 set MACRO_SESSION_START=%date% %time%
 echo Starting Wizardry Daphne Bot...

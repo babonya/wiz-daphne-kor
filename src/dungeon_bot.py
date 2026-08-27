@@ -523,6 +523,78 @@ def find_checkpoint_btn_coords(img_np, t_act, t_deact, threshold_val=0.70):
     if coords: return coords
     return find_and_get_field_btn_coords(img_np, t_deact, threshold_val)
 
+# 🚨 [2026-08-28 상자파밍 이동 재개 도입] 광석파밍 루트에서 이미 실전 검증된 "재개(1번 Redo)" 버튼 패턴
+# (find_checkpoint_btn_coords + t_move_resume_act/deact)을 상자파밍(힐/전투/상자 처리 직후)에도 재사용한다.
+# 던전 필드에서 멈춰서 확인하는 시간 자체가 기습 위험이라, 중단된 이동을 처음부터 다시 찾지 않고 "재개"
+# 버튼으로 즉시 이어간다. 버튼을 못 찾으면 아무 것도 안 하고 'not_found'만 반환 - 호출부는 다음 정상
+# FIELD_WAIT 사이클(상자 버튼)이 자연스럽게 이어받도록 그대로 둔다. 반환값: 'not_found' | 'moved' |
+# 'no_chest' | 'none'.
+def try_resume_move(device, img_np, t_move_resume_act, t_move_resume_deact, t_no_chest=None):
+    resume_coords = find_checkpoint_btn_coords(img_np, t_move_resume_act, t_move_resume_deact, 0.70)
+    if not resume_coords:
+        return 'not_found'
+    rx, ry = resume_coords
+    print(f"⏭️ [이동 재개] '재개(1번 Redo)' ({rx}, {ry}) 터치 주입")
+    safe_device_shell(device, f"input tap {rx} {ry}")
+
+    time.sleep(0.5)
+    prev_mini = None
+    h, w = img_np.shape[:2]
+    scale_x, scale_y = w / 1440.0, h / 2560.0
+    for _step in range(2):
+        try:
+            raw = device.screencap()
+            if raw is None: continue
+            img_np_sub = np.array(Image.open(io.BytesIO(raw)))
+        except Exception:
+            continue
+
+        if t_no_chest is not None and check_template_present(img_np_sub, t_no_chest, 0.55):
+            return 'no_chest'
+
+        gray_sub = cv2.cvtColor(img_np_sub, cv2.COLOR_RGB2GRAY)
+        mini = gray_sub[int(115 * scale_y):int(315 * scale_y), int(1117 * scale_x):int(1317 * scale_x)]
+        if prev_mini is not None:
+            diff = cv2.absdiff(mini, prev_mini)
+            if (np.mean(diff) / 255.0) >= 0.05:
+                return 'moved'
+        prev_mini = mini
+        time.sleep(0.3)
+
+    return 'none'
+
+# 🚨 [2026-08-28 재개 오진 방지 - 사용자 확정 설계] 재개 버튼이 이미 도착한 예전 목적지를 다시 가리켜서
+# "없습니다" 토스트가 뜰 수 있다. 이걸 곧바로 던전 나가기 신호로 오인하지 않도록, 상자 버튼(4번)으로 한
+# 번 더 확인한 뒤에도 없을 때만 진짜 "상자 없음"으로 판정한다. 반환값: True면 진짜 상자 없음(나가기로
+# 전환), False면 정상(다음 FIELD_WAIT 사이클에 맡김).
+def resume_or_confirm_chest(device, img_np, t_move_resume_act, t_move_resume_deact,
+                             t_move_chest_act, t_move_chest_deact, t_no_chest):
+    outcome = try_resume_move(device, img_np, t_move_resume_act, t_move_resume_deact, t_no_chest)
+    if outcome != 'no_chest':
+        return False
+
+    print("⚠️ [재개 오진 방지] 재개 중 '없습니다' 감지 - 상자 버튼으로 1회 재확인합니다.")
+    try:
+        raw = device.screencap()
+        img_check = np.array(Image.open(io.BytesIO(raw))) if raw else img_np
+    except Exception:
+        img_check = img_np
+    coords = find_chest_btn_coords(img_check, t_move_chest_act, t_move_chest_deact, 0.70)
+    if not coords:
+        return False
+    cx, cy = coords
+    safe_device_shell(device, f"input tap {cx} {cy}")
+    time.sleep(0.5)
+    try:
+        raw2 = device.screencap()
+        img_check2 = np.array(Image.open(io.BytesIO(raw2))) if raw2 else img_check
+    except Exception:
+        img_check2 = img_check
+    if check_template_present(img_check2, t_no_chest, 0.55):
+        print("📦🚫 [상자 없음 재확인] 재개+상자 버튼 둘 다 '없습니다' - 진짜 없는 것으로 판정, 탈출로 전환합니다.")
+        return True
+    return False
+
 def find_and_get_coords_dynamic(img_np, thresh_temp, threshold_val=0.68, min_brightness_thresh=160):
     if thresh_temp is None or img_np is None: return None
     h_img, w_img = img_np.shape[:2]
@@ -974,7 +1046,13 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     t_field = load_grayscale_template("templates/Field/field_anchor.png")
     t_open_minimap = load_grayscale_template("templates/Field/open_minimap.png")
     t_move_exit = load_grayscale_template("templates/Field/exit_dungeon.png")
-    t_harken_blessing_donothing = load_grayscale_template("templates/Field/harken_blessing_donothing.png")
+    # 🚨 [2026-08-27 하켄 메뉴 판정 여유 확보] check_and_handle_harken_menu()가 이 도장을
+    # check_template_present()(라이브 화면 이진화 160 후 비교)로 매칭하는데, 도장 자체는 원본
+    # 그레이스케일로 로드돼 있어 "이진화 화면 vs 비이진화 도장" 불일치가 있었음. 실측(2026-08-27,
+    # 하켄 사당 화면): 현재 방식 0.786(통과선 0.70, 여유 0.086) vs 도장도 이진화 시 0.997(여유 0.30).
+    # 아직 통과는 했지만 여유가 얇아 조명/압축 조건에 따라 실패할 수 있어 다른 도장들과 동일하게
+    # load_template(이진화)로 통일한다.
+    t_harken_blessing_donothing = load_template("templates/Field/harken_blessing_donothing.png")
     
     t_move_chest_act = load_grayscale_template("templates/Field/chest_act.png")
     t_move_chest_deact = load_grayscale_template("templates/Field/chest_deact.png")
@@ -1151,6 +1229,38 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                 last_state_changed_time = time.time()
                 return False, skill_mission_success_this_combat, need_pickaxe_refill
 
+        # 🚨 [2026-08-27 유령성 4층 상자파밍 신규 진입 시퀀스] 4층은 던전선택 층 버튼이 없어(자동이동 버그로 한 번에
+        # 못 감), 3층(floor="3rd")으로 진입한 뒤 미니맵 체크포인트 이동 + 수동 스와이프(좌→상×2)로 걸어서 4층
+        # 문을 통과해야 함. 실기 검증 완료(2026-08-27, 사용자와 함께 라이브 ADB로 좌표/스와이프 순서 확정): 체크포인트
+        # 버튼 탭 → 좌스와이프(방향 전환) → 상스와이프 ×2(전진 2칸) → 검은 로딩 화면(과도기, 위 mean_brightness<5.0
+        # 가드가 이미 처리) → 4층 필드 도착(도착 직후 바로 전투 조우 가능 - 정상). from_dungeon_select일 때만
+        # 발동시켜(재시작 중 이미 4층 안에 있는 경우 재발동해 엉뚱하게 또 이동하는 사고 방지) 최초 1회만 실행한다.
+        if dungeon_name == "북쪽의 유령선" and farming_method == "상자파밍" and from_dungeon_select and is_initial_start:
+            if check_field_anchor_present(img_np, t_field, field_threshold):
+                print("🚪 [유령성 4층 진입] 3층 필드 도착 확인 - 체크포인트 이동 + 스와이프로 4층 진입을 시도합니다.")
+                is_initial_start = False
+                check_coords = find_checkpoint_btn_coords(img_np, t_move_check_act, t_move_check_deact, 0.70)
+                if check_coords:
+                    print(f"      👉 [체크포인트] 버튼 탭 ({check_coords[0]}, {check_coords[1]})")
+                    safe_device_shell(device, f"input tap {check_coords[0]} {check_coords[1]}")
+                else:
+                    print("      ⚠️ [체크포인트] 버튼 미검출. 실측 고정 좌표(1210, 578)로 강제 탭합니다.")
+                    safe_device_shell(device, "input tap 1210 578")
+                time.sleep(3.0)
+
+                h_e, w_e = img_np.shape[:2]
+                scale_x, scale_y = w_e / 1440.0, h_e / 2560.0
+                print("      👉 [4층 진입] 좌측 스와이프(방향 전환)")
+                safe_device_shell(device, f"input swipe {int(1000*scale_x)} {int(1400*scale_y)} {int(400*scale_x)} {int(1400*scale_y)} 300")
+                time.sleep(1.0)
+                for _ in range(2):
+                    print("      👉 [4층 진입] 전진 스와이프(1칸)")
+                    safe_device_shell(device, f"input swipe {int(720*scale_x)} {int(1500*scale_y)} {int(720*scale_x)} {int(900*scale_y)} 300")
+                    time.sleep(1.5)
+
+                last_state_changed_time = time.time()
+                continue
+
         # 🌐 [통합 네트워크 에러 감시 가드]
         if check_template_present(img_np, t_err_retry, 0.70):
             print("🌐⚠️ [네트워크 가드] 'Error_retry.png' 포착! 즉시 재시도 터치를 주입합니다.")
@@ -1310,11 +1420,35 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     continue
 
             if not combat_active:
+                # 🚨 [2026-08-27 던전 나가기 하켄 메뉴 인식 결함 완치 - 2차] 이전에 TRIGGER_EXIT 상태 분기
+                # 안쪽에만 하켄 체크를 넣었었는데, 그 분기는 이 공용 전처리 블록(state와 무관하게 매 틱 먼저
+                # 실행됨)이 먼저 "화면 과도기"로 잡아 continue해버려서 도달 자체가 안 되는 죽은 코드였음(실전
+                # 로그로 확인: 2026-08-27 21:06경, 하켄 메뉴가 뜬 채로 화면 과도기 1~10회를 계속 반복하며 5분
+                # 이상 정체). 상태 분기 진입 전인 여기서 먼저 잡아야 TRIGGER_EXIT뿐 아니라 어떤 상태에서
+                # 하켄이 뜨든 전부 커버된다(사용자 확인: 앞으로 던전 나가기 대부분이 하켄을 거칠 것).
+                harken_menu_state_common = check_and_handle_harken_menu(
+                    device, t_harken_blessing_donothing, t_harken_return, img_np=img_np, t_yeolda=t_yeolda
+                )
+                if harken_menu_state_common in ("returned", "blessing"):
+                    print(f"   ➔ 🚪 [공용 하켄 가드] 하켄 메뉴 감지, '{harken_menu_state_common}' 처리 완료.")
+                    transition_delay_count = 0
+                    time.sleep(2.0)
+                    last_state_changed_time = time.time()
+                    continue
+
                 if check_template_present_multipass(img_np, t_yeolda, yeolda_threshold):
                     transition_delay_count = 0
                     if yeolda_stuck_retry_count < 3:
                         yeolda_stuck_retry_count += 1
-                        print(f"⚠️ [블랙박스 상자 해제 갇힘 복구] '열다'가 보이나 진입 실패 상태입니다. 상자 오프닝을 재시도합니다. ({yeolda_stuck_retry_count}/3)")
+                        # 🚨 [2026-08-28 상자 첫 감지 오해성 로그 정정] 이 분기는 AUTO_MOVING이 아닌 상태(부팅
+                        # 직후 재연결 등)에서 '열다'를 처리하는 공용 경로라, 실제로는 아무것도 실패한 적 없는
+                        # 첫 감지에도 카운터가 1부터 찍혀 "갇힘 복구...진입 실패" 경고 문구가 매번 떴었다
+                        # (기능은 정상, 문구만 오해의 소지). 첫 회는 중립적인 정상 감지 문구로, 진짜 재시도인
+                        # 2/3회차부터만 경고 문구를 쓴다.
+                        if yeolda_stuck_retry_count == 1:
+                            print("📦 [메인] '열다' 감지(공용 경로)! 상자 해제 시퀀스로 진입.")
+                        else:
+                            print(f"⚠️ [블랙박스 상자 해제 갇힘 복구] '열다'가 보이나 진입 실패 상태입니다. 상자 오프닝을 재시도합니다. ({yeolda_stuck_retry_count}/3)")
                         if chest_opener.open_and_disarm_chest(device, img_np, t_yeolda, chest_opener_slot=chest_opener_slot, masked_adventurer_slot=masked_adventurer_slot):
                             state = "BRANCH_CHECK"
                         last_state_changed_time = time.time()
@@ -1336,12 +1470,43 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                         if state == "IN_COMBAT":
                             print("🎉 [전투 종료 감지] 배속 마크 소멸 및 필드 안착 확인! (came_from_combat = True)")
                             came_from_combat = True
+                            # 🚨 [2026-08-28 정비 후 엉뚱한 좌표 재탭 결함 완치] last_target_coords는 "상자 이동"
+                            # 버튼(AUTO_MOVING)과 "출구 이동" 버튼(TRIGGER_EXIT) 둘 다가 공유하는 단일 변수라,
+                            # 전투 돌입 전 마지막으로 누른 게 출구 버튼이었으면 그 좌표가 그대로 남아있다가
+                            # 전투 종료 후 힐링 완료 시점에 "즉각 이동 재개" 로직이 엉뚱하게 출구 버튼을
+                            # 재탭하는 사고를 실전 로그로 확인(2026-08-28 00:52경, 사용자 지적). 전투가 끝나면
+                            # 전투 전 상황은 이미 무효화된 것이므로 여기서 초기화해 다음 정상 사이클(상자 이동
+                            # 시도)이 새로 좌표를 잡게 한다.
+                            last_target_coords = None
+                            # 🚨 [2026-08-28 이동 재개 최적화 - hotfix] 전투 종료 직후 "재개(1번 Redo)" 버튼으로
+                            # 중단된 이동을 즉시 이어간다(광석파밍에서 이미 검증된 패턴 재사용). 못 찾으면
+                            # 아무 것도 안 하고 다음 정상 FIELD_WAIT 사이클(상자 버튼)이 맡는다.
+                            # 🚨 [hotfix] resume_or_confirm_chest()가 "없습니다"를 확정해도 여기서 곧장
+                            # TRIGGER_EXIT로 넘기지 않는다 - came_from_combat 플래그는 FIELD_WAIT 상태의
+                            # 전투 카운트/need_heal 집계 지점(아래 "1. 전투 종료 복구 검증")에서 소비돼야 하는데,
+                            # 여기서 바로 TRIGGER_EXIT로 새면 그 집계가 건너뛰어져 힐링 판단이 몇 분 뒤(다음
+                            # FIELD_WAIT 안착 시점)까지 미뤄지는 결함을 실전 로그로 확인함(2026-08-28 01:56경,
+                            # 사용자 지적: 전투 끝나고 한참 뒤, 하켄 나가기 직후에야 뜬금없이 힐링 발동). 항상
+                            # FIELD_WAIT로 보내 그 집계가 먼저 실행되게 하고, 진짜 상자 없음 판정은 그 다음
+                            # 정상 사이클의 기존 로직에 맡긴다.
+                            if farming_method == "상자파밍":
+                                resume_or_confirm_chest(
+                                    device, img_np, t_move_resume_act, t_move_resume_deact,
+                                    t_move_chest_act, t_move_chest_deact, t_no_chest
+                                )
                             state = "FIELD_WAIT"
                             time.sleep(2.0)  # 전투 종료 안착 연출 마진
                             continue
                         elif state in ["BRANCH_CHECK", "PLAY_MINIGAME", "CLEAR_CHECK"]:
                             print("✨ [상자깡 완료 감지] 상자 처리 후 필드 안착 확인! (came_from_chest = True)")
                             came_from_chest = True
+                            # 🚨 [2026-08-28 hotfix] 위 전투 종료 지점과 동일 사유 - came_from_chest도 아래
+                            # "2. 상자 정산 완료 후 복귀 검증" 지점에서 소비돼야 하므로 항상 FIELD_WAIT로 보낸다.
+                            if farming_method == "상자파밍":
+                                resume_or_confirm_chest(
+                                    device, img_np, t_move_resume_act, t_move_resume_deact,
+                                    t_move_chest_act, t_move_chest_deact, t_no_chest
+                                )
                             state = "FIELD_WAIT"
                             continue
                         state = "FIELD_WAIT"
@@ -1492,7 +1657,22 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                             low_threshold_active_until = 0.0
                             event_counter = 0
                             need_heal = False
-                            if last_target_coords:
+                            # 🚨 [2026-08-28 이동 재개 최적화] 상자파밍은 정비 직후 "재개(1번 Redo)" 버튼으로
+                            # 이동을 이어간다. 예전엔 last_target_coords를 그대로 재탭했는데, 상자/출구 버튼이
+                            # 공유하는 단일 변수라 엉뚱한 버튼을 재탭하는 사고가 있었음(오늘 완치). 다른
+                            # 파밍방식(광석파밍 등)은 기존 방식 그대로 유지한다.
+                            if farming_method == "상자파밍":
+                                if resume_or_confirm_chest(
+                                    device, img_np, t_move_resume_act, t_move_resume_deact,
+                                    t_move_chest_act, t_move_chest_deact, t_no_chest
+                                ):
+                                    state = "TRIGGER_EXIT"
+                                    exit_start_time = time.time()
+                                    exit_clicked_once = False
+                                    exit_stuck_count = 0
+                                    exit_prev_minimap = None
+                                    last_click_time = 0.0
+                            elif last_target_coords:
                                 print(f"⏭️ [즉각 이동 재개] 정비 직후 딜레이 파쇄! 이전 타겟 좌표 ({last_target_coords[0]}, {last_target_coords[1]}) 즉시 재사격")
                                 safe_device_shell(device, f"input tap {last_target_coords[0]} {last_target_coords[1]}")
                                 last_click_time = 0.0
@@ -1650,25 +1830,26 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                         coords = find_chest_btn_coords(img_np, t_move_chest_act, t_move_chest_deact, 0.70)
                     if coords:
                         cx, cy = coords
-                        print(f"📦 [상자 이동 시도] '상자 자동 이동' ({cx}, {cy}) 2회 정밀 연사 터치(더블 탭)합니다.")
-                        safe_device_shell(device, f"input tap {cx} {cy}")
-                        time.sleep(0.25)
+                        # 🚨 [2026-08-28 상자 이동 대기시간 단축] 미니맵 이동 여부와 무관하게 항상 2연타부터
+                        # 찍던 걸 1회 탭으로 변경 - 던전 필드에서 멈춰서 확인하는 시간 자체가 가장 위험한
+                        # 구간(기습 위험)이라는 사용자 판단에 따라, 1차 탭으로 충분한 대부분의 경우 탭 간격
+                        # 0.25초를 아낀다. 씹힘으로 진짜 반응이 없었던 경우는 아래 재시도(retry_cnt==1)에서
+                        # 그대로 다시 1회 탭한다.
+                        print(f"📦 [상자 이동 시도] '상자 자동 이동' ({cx}, {cy}) 터치합니다.")
                         safe_device_shell(device, f"input tap {cx} {cy}")
                         last_click_time = time.time()
                         last_target_coords = (cx, cy)
-                        
+
                         action_success = False
                         opened = False
                         toast_detected = False
-                        
+
                         for retry_cnt in range(2): # 최초 1회 + 씹힘 시 재시도 1회
                             if retry_cnt > 0:
-                                print(f"🔄 [상자 터치 재시도] 터치 씹힘 감지되어 2회 다시 연사 누릅니다. ({cx}, {cy})")
-                                safe_device_shell(device, f"input tap {cx} {cy}")
-                                time.sleep(0.25)
+                                print(f"🔄 [상자 터치 재시도] 터치 씹힘 감지되어 다시 누릅니다. ({cx}, {cy})")
                                 safe_device_shell(device, f"input tap {cx} {cy}")
                                 last_click_time = time.time()
-                            
+
                             time.sleep(0.5)
                             prev_mini = None
                             moved = False
@@ -1781,8 +1962,50 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                 guksu_done = False
                 auto_combat_paused_for_skill = False
                 combat_entry_start_time = time.time() 
-                last_empty_shortcut_detected_time = 0 
+                last_empty_shortcut_detected_time = 0
                 continue
+
+            # 🚨 [2026-08-27 TRIGGER_EXIT 하켄 메뉴 미처리 결함 완치 - 이제 대부분 위쪽 "공용 하켄 가드"에서
+            # 먼저 잡힘] 원래 여기 있던 사유: TRIGGER_EXIT 루프가 check_and_handle_harken_menu()를 호출한
+            # 적이 없어 하켄 메뉴가 뜬 채로 "화면 과도기" 폴링만 반복하다 엉뚱한 뒤로가기 폴백으로 빠지던 결함
+            # (2026-08-27 20:17경 실전 확인). 이후 재확인 결과, "화면 과도기" 프린트 자체가 이 TRIGGER_EXIT
+            # 분기보다 훨씬 앞쪽의 공용 전처리 블록(state 무관하게 매 틱 먼저 도는 코드, 1350행 부근)에서
+            # 나오는 것이었고, 그 블록이 먼저 continue해버려서 아래 이 체크는 사실상 도달 못 하는 죽은 코드였음
+            # (2026-08-27 21:06경 실전 로그로 재확인). 그래서 그 공용 전처리 블록에 동일 체크를 추가함 - 이제
+            # 대부분의 경우 거기서 먼저 잡힌다. 여기는 혹시 모를 예외 경로(공용 블록을 우회해 TRIGGER_EXIT에
+            # 진입하는 경우)를 위한 2차 안전망으로 남겨둔다.
+            harken_menu_state_exit = check_and_handle_harken_menu(
+                device, t_harken_blessing_donothing, t_harken_return, img_np=img_np, t_yeolda=t_yeolda
+            )
+            if harken_menu_state_exit in ("returned", "blessing"):
+                print(f"   ➔ 🚪 [TRIGGER_EXIT 하켄 가드] 나가기 도중 하켄 메뉴 감지, '{harken_menu_state_exit}' 처리 완료.")
+                time.sleep(2.0)
+                last_click_time = time.time()
+                exit_prev_minimap = None
+                continue
+
+            # 🚨 [2026-08-27 유령성 상자파밍 나가기 경로탐색 버그 완치] 실기 검증 완료(사용자와 라이브 ADB로 확인):
+            # 4층 상자 소진 후 나가기로 3층 체크포인트 바로 앞까지 넘어온 상태에서 나가기를 다시 누르면 "목적지로
+            # 가는 경로를 찾을 수 없습니다" 토스트가 뜨며 매번 실패한다(해당 타일에서의 경로탐색 버그로 추정).
+            # 전진 스와이프 1회로 그 타일을 벗어난 뒤 나가기를 재탭하면 확실히 해소됨. exit_clicked_once 여부와
+            # 무관하게(1차 탭이든 정체 재시도든) 이 토스트가 보이면 즉시 잡아서 처리한다.
+            if dungeon_name == "북쪽의 유령선" and farming_method == "상자파밍":
+                if check_template_present(img_np, t_no_chest, 0.55):
+                    print("⚠️ [나가기 경로탐색 버그 감지] '경로를 찾을 수 없습니다' 토스트 확인 - 전진 스와이프 후 나가기를 재시도합니다.")
+                    h_s, w_s = img_np.shape[:2]
+                    scale_x_s, scale_y_s = w_s / 1440.0, h_s / 2560.0
+                    safe_device_shell(device, f"input swipe {int(720*scale_x_s)} {int(1500*scale_y_s)} {int(720*scale_x_s)} {int(900*scale_y_s)} 300")
+                    time.sleep(1.5)
+                    coords_exit_retry = find_and_get_field_btn_coords(img_np, t_move_exit, 0.70)
+                    if not coords_exit_retry:
+                        coords_exit_retry = (1338, 461)
+                    safe_device_shell(device, f"input tap {coords_exit_retry[0]} {coords_exit_retry[1]}")
+                    time.sleep(0.2)
+                    safe_device_shell(device, f"input tap {coords_exit_retry[0]} {coords_exit_retry[1]}")
+                    last_click_time = time.time()
+                    exit_prev_minimap = None
+                    exit_stuck_count = 0
+                    continue
 
             exit_touched_this_loop = False
             # 출구 버튼 터치 (최초 1회 터치)
@@ -1791,7 +2014,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     coords_exit = find_and_get_field_btn_coords(img_np, t_move_exit, 0.70)
                     if coords_exit:
                         ex, ey = coords_exit
-                        print(f"⏭️ [던전 탈출 시도] '출구 이동' 단추를 0.2초 간격으로 2회 연속 터치합니다. ({ex}, {ey})")
+                        print(f"⏭️ [던전 탈출 시도] '출구 이동' ({ex}, {ey}) 터치합니다.")
                         safe_device_shell(device, f"input tap {ex} {ey}")
                         time.sleep(0.2)
                         safe_device_shell(device, f"input tap {ex} {ey}")
@@ -1871,14 +2094,29 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                         raise RuntimeError(f"탈출 {exit_watchdog_seconds:.0f}초 초과 앱 강제 재시작: {elapsed_exit_time}초 동안 탈출하지 못하여 프로세스 강제 리셋을 수행합니다.")
                     
                     exit_recovery_retry_count += 1
-                    print(f"🚪🚨 [탈출 정체 복구 작동] 정지 감지로 백스텝 후 출구단추 0.1초 연사 터치를 단행합니다. (누적 경과: {elapsed_exit_time}초, 복구 시도 {exit_recovery_retry_count}회)")
-                    
-                    # 1. 백스텝 드래그 (뒤로 후진)
-                    sx = int(720 * scale_x)
-                    sy1 = int(1200 * scale_y)
-                    sy2 = int(1600 * scale_y)
-                    safe_device_shell(device, f"input swipe {sx} {sy1} {sx} {sy2} 300")
-                    time.sleep(1.0)
+
+                    # 🚨 [2026-08-27 유령성 4층 나가기 무한루프 완치] 4층에서 3층으로 내려온 직후 착지 타일은
+                    # 실기 확인 결과 "경로를 찾을 수 없습니다" 토스트조차 안 뜨고(위 나가기 경로탐색 버그 완치
+                    # 블록의 토스트 감지 조건이 무효화됨) 그냥 미니맵이 정지된 채로만 잡힘. 이 상태에서 범용
+                    # 백스텝(뒤로 후진, sy1→sy2가 아래 방향)으로는 같은 타일에 계속 갇혀 "출구 탭→정지 감지→
+                    # 백스텝→다시 정지" 무한 루프에 빠짐(실전 로그로 확인: 2026-08-27 19:43~19:46, 3사이클 이상
+                    # 반복하며 마을 복귀 실패). 사용자 확인: 이 지점은 뒤로가 아니라 "위로 한 발짝" 전진해야
+                    # 실제로 타일을 벗어난다 - 3층→4층 진입 시 썼던 전진 스와이프와 동일 좌표를 재사용한다.
+                    if dungeon_name == "북쪽의 유령선" and farming_method == "상자파밍":
+                        print(f"🚪🚨 [탈출 정체 복구 작동 - 유령성4층 전용] 정지 감지로 전진 스와이프(위로) 후 출구단추 0.1초 연사 터치를 단행합니다. (누적 경과: {elapsed_exit_time}초, 복구 시도 {exit_recovery_retry_count}회)")
+                        sx = int(720 * scale_x)
+                        sy1 = int(1500 * scale_y)
+                        sy2 = int(900 * scale_y)
+                        safe_device_shell(device, f"input swipe {sx} {sy1} {sx} {sy2} 300")
+                        time.sleep(1.5)
+                    else:
+                        print(f"🚪🚨 [탈출 정체 복구 작동] 정지 감지로 백스텝 후 출구단추 0.1초 연사 터치를 단행합니다. (누적 경과: {elapsed_exit_time}초, 복구 시도 {exit_recovery_retry_count}회)")
+                        # 1. 백스텝 드래그 (뒤로 후진)
+                        sx = int(720 * scale_x)
+                        sy1 = int(1200 * scale_y)
+                        sy2 = int(1600 * scale_y)
+                        safe_device_shell(device, f"input swipe {sx} {sy1} {sx} {sy2} 300")
+                        time.sleep(1.0)
                     
                     # 2. 출구 이동 단추 0.1초 간격 2회 탭핑
                     coords_exit = find_and_get_field_btn_coords(img_np, t_move_exit, 0.70)
@@ -2083,9 +2321,17 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
 
             if not check_combat_template_present(img_np, t_combat_in, 0.65) and not check_combat_template_present(img_np, t_combat_slow, 0.65):
                 print("🎉 배속마크 소멸! 필드로 주도권 복구 수순 가동. (연출 마진 확보를 위해 3.0초 슬로우 브레이크 가동)")
-                came_from_combat = True 
+                came_from_combat = True
+                last_target_coords = None  # 🚨 [2026-08-28] 위 IN_COMBAT 종료 지점과 동일 사유로 초기화
+                # 🚨 [2026-08-28 hotfix] 위 전투 종료 지점과 동일 사유 - came_from_combat 소비를 건너뛰지
+                # 않도록 곧장 TRIGGER_EXIT로 넘기지 않고 항상 FIELD_WAIT로 보낸다.
+                if farming_method == "상자파밍":
+                    resume_or_confirm_chest(
+                        device, img_np, t_move_resume_act, t_move_resume_deact,
+                        t_move_chest_act, t_move_chest_deact, t_no_chest
+                    )
                 state = "FIELD_WAIT"
-                time.sleep(3.0) 
+                time.sleep(3.0)
             else: time.sleep(0.3)
 
         elif state == "BRANCH_CHECK":

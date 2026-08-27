@@ -11,9 +11,10 @@ releases/
 # 실시간 구동 로그 파일 제외
 logs/
 
-# 매크로 런타임 상태 파일 (재시작 횟수 카운터, PID, 자동 생성/갱신됨)
+# 매크로 런타임 상태 파일 (재시작 횟수 카운터, PID, 프리셋 선택값, 자동 생성/갱신됨)
 restart_counter.txt
 macro.pid
+daphne_preset_id.txt
 
 # 원격 제어 개인 설정 (토큰/배치파일 경로 등 개인정보 포함, 자동 생성됨)
 remote_control/config.local.json

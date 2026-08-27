@@ -14,22 +14,51 @@ CURRENT_VERSION = "1.17.1-hotfix10" # 📋 [시스템 버전 변수] 업데이�
 # 💡 [프리셋 선택 방법 - 아래 두 줄 중 사용할 프리셋 줄만 남기고, 사용하지 않는 줄의 맨 앞에 # 을 붙여 비활성화하세요]
 #   (오타 방지를 위해 프리셋명을 직접 타이핑하지 마시고, 아래 두 줄의 # 위치만 바꿔서 전환하는 걸 권장합니다)
 
-ACTIVE_PRESET_NAME = "유령성 2층 채굴"  # 이 프리셋을 쓰시려면 이 줄은 그대로 두세요 (백아1층을 쓰려면 이 줄 맨 앞에 # 을 붙여 비활성화)
-#ACTIVE_PRESET_NAME = "백아1층 파밍"    # 백아1층을 쓰시려면 이 줄 맨 앞의 # 을 지우고, 위 줄 맨 앞에는 # 을 붙여주세요
+# 🚨 [2026-08-27 원격 프리셋 전환 지원 - 파일 기반으로 전환] 배치파일이 프로젝트 루트에
+# `daphne_preset_id.txt` 파일을 써두면 그 내용(영문 ID 한 줄)을 아래 매핑표로 실제 프리셋명(한글)으로
+# 변환해서 우선 사용하고, 파일이 없으면(기존처럼 직접 python main.py 실행 등) 아래 하드코딩 기본값을
+# 그대로 씁니다 - 기존 사용 방식은 전혀 안 바뀝니다.
+# ⚠️ 환경변수(`set DAPHNE_PRESET_ID=...`) 방식은 실측 결과 신뢰할 수 없어서 폐기했습니다 - 실제 원인은
+# 배치파일의 `title` 줄(한글+긴 문자열 조합)이 cmd.exe의 배치파일 파싱을 깨뜨려서, 그 여파로 완전히 무관해
+# 보이는 앞쪽의 `set` 줄까지 통째로 무시되는 결함이었음(2026-08-27 실기 이분탐색으로 확인 - `title`을 짧은
+# 영문으로 바꾸니 해결, 반대로 `set` 줄 자체는 순수 영문 값이면 `title` 없이는 항상 정상 작동했음). 파일
+# 쓰기/읽기는 이런 배치파일 파싱 취약점과 완전히 무관해 안정적으로 재현됨 - 그래도 안전하게 새 배치파일의
+# `title` 줄은 항상 짧고 영문으로만 쓸 것.
+# 배치파일에는 영문 ID 리터럴을 그대로 파일에 echo(변수 전개 없이 고정 문자열로) - 아래 PRESET_ID_MAP에서
+# 한글 프리셋명으로 변환합니다. 새 프리셋을 원격으로 켜고 싶으면: (1) presets.json에 프리셋 추가, (2) 아래
+# PRESET_ID_MAP에 영문ID: 프리셋명 한 줄 추가, (3) 새 .bat 파일에
+# `echo 영문ID> daphne_preset_id.txt` 한 줄만 추가(remote_control/server.py가 루트의 모든 .bat을 자동으로
+# 원격 대시보드 드롭다운에 올려주므로 서버 쪽은 손댈 필요 없음).
+PRESET_ID_MAP = {
+    "GHOST_2F_MINE": "유령성 2층 채굴",
+    "GHOST_4F_CHEST": "유령성 4층 상자파밍",
+    "WOLF_1F_CHEST": "백아1층 파밍",
+}
+_preset_id_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "daphne_preset_id.txt")
+_preset_id_from_file = None
+try:
+    if os.path.exists(_preset_id_file):
+        with open(_preset_id_file, "r", encoding="utf-8") as _f:
+            _preset_id_from_file = _f.read().strip()
+except Exception:
+    _preset_id_from_file = None
+ACTIVE_PRESET_NAME = PRESET_ID_MAP.get(_preset_id_from_file, "유령성 2층 채굴")  # 이 프리셋을 쓰시려면 이 줄은 그대로 두세요
+#ACTIVE_PRESET_NAME = "백아1층 파밍"    # 백아1층을 쓰려면 이 줄 맨 앞의 # 을 지우고, 위 줄 맨 앞에는 # 을 붙이세요
+#ACTIVE_PRESET_NAME = "유령성 4층 상자파밍"    # 유령성 4층 상자먹튀를 쓰려면 이 줄 맨 앞의 # 을 지우고, 위 줄들 맨 앞에는 # 을 붙이세요
 
-LIMIT_DUNGEON_LOOPS = 2             # 🔄 [마을 회군 기준] 던전을 몇 바퀴 돌고 마을(여관)로 복귀할지 설정
+LIMIT_DUNGEON_LOOPS = 5             # 🔄 [마을 회군 기준] 던전을 몇 바퀴 돌고 마을(여관)로 복귀할지 설정
                                     #    0으로 설정 시 상자파밍은 회군 없이 무한 주회합니다. (광석파밍은 이 값과 무관하게 곡괭이가 소진될 때까지 항상 무한 재진입하므로, 광석파밍 프리셋에서는 이 값이 아무 영향도 없습니다.)
 START_RUN_COUNT_OFFSET = 1          # 🚀 [초기 부팅 주회 카운트] 매크로 시작 시 초기 주회 offset 수치 (초기값=던전루프와 같은 수치, 던전에서 시작하면 해당 주회 후 복귀, 마을이면 숙박 후 주회 시작)
 ENABLE_FIRST_COMBAT_SKILL = 0       # ⚔️ [초기 전투 스킬 제어] (⚠️ 현재 미구현으로 추후 구현 예정이니 무조건 0으로 고정해 주세요) (0: Off, 1: On)
 ENABLE_HEAL_AFTER_CHEST = 0         # 📦 [상자 개방 후 힐링] 상자 해제/개방 성공 후 긴급 파티 치료(정비)를 작동할지 설정 (0: Off, 1: On)
-HEALING_LOOPS = 1                   # 💊 [전투 후 정비 주기] 몇 회의 전투마다 파티 힐링 정비를 수행할지 설정
+HEALING_LOOPS = 5                   # 💊 [전투 후 정비 주기] 몇 회의 전투마다 파티 힐링 정비를 수행할지 설정
                                     #    - 1: 매 전투 종료 시 필드 복귀 직후 즉시 힐링 시퀀스 실행
                                     #    - 2: 2회 전투 치를 때마다 힐링 시퀀스 실행 (누적 카운트 기준)
                                     #    - 0: 전투 후 자동 힐링 정비 비활성화 (체력 소진 시까지 계속 전투 진행)
 
 # 🏥 [힐러 및 주인공 슬롯 설정]
 HEALER_SLOT = 5                         # 💊 [힐러 캐릭터 슬롯 번호] 1번~6번 슬롯 중 주 힐러(스켈톤 등)의 배치 슬롯
-MASKED_ADVENTURER_SLOT = 6              # 👤 [주인공 캐릭터 슬롯 번호] 1번~6번 슬롯 중 주인공의 배치 슬롯 (2번 사망 시 주인공이 앞으로 밀릴 수 있음)
+MASKED_ADVENTURER_SLOT = 2              # 👤 [주인공 캐릭터 슬롯 번호] 1번~6번 슬롯 중 주인공의 배치 슬롯 (2번 사망 시 주인공이 앞으로 밀릴 수 있음)
 CHEST_OPENER_SLOT = 6                   # 🔑 [상자 해제 따개 슬롯] 1번~6번 슬롯 중 상자 따기(함정 해제)를 기본 담당할 캐릭터 슬롯
 
 # 🖥️ [MuMu 에뮬레이터 콜드 리부트 자동 제어 세팅]
@@ -687,8 +716,8 @@ def recover_app_startup(device):
     t_title_warning = load_template("templates/reboot/title_warning.png")
 
     t_yeolda = load_template("templates/chestopening/yeolda_clean.png")
-    t_combat_in = load_template("templates/combat_in.png")
-    t_combat_slow = load_template("templates/combat_slow.png")
+    t_combat_in = load_grayscale_template("templates/combat_in.png")
+    t_combat_slow = load_grayscale_template("templates/combat_slow.png")
     t_net_error = load_template("templates/anchor_network_error.png")
     t_net_retry = load_template("templates/btn_network_retry.png")
     t_error_to_title = load_template("templates/Error_to_title.png")
@@ -704,7 +733,10 @@ def recover_app_startup(device):
     # 상태에서 매크로를 원격으로 재시작하면, 이 함수는 아래 known-popup 목록과 인게임 앵커 OR 판정 어디에도
     # 하켄 관련 앵커가 없어 35회 예산을 전부 빈 (1,1) 탭으로 허비하고 실패함 - 아웃게임 스캐너(1369행 부근)에는
     # 이미 이식됐던 check_and_handle_harken_menu()를 여기 기동 복구 루프에도 동일하게 재사용한다.
-    t_harken_blessing_donothing = dungeon_bot.load_grayscale_template("templates/Field/harken_blessing_donothing.png")
+    # 🚨 [2026-08-27 하켄 메뉴 판정 여유 확보] dungeon_bot.py의 동일 수정과 같은 사유 -
+    # check_template_present()가 라이브 화면만 이진화(160)하고 도장은 그대로 비교해 판정 여유가
+    # 얇았음(실측 0.786/여유 0.086 vs 이진화 통일 시 0.997/여유 0.30). 다른 도장들과 동일하게 통일.
+    t_harken_blessing_donothing = dungeon_bot.load_template("templates/Field/harken_blessing_donothing.png")
     t_harken_return = dungeon_bot.load_color_template("templates/FFXI/harken_return.png")
 
     # 💡 [항목5] 마을별 개별 앵커(!!vill_FFXI.png 등) 대신 어떤 마을에나 있는 공용 여관 도장으로 통일
@@ -1275,6 +1307,11 @@ def get_field_match_score(img_np, thresh_temp):
     return max_val
 
 def get_combat_match_score(img_np, template):
+    # 🚨 [2026-08-27 부팅 복구 전투 미인식 결함 완치] 기존엔 get_match_score(이진화 160 매칭)를 그대로 썼는데,
+    # 스킬 메뉴가 펼쳐진 수동 턴 대기 상태에서 배속 버튼의 미세 명암이 이진화로 뭉개져 점수가 0.3~0.55까지
+    # 떨어져 임계값 0.80을 못 넘는 실전 사고 확인(라이브 스크린샷 실측). dungeon_bot.py는 이미 hotfix8에서
+    # 같은 영역/도장을 원본 그레이스케일 매칭(check_gray_template_present_specific)으로 바꿔 검증까지 끝난
+    # 상태였는데 main.py 쪽엔 반영이 안 돼있었음 - 그 검증된 방식을 그대로 이식(같은 스크린샷 재현 시 0.86~0.92로 통과 확인).
     if template is None or img_np is None: return 0.0
     h, w = img_np.shape[:2]
     scale_x, scale_y = w / 1440.0, h / 2560.0
@@ -1282,7 +1319,10 @@ def get_combat_match_score(img_np, template):
     y1, y2 = int(1600 * scale_y), int(1800 * scale_y)
     if x2 <= x1 or y2 <= y1 or x2 > w or y2 > h: return 0.0
     crop = img_np[y1:y2, x1:x2]
-    return get_match_score(crop, template)
+    gray_crop = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY)
+    result = cv2.matchTemplate(gray_crop, template, cv2.TM_CCOEFF_NORMED)
+    _, max_val, _, _ = cv2.minMaxLoc(result)
+    return max_val
 
 def get_auto_btn_match_score(img_np, template):
     if template is None or img_np is None: return 0.0
@@ -1429,7 +1469,10 @@ def start_grand_orchestrator():
     # (재)시작하면, 아래 스캐너가 마을/세계지도/던전선택/여관/필드/상자 등 알려진 앵커 어느 것과도 안 맞아
     # "아웃게임 무반응 정체"만 무한 반복하며 아무 행동도 못 하던 실전 결함 확인(2026-08-18 01:16~, 5분 절대
     # 워치독이 걸릴 때까지 방치됨). dungeon_bot.py가 이미 갖고 있는 하켄 메뉴 판정 함수를 그대로 재사용한다.
-    t_harken_blessing_donothing = dungeon_bot.load_grayscale_template("templates/Field/harken_blessing_donothing.png")
+    # 🚨 [2026-08-27 하켄 메뉴 판정 여유 확보] dungeon_bot.py의 동일 수정과 같은 사유 -
+    # check_template_present()가 라이브 화면만 이진화(160)하고 도장은 그대로 비교해 판정 여유가
+    # 얇았음(실측 0.786/여유 0.086 vs 이진화 통일 시 0.997/여유 0.30). 다른 도장들과 동일하게 통일.
+    t_harken_blessing_donothing = dungeon_bot.load_template("templates/Field/harken_blessing_donothing.png")
     t_harken_return = dungeon_bot.load_color_template("templates/FFXI/harken_return.png")
 
     t_field = load_grayscale_template("templates/Field/field_anchor.png")
@@ -1437,9 +1480,9 @@ def start_grand_orchestrator():
     t_get_item = load_template("templates/chestopening/get_item.png")
     t_app_exit = load_template("templates/app_exit.png")
     
-    t_heal_close = load_template("templates/close_panel.png") 
-    t_combat_in = load_template("templates/combat_in.png")
-    t_combat_slow = load_template("templates/combat_slow.png") 
+    t_heal_close = load_template("templates/close_panel.png")
+    t_combat_in = load_grayscale_template("templates/combat_in.png")
+    t_combat_slow = load_grayscale_template("templates/combat_slow.png")
     t_exit_mag = load_template("templates/exit_mag_icon.png")
     t_cha_anchor = load_template("templates/cha_panel_anchor.png")
     
