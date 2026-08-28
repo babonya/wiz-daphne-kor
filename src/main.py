@@ -30,7 +30,11 @@ CHEST_OPENER_SLOT = 6                   # 🔑 [상자 해제 따개 슬롯] 1�
 # 🖥️ [MuMu 에뮬레이터 콜드 리부트 자동 제어 세팅]
 ENABLE_EMULATOR_REBOOT = True       # 🔄 [에뮬레이터 리부트] 디바이스 오프라인/5분 정체 지속 시 에뮬레이터 자체를 강제 재시작할지 설정
 MUMU_EXECUTABLE_PATH = r"C:\Program Files\Netease\MuMuPlayer\nx_main\MuMuNxMain.exe"  # 뮤뮤 실행 파일 경로
-MUMU_VM_INDEX = "0"                  # 실행할 가상머신 번호 인덱스 (기본값 "0")
+MUMU_VM_INDEX = "0"                  # 🚨 [2026-08-29] 배포판 기본값(대부분 사용자는 인스턴스 #0)이자, 아직 한
+                                    #    번도 ADB 연결에 성공하지 못한 상태에서 콜드 리부트가 걸릴 때만 쓰이는
+                                    #    폴백입니다. 평소엔 마지막으로 실제 연결됐던 포트를 보고 자동으로
+                                    #    인스턴스 번호를 골라 재실행하므로(MUMU_PORT_TO_INDEX), 인스턴스 번호가
+                                    #    #0이 아니어도 이 값을 직접 고칠 필요가 없습니다.
 
 # ------------------------------------------------------------------------------
 # 📂 [프리셋 자동 로딩 엔진] - ⚠️ 신버전부터는 이 구역을 직접 수정/선택하지 않는 것을 권장합니다.
@@ -648,6 +652,33 @@ def launch_daphne_app(device):
         except Exception as monkey_err:
             print(f"      ⚠️ monkey 폴백 런칭 실패: {monkey_err}")
 
+# 🚨 [2026-08-29 MuMu 인스턴스 자동 감지] 배포판을 받는 다른 사용자들은 대부분 MuMu 기본 인스턴스(#0)를
+# 쓰지만, 개인 환경에 따라 #1/#2... 등 다른 인스턴스를 쓸 수도 있다(예: 안드로이드15 업글로 새 인스턴스가
+# 추가된 경우). MUMU_VM_INDEX를 특정 값으로 하드코딩해버리면 그 값이 다른 사용자 환경에선 아예 존재하지
+# 않는 인스턴스일 수 있어 콜드 리부트가 깨진다. 그래서 실제로 마지막에 ADB 연결이 성공했던 포트를 계속
+# 기억해뒀다가, 콜드 리부트 시 그 포트에 해당하는 인스턴스 번호를 자동으로 골라 재실행한다 - 아직 한 번도
+# 연결 성공 이력이 없으면(최초 부팅 등) 위 MUMU_VM_INDEX 기본값으로 안전하게 폴백한다.
+# 🚨 [2026-08-29] 실측 확보: 0번(16384/16385/5555)과 2번(16448/5559) 두 인스턴스 값을 사용자가 직접 확인.
+# 1번(16416/5557)은 사용자가 해당 인스턴스를 이미 삭제해 직접 실측이 불가능했음 - 대신 두 실측값에서
+# 역산한 공식(5555 + 2×인덱스, 16384 + 32×인덱스)에 인덱스=1을 대입한 추정값이다(1번을 실제로 쓰는
+# 환경에서 어긋나면 실측값으로 교체 필요 - 추측 금지 원칙에 따라 이 사실을 남겨둔다).
+MUMU_PORT_TO_INDEX = {
+    "16384": "0", "16385": "0", "5555": "0",
+    "16416": "1", "5557": "1",  # ⚠️ 공식 역산 추정값 (직접 실측 못 함)
+    "16448": "2", "5559": "2",
+}
+_last_connected_mumu_port = None
+
+def record_mumu_port(port_str):
+    global _last_connected_mumu_port
+    if port_str in MUMU_PORT_TO_INDEX:
+        _last_connected_mumu_port = port_str
+
+def get_reboot_vm_index():
+    if _last_connected_mumu_port and _last_connected_mumu_port in MUMU_PORT_TO_INDEX:
+        return MUMU_PORT_TO_INDEX[_last_connected_mumu_port]
+    return MUMU_VM_INDEX
+
 def reboot_emulator():
     print("\n🖥️🚨 [에뮬레이터 콜드 리부트 작동] MuMu Player가 정지했거나 오프라인 상태입니다. 완전 리셋을 수행합니다!")
     # 1. 윈도우 taskkill을 통해 모든 뮤뮤 플레이어 프로세스 강제 킬
@@ -662,12 +693,13 @@ def reboot_emulator():
     time.sleep(1.0)
     os.system("adb start-server")
     
-    # 3. 뮤뮤 실행 파일 백그라운드로 실행
-    print(f"      ➔ 🚀 MuMu Player를 백그라운드 구동합니다: \"{MUMU_EXECUTABLE_PATH}\" -v {MUMU_VM_INDEX}")
+    # 3. 뮤뮤 실행 파일 백그라운드로 실행 (마지막으로 실제 연결됐던 포트 기준 인스턴스 자동 선택)
+    reboot_vm_index = get_reboot_vm_index()
+    print(f"      ➔ 🚀 MuMu Player를 백그라운드 구동합니다: \"{MUMU_EXECUTABLE_PATH}\" -v {reboot_vm_index}")
     try:
         import subprocess
         # 백그라운드로 실행하여 파이썬 스레드가 블락되지 않게 처리
-        subprocess.Popen([MUMU_EXECUTABLE_PATH, "-v", MUMU_VM_INDEX])
+        subprocess.Popen([MUMU_EXECUTABLE_PATH, "-v", reboot_vm_index])
     except Exception as ex_err:
         print(f"❌ [에뮬레이터 실행 실패] {ex_err}")
         
@@ -675,7 +707,7 @@ def reboot_emulator():
     print("      ➔ ⏳ 에뮬레이터 부팅 및 ADB 포트 활성화를 대기합니다 (최대 60초)...")
     start_wait = time.time()
     connected = False
-    target_ports = ["16384", "16385", "5555"]
+    target_ports = ["16384", "16385", "5555", "16416", "5557", "16448", "5559"]  # 🚨 [2026-08-29] MuMu 멀티 인스턴스 0/1/2번 포트 전부 추가(기존 #0 포트는 그대로 유지) - 1번은 추정값, MUMU_PORT_TO_INDEX 주석 참고
     
     while time.time() - start_wait < 60.0:
         for port in target_ports:
@@ -1051,8 +1083,12 @@ def restart_process(reason):
     os.system("adb connect 127.0.0.1:16384")
     os.system("adb connect 127.0.0.1:16385")
     os.system("adb connect 127.0.0.1:5555")
+    os.system("adb connect 127.0.0.1:16416")  # 🚨 [2026-08-29] MuMu 멀티 인스턴스 1번 포트(추정값) 추가
+    os.system("adb connect 127.0.0.1:5557")
+    os.system("adb connect 127.0.0.1:16448")  # 🚨 [2026-08-29] MuMu 멀티 인스턴스 2번 포트(실측) 추가
+    os.system("adb connect 127.0.0.1:5559")
     time.sleep(4.0)
-    
+
     # 디바이스 온라인 상태 검증
     device_online = False
     device = None
@@ -1061,8 +1097,13 @@ def restart_process(reason):
         device = client.device("127.0.0.1:5555")
         if not device: device = client.device("127.0.0.1:16384")
         if not device: device = client.device("127.0.0.1:16385")
+        if not device: device = client.device("127.0.0.1:16416")
+        if not device: device = client.device("127.0.0.1:5557")
+        if not device: device = client.device("127.0.0.1:16448")
+        if not device: device = client.device("127.0.0.1:5559")
         if device and device.get_state() == "device":
             device_online = True
+            record_mumu_port(device.serial.split(":")[-1])  # 🚨 [2026-08-29] 콜드 리부트 시 같은 인스턴스를 재실행하기 위한 기록
     except:
         pass
         
@@ -1104,19 +1145,28 @@ def restart_process(reason):
 
 def connect_mumu():
     global global_device
-    print("🚀 [ADB 메인 연결] 사령탑 시스템 가동... 3중 포트 자동 스위칭 터널을 개설합니다.")
+    print("🚀 [ADB 메인 연결] 사령탑 시스템 가동... 7중 포트 자동 스위칭 터널을 개설합니다.")
     os.system("adb start-server")
     os.system("adb connect 127.0.0.1:16384")
     os.system("adb connect 127.0.0.1:16385")
     os.system("adb connect 127.0.0.1:5555")
+    os.system("adb connect 127.0.0.1:16416")  # 🚨 [2026-08-29] MuMu 멀티 인스턴스 1번 포트(추정값) 추가
+    os.system("adb connect 127.0.0.1:5557")
+    os.system("adb connect 127.0.0.1:16448")  # 🚨 [2026-08-29] MuMu 멀티 인스턴스 2번 포트(실측) 추가
+    os.system("adb connect 127.0.0.1:5559")
     time.sleep(1.0)
     try:
         client = AdbClient(host="127.0.0.1", port=5037)
         device = client.device("127.0.0.1:5555")
         if not device: device = client.device("127.0.0.1:16384")
         if not device: device = client.device("127.0.0.1:16385")
+        if not device: device = client.device("127.0.0.1:16416")
+        if not device: device = client.device("127.0.0.1:5557")
+        if not device: device = client.device("127.0.0.1:16448")
+        if not device: device = client.device("127.0.0.1:5559")
         if device:
             print("✅ [ADB 메인 연결 성공] 하이브리드 자동 포트 제어 레이더 가동 완료.")
+            record_mumu_port(device.serial.split(":")[-1])  # 🚨 [2026-08-29] 콜드 리부트 시 같은 인스턴스를 재실행하기 위한 기록
             global_device = device
             return device
         return None
