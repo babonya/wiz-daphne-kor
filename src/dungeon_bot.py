@@ -19,9 +19,19 @@ came_from_chest = False
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.18.0
-# - 최근 수정일: 2026-08-28
+# - 현재 버전: 1.19.0
+# - 최근 수정일: 2026-08-29
 # - 수정 기록:
+#   1.19.0: 유령성4층 상자파밍 나가기 안정화 2건. (1) '없습니다' 토스트(toastmsg_nochest.png)가 "상자
+#     없음"/"경로 없음" 두 메시지에 공용으로 쓰이는데, 직전에 어떤 버튼을 눌렀는지 안 가리고 매 틱 무조건
+#     "경로 없음"으로 해석해 불필요한 전진 스와이프가 나가던 결함 완치(사용자 실기 확인: 상자 버튼 눌러서
+#     뜬 토스트에도 스와이프 발동) - exit_last_action_was_exit_tap 플래그로 직전 액션이 '나가기'였을 때만
+#     반응하도록 게이트. 1차 수정 후 TRIGGER_EXIT 재진입 시 이 플래그를 안 리셋해줘 나가기 버튼을 누르기도
+#     전에 스와이프가 먼저 나가는 형태로 재발(실기 로그 2026-08-29 15:35:35 확인) - TRIGGER_EXIT 진입
+#     지점 4곳 모두에서 매번 리셋하도록 완치. (2) 재개(1번 Redo) 버튼의 활성/비활성 상태로 "새 필드 착지
+#     직후, 아직 이동 명령 없음"을 즉시 판별할 수 있음을 사용자가 실기로 확인 - 이를 이용해 4층→3층 착지
+#     스턱 시 기존 정체 사다리(1~5단계, 최소 16~20초)를 기다리지 않고 곧바로 전진 스와이프하는 즉시감지
+#     경로를 추가(유령성4층 상자파밍 전용, 절대 워치독 연동). 상세는 CLAUDE.md/history.log 참고.
 #   1.18.0: 유령성 4층 상자먹튀파밍 신규 진입/탈출 시퀀스 추가, TRIGGER_EXIT 하켄 메뉴 미처리 완치(공용
 #     전처리 블록으로 이동), harken_blessing_donothing/combat_in·slow 이진화 불일치 완치, last_target_coords
 #     공유 변수로 인한 오탭 완치, came_from_combat/chest 플래그 소비 지연 완치, 상자 버튼 단일탭화 및
@@ -1135,6 +1145,16 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     last_target_coords = None
     exit_stuck_count = 0
     exit_prev_minimap = None
+    # 🚨 [2026-08-29 유령성4층 경로없음 스와이프 오발동 완치] '없습니다' 토스트 템플릿(toastmsg_nochest.png)이
+    # "상자가 없습니다"와 "경로를 찾을 수 없습니다" 두 메시지에 공용으로 쓰이는데(임계값 0.55로 느슨하게 매칭),
+    # 정체 1회차 복구(상자 단추 연타)가 유발한 '상자 없음' 토스트를 다음 틱에서 '경로 없음'으로 오인해 불필요한
+    # 전진 스와이프가 나가버리는 결함이 있었음(사용자 실기 확인: "상자누르고 없습니다 떠도 위로 스와이프 한 번
+    # 하는데 이거 쓸모없다"). 마지막으로 누른 단추가 '출구'였을 때만 이 토스트를 '경로 없음'으로 해석한다.
+    # 🚨 [2026-08-29 재발 완치] 기본값을 True로 뒀더니, TRIGGER_EXIT 최초 진입 시(아직 출구를 한 번도 안
+    # 누른 시점)에 직전 FIELD_WAIT의 '상자 없음' 재시도 토스트 잔상을 '경로 없음'으로 오인해 출구 탭보다
+    # 먼저 스와이프가 나가는 재발이 있었음(실기 로그 확인: 2026-08-29 15:35:35, 첫 출구 탭은 15:35:42).
+    # 출구 버튼을 실제로 한 번이라도 눌러야만 이 체크가 켜지도록 기본값을 False로 정정한다.
+    exit_last_action_was_exit_tap = False
 
     yuzuna_done = False
     milana_done = False
@@ -1673,6 +1693,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                     exit_clicked_once = False
                                     exit_stuck_count = 0
                                     exit_prev_minimap = None
+                                    exit_last_action_was_exit_tap = False
                                     last_click_time = 0.0
                             elif last_target_coords:
                                 print(f"⏭️ [즉각 이동 재개] 정비 직후 딜레이 파쇄! 이전 타겟 좌표 ({last_target_coords[0]}, {last_target_coords[1]}) 즉시 재사격")
@@ -1907,6 +1928,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                             exit_clicked_once = False             # 🚨 [v1.14.0-hotfix2] 출구 클릭 플래그 리셋
                             exit_stuck_count = 0
                             exit_prev_minimap = None
+                            exit_last_action_was_exit_tap = False  # 🚨 [2026-08-29] TRIGGER_EXIT 재진입 시 잔상 토스트 오판 방지
                             last_click_time = 0.0                 # 🚀 [v1.14.1-hotfix10] 탈출 탭 3초 쿨타임 파쇄
                         elif moved:
                             print("🏃 [이동 시작 확인] 미니맵이 움직이기 시작했습니다. AUTO_MOVING으로 이행.")
@@ -1921,6 +1943,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                             exit_clicked_once = False             # 🚨 [v1.14.0-hotfix2] 출구 클릭 플래그 리셋
                             exit_stuck_count = 0
                             exit_prev_minimap = None
+                            exit_last_action_was_exit_tap = False  # 🚨 [2026-08-29] TRIGGER_EXIT 재진입 시 잔상 토스트 오판 방지
                             last_click_time = 0.0                 # 🚀 [v1.14.1-hotfix10] 탈출 탭 3초 쿨타임 파쇄
 
         elif state == "AUTO_MOVING":
@@ -1934,12 +1957,13 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                 try: img_np = np.array(Image.open(io.BytesIO(device.screencap())))
                 except: continue
 
-            if toast_detected or state == "TRIGGER_EXIT": 
+            if toast_detected or state == "TRIGGER_EXIT":
                 state = "TRIGGER_EXIT"
                 exit_start_time = time.time()
                 prev_minimap_zone = None
                 last_click_time = 0
                 exit_clicked_once = False
+                exit_last_action_was_exit_tap = False  # 🚨 [2026-08-29] TRIGGER_EXIT 재진입 시 잔상 토스트 오판 방지
             else:
                 if time.time() - last_click_time > 4.0: state = "FIELD_WAIT"
 
@@ -1991,7 +2015,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
             # 가는 경로를 찾을 수 없습니다" 토스트가 뜨며 매번 실패한다(해당 타일에서의 경로탐색 버그로 추정).
             # 전진 스와이프 1회로 그 타일을 벗어난 뒤 나가기를 재탭하면 확실히 해소됨. exit_clicked_once 여부와
             # 무관하게(1차 탭이든 정체 재시도든) 이 토스트가 보이면 즉시 잡아서 처리한다.
-            if dungeon_name == "북쪽의 유령선" and farming_method == "상자파밍":
+            if dungeon_name == "북쪽의 유령선" and farming_method == "상자파밍" and exit_last_action_was_exit_tap:
                 if check_template_present(img_np, t_no_chest, 0.55):
                     print("⚠️ [나가기 경로탐색 버그 감지] '경로를 찾을 수 없습니다' 토스트 확인 - 전진 스와이프 후 나가기를 재시도합니다.")
                     h_s, w_s = img_np.shape[:2]
@@ -2004,6 +2028,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     safe_device_shell(device, f"input tap {coords_exit_retry[0]} {coords_exit_retry[1]}")
                     time.sleep(0.2)
                     safe_device_shell(device, f"input tap {coords_exit_retry[0]} {coords_exit_retry[1]}")
+                    exit_last_action_was_exit_tap = True
                     last_click_time = time.time()
                     exit_prev_minimap = None
                     exit_stuck_count = 0
@@ -2020,6 +2045,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                         safe_device_shell(device, f"input tap {ex} {ey}")
                         time.sleep(0.2)
                         safe_device_shell(device, f"input tap {ex} {ey}")
+                        exit_last_action_was_exit_tap = True
                         last_click_time = time.time()
                         last_target_coords = (ex, ey)
                         exit_clicked_once = True
@@ -2037,6 +2063,46 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
             current_mini = gray_current[int(115 * scale_y):int(315 * scale_y), int(1117 * scale_x):int(1317 * scale_x)]
 
             is_real_field = check_field_anchor_present(img_np, t_field, 0.62)
+
+            # 🚨 [2026-08-29 유령성4층 착지 즉시감지] 사용자 실기 확인: 재개(1번 Redo) 버튼은 "새 필드 진입/
+            # 재접속 직후"에만 비활성 상태로 보이고, 미니맵의 어떤 이동 버튼이든(성공 여부 무관) 누르면 곧바로
+            # 활성으로 바뀐다. 4층→3층 착지 직후엔 exit_clicked_once가 이미 True라 자동으로 아무 버튼도 재탭
+            # 하지 않으므로, 이 비활성 상태 자체가 "방금 새 필드(3층)에 떨어졌고 아직 아무 이동 명령도 없다"는
+            # 확정 신호다 - 미니맵 diff가 5회(최소 16~20초) 쌓이길 기다리지 않고 1틱만에 판단해 곧장 전진
+            # 스와이프로 넘어간다(exit_stuck_count 사다리는 이 신호를 못 잡는 다른 상황의 안전망으로 유지).
+            if (dungeon_name == "북쪽의 유령선" and farming_method == "상자파밍"
+                    and is_real_field and exit_clicked_once):
+                resume_active_coords = find_and_get_field_btn_coords(img_np, t_move_resume_act, 0.70)
+                resume_inactive_coords = find_and_get_field_btn_coords(img_np, t_move_resume_deact, 0.70)
+                if resume_inactive_coords and not resume_active_coords:
+                    if exit_first_start_time is None:
+                        exit_first_start_time = time.time()
+                    elapsed_redo_time = int(time.time() - exit_first_start_time)
+                    if elapsed_redo_time >= exit_watchdog_seconds:
+                        raise RuntimeError(f"탈출 {exit_watchdog_seconds:.0f}초 초과 앱 강제 재시작: 재개 버튼 비활성 상태가 {elapsed_redo_time}초간 해소되지 않아 프로세스 강제 리셋을 수행합니다.")
+
+                    exit_recovery_retry_count += 1
+                    print(f"🚪🚨 [탈출 정체 즉시감지 - 유령성4층 전용] 재개 버튼 비활성 확인(새 필드 착지 직후) - 정체 사다리 없이 곧바로 전진 스와이프를 단행합니다. (누적 경과: {elapsed_redo_time}초, 복구 시도 {exit_recovery_retry_count}회)")
+                    sx = int(720 * scale_x)
+                    sy1 = int(1500 * scale_y)
+                    sy2 = int(900 * scale_y)
+                    safe_device_shell(device, f"input swipe {sx} {sy1} {sx} {sy2} 300")
+                    time.sleep(1.5)
+                    coords_exit_redo = find_and_get_field_btn_coords(img_np, t_move_exit, 0.70)
+                    if not coords_exit_redo:
+                        coords_exit_redo = (int(1338 * scale_x), int(462 * scale_y))
+                    ex_redo, ey_redo = coords_exit_redo
+                    safe_device_shell(device, f"input tap {ex_redo} {ey_redo}")
+                    time.sleep(0.1)
+                    safe_device_shell(device, f"input tap {ex_redo} {ey_redo}")
+                    time.sleep(2.0)
+
+                    exit_last_action_was_exit_tap = True
+                    exit_stuck_count = 0
+                    exit_prev_minimap = None
+                    last_click_time = time.time()
+                    continue
+
             if exit_prev_minimap is not None and is_real_field:
                 diff = cv2.absdiff(current_mini, exit_prev_minimap)
                 mean_diff = np.mean(diff) / 255.0
@@ -2071,7 +2137,8 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                             for _ in range(5):
                                 safe_device_shell(device, f"input tap {cx_fixed} {cy_fixed}")
                                 time.sleep(0.1)
-                                
+                        exit_last_action_was_exit_tap = False
+
                     elif exit_stuck_count == 2:
                         # 2회차: '출구 이동' 단추 5회 연타 주입
                         coords_exit = find_and_get_field_btn_coords(img_np, t_move_exit, 0.70)
@@ -2087,6 +2154,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                             for _ in range(5):
                                 safe_device_shell(device, f"input tap {ex_fixed} {ey_fixed}")
                                 time.sleep(0.1)
+                        exit_last_action_was_exit_tap = True
                 else:
                     exit_stuck_count = 0
                 
@@ -2135,7 +2203,8 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                         time.sleep(0.1)
                         safe_device_shell(device, f"input tap {ex_fixed} {ey_fixed}")
                     time.sleep(2.0)
-                    
+
+                    exit_last_action_was_exit_tap = True
                     exit_clicked_once = False
                     exit_stuck_count = 0
                     exit_prev_minimap = None

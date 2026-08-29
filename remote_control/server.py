@@ -4,8 +4,14 @@
 #         PC의 매크로를 시작/정지/상태확인 하기 위한 개인용 도구입니다.
 # - 표준 라이브러리만 사용합니다 (pip install 추가 불필요).
 # - 이 폴더(remote_control/)를 통째로 지워도 매크로 본체(src/main.py) 동작에는 전혀 지장이 없습니다.
-# - 현재 버전: 1.18.0
+# - 현재 버전: 1.19.0
 # - 수정 기록:
+#   1.19.0: 1.18.0에서 고친 "원격 정지 시 콘솔창 종료"가 매크로 자가 재시작(os.execv) 이후엔 다시
+#     무력화되는 결함 완치 - find_parent_cmd_pid()는 그 순간의 직계 부모만 조회하는데, os.execv는 윈도우
+#     에서 매번 새 PID를 만들어서 재시작 이후엔 직계 부모가 진짜 cmd.exe가 아니라 이미 죽은 이전
+#     python.exe가 됨(윈도우는 죽은 프로세스의 부모 기록을 보존 안 해서 더 거슬러 올라갈 방법이 없음).
+#     main.py가 최초 부팅 시점에만 캡처해 재시작에도 안 끊기게 저장해두는 macro_cmd.pid 파일을 우선
+#     사용하도록 전환(구버전 호환용으로 기존 라이브 조회는 폴백 유지). 상세는 main.py 참고.
 #   1.18.0: 원격 정지(/stop) 시 python.exe만 죽이고 그 부모 cmd.exe 콘솔창(빈 검은 화면)은 남아있던
 #     결함을 완치 - 죽이기 전에 WMI로 부모 PID를 조회해두고, 실제로 cmd.exe일 때만 같이 종료한다.
 #     상세는 CLAUDE.md/history.log 참고.
@@ -53,6 +59,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 CONFIG_PATH = os.path.join(SCRIPT_DIR, "config.local.json")
 PID_FILE = os.path.join(PROJECT_ROOT, "macro.pid")
+CMD_PID_FILE = os.path.join(PROJECT_ROOT, "macro_cmd.pid")
 GUIDE_PATH = os.path.join(SCRIPT_DIR, "설정안내.txt")
 LOGS_DIR = os.path.join(PROJECT_ROOT, "logs")
 LAST_TARGET_PATH = os.path.join(SCRIPT_DIR, "last_target.txt")
@@ -182,6 +189,21 @@ def read_pid():
     try:
         with open(PID_FILE, "r", encoding="utf-8") as f:
             return int(f.read().strip())
+    except Exception:
+        return None
+
+
+def read_cmd_pid_file():
+    # 💡 [2026-08-29] main.py의 capture_root_cmd_pid()가 최초 부팅 시점에 저장해둔, 재시작에도 안 끊기는
+    # 콘솔창(cmd.exe) PID. find_parent_cmd_pid()는 os.execv 자기재시작을 한 번이라도 거치면 직계 부모가
+    # 이미 죽은 이전 python.exe가 되어 cmd.exe를 못 찾는 결함이 있었음(실전에서 "랜덤"하게 콘솔창이 안
+    # 닫히는 증상으로 확인) - 파일에 미리 저장된 값을 우선 사용해 이 문제를 우회한다.
+    if not os.path.exists(CMD_PID_FILE):
+        return None
+    try:
+        with open(CMD_PID_FILE, "r", encoding="utf-8") as f:
+            val = f.read().strip()
+        return int(val) if val.isdigit() else None
     except Exception:
         return None
 
@@ -627,13 +649,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return
             try:
                 # 💡 부모 cmd.exe 창(있다면)까지 같이 닫기 위해, python.exe를 죽이기 전에 미리 부모 PID를
-                # 조회해둔다(죽인 뒤엔 프로세스가 사라져 WMI 조회가 안 됨).
-                parent_cmd_pid = find_parent_cmd_pid(pid)
+                # 조회해둔다(죽인 뒤엔 프로세스가 사라져 WMI 조회가 안 됨). 재시작에도 안 끊기는 저장값을
+                # 우선 쓰고(실제로 아직 cmd.exe로 살아있는지 재확인), 없으면 구버전 호환용 라이브 조회로 폴백.
+                parent_cmd_pid = read_cmd_pid_file()
+                if parent_cmd_pid and not is_our_python_process(parent_cmd_pid, valid_images=("cmd.exe",)):
+                    parent_cmd_pid = None
+                if not parent_cmd_pid:
+                    parent_cmd_pid = find_parent_cmd_pid(pid)
                 subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True, timeout=5, creationflags=NO_WINDOW)
                 if parent_cmd_pid:
                     subprocess.run(["taskkill", "/PID", str(parent_cmd_pid), "/F"], capture_output=True, timeout=5, creationflags=NO_WINDOW)
                 if os.path.exists(PID_FILE):
                     os.remove(PID_FILE)
+                if os.path.exists(CMD_PID_FILE):
+                    os.remove(CMD_PID_FILE)
                 self._respond(200, f"매크로(PID {pid})를 정지했습니다.")
                 print(f"■ [원격 정지] PID={pid}" + (f" (콘솔창 PID={parent_cmd_pid}도 함께 종료)" if parent_cmd_pid else ""))
             except Exception as e:

@@ -4,7 +4,7 @@ import datetime
 import time
 import json
 
-CURRENT_VERSION = "1.18.0" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
+CURRENT_VERSION = "1.19.0" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
 
 # ==============================================================================
 # ⚙️ [Daphne 마스터 글로벌 제어 세팅 변수 구역 - 진짜 최상단 제어판]
@@ -113,9 +113,17 @@ else:
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.18.0
-# - 최근 수정일: 2026-08-28
+# - 현재 버전: 1.19.0
+# - 최근 수정일: 2026-08-29
 # - 수정 기록:
+#   1.19.0: MuMu 멀티 인스턴스(0/1/2번) 자동 감지 지원(포트→인덱스 매핑, 재부팅 시 마지막 접속 포트 기준
+#     자동 재선택) 및 재부팅 시 뮤뮤 설정 파일이 프로젝트 루트에 잘못 쓰이던 결함 완치(subprocess.Popen에
+#     cwd 미지정 → 정품 설치 루트로 명시). 앱 재시작 우선 정책 복원(뮤뮤 재부팅 직행에서 원복) 및 가로화면
+#     정체 캡 30→3회 단축(과잉 대기 완화). 원격 정지(/stop) 시 콘솔창이 "가끔" 안 닫히던 결함 완치 -
+#     os.execv 자기재시작을 한 번이라도 거치면 직계 부모가 이미 죽은 이전 python.exe가 되어 진짜 cmd.exe를
+#     못 찾던 구조적 결함이었음(1.18.0의 콘솔창 종료 기능 자체는 정상이었으나 재시작 후엔 무력화됐음).
+#     최초 부팅 시점에만 cmd.exe PID를 캡처해 환경변수(재시작에도 안 끊김)/파일(macro_cmd.pid)로 전달하도록
+#     전환. 유령성4층 상자파밍 나가기 관련 결함은 dungeon_bot.py, 콘솔창 관련 상세는 remote_control/server.py 참고.
 #   1.18.0: 유령성 4층 상자먹튀파밍 신규 던전 주회 추가(3층 하켄 진입 → 체크포인트+스와이프로 4층 진입 →
 #     기존 상자파밍 루프 재사용 → 나가기 경로탐색 버그/4층→3층 하강 무한루프 우회) 및 다수 결함 완치.
 #     TRIGGER_EXIT 하켄 메뉴 미처리(공용 전처리 블록으로 이동해 완치), harken_blessing_donothing/전투
@@ -554,6 +562,40 @@ def timestamped_print(*args, **kwargs):
         sys.stdout.log.write(f"{current_time} {msg}")
         sys.stdout.log.flush()
 
+def capture_root_cmd_pid():
+    # 💡 [2026-08-29 원격 정지 콘솔창 안 닫힘 "랜덤" 재발 완치] remote_control의 find_parent_cmd_pid()는
+    # /stop 호출 그 순간의 라이브 프로세스 트리에서 "직계 부모가 cmd.exe인지"만 확인하는데, os.execv 자기
+    # 재시작은 윈도우에서 매번 새 PID를 만들며(위 write_pid_file 주석 참고) 그 직계 부모는 원래의 cmd.exe가
+    # 아니라 "방금 종료된 이전 python.exe"가 된다. 그 이전 python.exe는 이미 죽어서 프로세스 테이블에서
+    # 사라졌으므로(윈도우는 죽은 프로세스의 부모 기록을 보존하지 않음) 더 위로 거슬러 올라갈 방법이 없다.
+    # 그래서 재시작을 한 번이라도 거친 뒤 /stop 하면 콘솔창이 안 닫히고, 재시작 전이면 닫히는 "랜덤"처럼
+    # 보이는 증상이 있었다(사용자 실전 확인). 해결: 최초 부팅 시점(아직 진짜 cmd.exe가 직계 부모일 때) 딱
+    # 한 번만 캡처해서 환경변수에 저장한다 - os.execv는 현재 프로세스의 환경변수를 그대로 물려주므로, 이후
+    # 몇 번을 재시작하든 이 값은 계속 살아남는다.
+    if "DAPHNE_ROOT_CMD_PID" in os.environ:
+        return os.environ["DAPHNE_ROOT_CMD_PID"]
+    root_pid = ""
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             f'(Get-CimInstance Win32_Process -Filter "ProcessId={os.getpid()}").ParentProcessId'],
+            capture_output=True, text=True, timeout=5
+        )
+        ppid_str = result.stdout.strip()
+        if ppid_str.isdigit():
+            check = subprocess.run(
+                ["tasklist", "/FI", f"PID eq {ppid_str}", "/FO", "CSV", "/NH"],
+                capture_output=True, text=True, timeout=5
+            )
+            out = check.stdout.strip()
+            if out and not out.upper().startswith("INFO:") and out.split(",")[0].strip('"').lower() == "cmd.exe":
+                root_pid = ppid_str
+    except Exception:
+        pass
+    os.environ["DAPHNE_ROOT_CMD_PID"] = root_pid
+    return root_pid
+
 def write_pid_file():
     # 💡 [v1.17.1 원격 제어 연동] remote_control/server.py가 이 파일을 읽어 매크로 프로세스를 식별합니다.
     # 모듈 최상단(재시작마다 항상 재실행되는 위치)에 있어서, os.execv 자기재시작 시에도(윈도우는 PID가 바뀌므로)
@@ -562,6 +604,10 @@ def write_pid_file():
         pid_path = os.path.join(os.path.dirname(script_dir), "macro.pid")
         with open(pid_path, "w", encoding="utf-8") as f:
             f.write(str(os.getpid()))
+        # 💡 [2026-08-29] 재시작에도 안 끊기는 콘솔창 PID(위 capture_root_cmd_pid 참고)를 같이 기록합니다.
+        cmd_pid_path = os.path.join(os.path.dirname(script_dir), "macro_cmd.pid")
+        with open(cmd_pid_path, "w", encoding="utf-8") as f:
+            f.write(capture_root_cmd_pid())
     except Exception:
         pass  # 원격 제어를 안 쓰는 환경에서는 실패해도 매크로 동작에 지장 없음
 
@@ -698,8 +744,18 @@ def reboot_emulator():
     print(f"      ➔ 🚀 MuMu Player를 백그라운드 구동합니다: \"{MUMU_EXECUTABLE_PATH}\" -v {reboot_vm_index}")
     try:
         import subprocess
+        # 🚨 [2026-08-29] cwd 미지정 결함 완치: MuMu 실행 파일이 일부 설정(vm_config.json 등)을 자기
+        # 설치 경로가 아니라 "실행 당시의 현재 작업 디렉토리" 기준 상대경로로 쓰는 것으로 보임(실전 확인:
+        # 뮤뮤 재시작을 거칠 때마다 이 매크로 프로젝트 루트 폴더 안에 configs/ 폴더가 생겨있었음 - .bat이
+        # 항상 프로젝트 루트를 cwd로 고정해두는데 여기서 cwd를 안 넘겨줘서 그대로 물려받은 것). 뮤뮤 설치
+        # 폴더 자체를 cwd로 명시해 원래 있어야 할 자리(C:\Program Files\Netease\MuMuPlayer\configs\)에
+        # 쓰도록 고정한다.
+        # 💡 실측 확인: 진짜 configs/ 폴더는 nx_main 폴더가 아니라 그 한 단계 위(MuMuPlayer 설치 루트)에
+        # 있음(C:\Program Files\Netease\MuMuPlayer\configs\) - cwd를 nx_main으로 잘못 잡으면 엉뚱한
+        # 위치에 또 새 configs/가 생기므로 반드시 한 단계 위로 잡는다.
+        mumu_install_root = os.path.dirname(os.path.dirname(MUMU_EXECUTABLE_PATH))
         # 백그라운드로 실행하여 파이썬 스레드가 블락되지 않게 처리
-        subprocess.Popen([MUMU_EXECUTABLE_PATH, "-v", reboot_vm_index])
+        subprocess.Popen([MUMU_EXECUTABLE_PATH, "-v", reboot_vm_index], cwd=mumu_install_root)
     except Exception as ex_err:
         print(f"❌ [에뮬레이터 실행 실패] {ex_err}")
         
