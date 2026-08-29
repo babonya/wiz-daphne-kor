@@ -841,10 +841,13 @@ def recover_app_startup(device):
         height, width = img_np.shape[:2]
         if height < width:
             startup_landscape_fail_counter += 1
-            print(f"🖥️ [기동 복구 - 가로 화면 감지] 현재 화면이 가로 상태({width}x{height})입니다. 위저드리 다프네 앱 기동(Relaunch)을 강제 주입하여 세로 화면 전환을 시도합니다. ({startup_landscape_fail_counter}/30)")
-            if startup_landscape_fail_counter >= 30:
-                print("      🚨 [기동 복구 - 가로화면 탈출 실패] 30회 연속 가로 화면 정체! MuMu 자체 이상으로 판단해 자가 복구 절차로 넘어갑니다.")
-                restart_process(f"기동 복구(recover_app_startup) 중 가로 화면 30회 연속 정체 (화면 크기: {width}x{height})")
+            print(f"🖥️ [기동 복구 - 가로 화면 감지] 현재 화면이 가로 상태({width}x{height})입니다. 위저드리 다프네 앱 기동(Relaunch)을 강제 주입하여 세로 화면 전환을 시도합니다. ({startup_landscape_fail_counter}/3)")
+            # 🚨 [2026-08-29] 30회는 너무 관대해서 뮤뮤가 진짜 먹통일 때 탈출까지 몇 분씩 걸렸음(실전 로그로
+            # 확인: 8분 넘게 10/30까지만 진행됨) - 3회로 줄여 가벼운 문제는 여전히 앱 재시작으로 해결하되,
+            # 뮤뮤 자체가 먹통인 경우 빠르게 다음 단계(2회차 재시작 → 에뮬레이터 완전 재시작)로 넘어가게 한다.
+            if startup_landscape_fail_counter >= 3:
+                print("      🚨 [기동 복구 - 가로화면 탈출 실패] 3회 연속 가로 화면 정체! MuMu 자체 이상으로 판단해 자가 복구 절차로 넘어갑니다.")
+                restart_process(f"기동 복구(recover_app_startup) 중 가로 화면 3회 연속 정체 (화면 크기: {width}x{height})")
                 return True
             try:
                 launch_daphne_app(device)
@@ -1066,6 +1069,14 @@ def restart_process(reason):
     # 누적 횟수를 보고 판단할 수 있음.
     write_restart_counter(consecutive_restart_count)
 
+    # 🚨 [2026-08-29 정책 재조정] 한때 앱 재시작을 완전히 생략하고 매번 곧바로 에뮬레이터 완전 재시작으로
+    # 갔었는데(뮤뮤가 화면만 죽고 ADB는 살아있는 경우 앱 재시작이 무의미하게 시간을 허비한다는 실전 사고
+    # 때문), 정작 대부분의 재시작 사유는 앱만 문제인 가벼운 경우가 많아 매번 완전 재시작하면 그만큼 항상
+    # 느려짐. 그래서 앱 재시작을 다시 살리되, recover_app_startup()의 가로 화면 정체 캡(예전 30회, 너무
+    # 관대해서 뮤뮤가 진짜 먹통일 때 탈출까지 너무 오래 걸림)을 3회로 크게 줄여서, 가벼운 문제는 앱
+    # 재시작으로 빠르게 해결하고 뮤뮤 자체가 먹통인 경우는 몇 초 안에 바로 다음 단계(2회차 재시작 →
+    # 에뮬레이터 완전 재시작)로 넘어가도록 균형을 맞춘다.
+
     # 조건 A: 연속 2회 이상 재시작 시도 시 즉시 에뮬레이터 콜드 리부트 단행
     if ENABLE_EMULATOR_REBOOT and consecutive_restart_count >= 2:
         print(f"      🚨 [연속 재시작 한계 도달] 재시작 시도가 {consecutive_restart_count}회 연속 격발되었습니다. 에뮬레이터 완전 재시작으로 강제 극복합니다.")
@@ -1106,7 +1117,7 @@ def restart_process(reason):
             record_mumu_port(device.serial.split(":")[-1])  # 🚨 [2026-08-29] 콜드 리부트 시 같은 인스턴스를 재실행하기 위한 기록
     except:
         pass
-        
+
     # 조건 B: ADB 연결을 뚫었음에도 디바이스가 존재하지 않거나 오프라인인 경우 즉각 리부트
     if ENABLE_EMULATOR_REBOOT and not device_online:
         print("      🚨 [디바이스 오프라인 감지] ADB 연결 수립 결과 디바이스가 오프라인이거나 감지되지 않습니다. 즉시 에뮬레이터 콜드 리부트를 수행합니다.")
@@ -1121,17 +1132,17 @@ def restart_process(reason):
         try:
             # 🛑 [안전 가드]: 파이썬 리셋 전 먹통이 된 게임 앱을 강제 종료 후 런처 재기동
             launch_daphne_app(device)
-            
+
             # 🖥️ [v1.13.8 연동] 앱 신규 실행 완료 대기 및 기동 복구 수행
             print("⏳ 초기 로딩을 위해 15초간 대기합니다...")
             time.sleep(15.0)
             print("👉 초기 로딩 대기 완료. 최초 [1, 1] 터치를 격발합니다.")
             device.shell("input tap 1 1")
             time.sleep(2.0)
-            
+
             # recover_app_startup을 가동하여 안전 진입
             recover_app_startup(device)
-            
+
             take_screencap_backup(device, "restart")
             time.sleep(1.5) # 디스크 동기화 대기 마진
         except Exception as f9_err:
@@ -1139,7 +1150,7 @@ def restart_process(reason):
         # 💾 카운터는 함수 상단에서 이미 저장했으므로 여기선 재저장 불필요.
     else:
         print("⚠️ [자가 복구 실패] 리셋 후 디바이스 객체 획득 불가")
-            
+
     print("      ➔ 🚀 파이썬 프로세스를 전격 재시작합니다.")
     os.execv(sys.executable, [sys.executable] + sys.argv)
 
@@ -1626,9 +1637,10 @@ def start_grand_orchestrator():
         # 🖥️ [가로 화면/안드로이드 홈 복구 가드] 에뮬레이터가 가로 상태로 기동된 경우 앱을 실행해 세로 모드 회전을 유도
         if height < width:
             resolution_fail_counter += 1
-            print(f"🖥️ [가로 화면 감지] 현재 화면이 가로 상태({width}x{height})입니다. 위저드리 다프네 앱 기동(Relaunch)을 강제 주입하여 세로 화면 전환을 시도합니다. ({resolution_fail_counter}/30)")
-            if resolution_fail_counter >= 30:
-                restart_process(f"main 내 가로 화면 정체 30초 지속 감지 (화면 크기: {width}x{height})")
+            print(f"🖥️ [가로 화면 감지] 현재 화면이 가로 상태({width}x{height})입니다. 위저드리 다프네 앱 기동(Relaunch)을 강제 주입하여 세로 화면 전환을 시도합니다. ({resolution_fail_counter}/3)")
+            # 🚨 [2026-08-29] 30회는 너무 관대해서 뮤뮤가 진짜 먹통일 때 탈출까지 너무 오래 걸림 - 3회로 단축
+            if resolution_fail_counter >= 3:
+                restart_process(f"main 내 가로 화면 정체 3회 연속 감지 (화면 크기: {width}x{height})")
                 resolution_fail_counter = 0
             try:
                 launch_daphne_app(device)
