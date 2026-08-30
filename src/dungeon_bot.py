@@ -2064,45 +2064,6 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
 
             is_real_field = check_field_anchor_present(img_np, t_field, 0.62)
 
-            # 🚨 [2026-08-29 유령성4층 착지 즉시감지] 사용자 실기 확인: 재개(1번 Redo) 버튼은 "새 필드 진입/
-            # 재접속 직후"에만 비활성 상태로 보이고, 미니맵의 어떤 이동 버튼이든(성공 여부 무관) 누르면 곧바로
-            # 활성으로 바뀐다. 4층→3층 착지 직후엔 exit_clicked_once가 이미 True라 자동으로 아무 버튼도 재탭
-            # 하지 않으므로, 이 비활성 상태 자체가 "방금 새 필드(3층)에 떨어졌고 아직 아무 이동 명령도 없다"는
-            # 확정 신호다 - 미니맵 diff가 5회(최소 16~20초) 쌓이길 기다리지 않고 1틱만에 판단해 곧장 전진
-            # 스와이프로 넘어간다(exit_stuck_count 사다리는 이 신호를 못 잡는 다른 상황의 안전망으로 유지).
-            if (dungeon_name == "북쪽의 유령선" and farming_method == "상자파밍"
-                    and is_real_field and exit_clicked_once):
-                resume_active_coords = find_and_get_field_btn_coords(img_np, t_move_resume_act, 0.70)
-                resume_inactive_coords = find_and_get_field_btn_coords(img_np, t_move_resume_deact, 0.70)
-                if resume_inactive_coords and not resume_active_coords:
-                    if exit_first_start_time is None:
-                        exit_first_start_time = time.time()
-                    elapsed_redo_time = int(time.time() - exit_first_start_time)
-                    if elapsed_redo_time >= exit_watchdog_seconds:
-                        raise RuntimeError(f"탈출 {exit_watchdog_seconds:.0f}초 초과 앱 강제 재시작: 재개 버튼 비활성 상태가 {elapsed_redo_time}초간 해소되지 않아 프로세스 강제 리셋을 수행합니다.")
-
-                    exit_recovery_retry_count += 1
-                    print(f"🚪🚨 [탈출 정체 즉시감지 - 유령성4층 전용] 재개 버튼 비활성 확인(새 필드 착지 직후) - 정체 사다리 없이 곧바로 전진 스와이프를 단행합니다. (누적 경과: {elapsed_redo_time}초, 복구 시도 {exit_recovery_retry_count}회)")
-                    sx = int(720 * scale_x)
-                    sy1 = int(1500 * scale_y)
-                    sy2 = int(900 * scale_y)
-                    safe_device_shell(device, f"input swipe {sx} {sy1} {sx} {sy2} 300")
-                    time.sleep(1.5)
-                    coords_exit_redo = find_and_get_field_btn_coords(img_np, t_move_exit, 0.70)
-                    if not coords_exit_redo:
-                        coords_exit_redo = (int(1338 * scale_x), int(462 * scale_y))
-                    ex_redo, ey_redo = coords_exit_redo
-                    safe_device_shell(device, f"input tap {ex_redo} {ey_redo}")
-                    time.sleep(0.1)
-                    safe_device_shell(device, f"input tap {ex_redo} {ey_redo}")
-                    time.sleep(2.0)
-
-                    exit_last_action_was_exit_tap = True
-                    exit_stuck_count = 0
-                    exit_prev_minimap = None
-                    last_click_time = time.time()
-                    continue
-
             if exit_prev_minimap is not None and is_real_field:
                 diff = cv2.absdiff(current_mini, exit_prev_minimap)
                 mean_diff = np.mean(diff) / 255.0
@@ -2121,7 +2082,43 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     elapsed_exit_time = int(time.time() - exit_first_start_time)
                     print(f"⚠️ [탈출 정체 스택] 미니맵 정지 감지 ({exit_stuck_count}/5 회) (최초 탈출 시작: {exit_first_str}, 누적 경과: {elapsed_exit_time}초)")
                     
-                    # 🚨 [v1.14.0-hotfix2] 정지 스택 1~2회차 신속 예비 연타 복구 작동
+                    # 🚨 [2026-08-30 유령성4층 착지 스턱 즉시 스와이프] 재개버튼 신호로 "진짜 스턱인지"
+                    # 미리 판별해보려 했으나(2026-08-29~30 시도) 활성/비활성 전환 창이 우리 스크린샷 폴링
+                    # 주기보다 짧아 실전에서 매번 놓쳤음(다른 던전에서도 쓰려던 범용 아이디어라 완전히
+                    # 폐기하지 않고 dev/ROADMAP.md로 이관). 대신 이 던전은 실전 로그로 "1회차 정체 = 예외
+                    # 없이 항상 진짜 스턱, 결국 전진 스와이프 필요"임이 반복 확인됐으므로, 1~2회차의 범용
+                    # 완충 연타(상자/출구 재탭)를 건너뛰고 1회차부터 곧장 전진 스와이프+출구 재탭(원래
+                    # 5회차 전용 복구)을 실행한다. 특히 1회차의 범용 상자 버튼 연타는 이 착지 지점이 실제
+                    # 3층 필드라 자칫 진짜 상자를 열어버려 "의도치 않은 3층 상자주회"로 새는 위험까지 있어
+                    # (사용자 지적) 이 던전에서는 아예 건드리지 않는다.
+                    if dungeon_name == "북쪽의 유령선" and farming_method == "상자파밍":
+                        if elapsed_exit_time >= exit_watchdog_seconds:
+                            raise RuntimeError(f"탈출 {exit_watchdog_seconds:.0f}초 초과 앱 강제 재시작: {elapsed_exit_time}초 동안 탈출하지 못하여 프로세스 강제 리셋을 수행합니다.")
+                        exit_recovery_retry_count += 1
+                        print(f"🚪🚨 [탈출 정체 복구 작동 - 유령성4층 전용 즉시발동] 1회차부터 곧바로 전진 스와이프(위로) 후 출구단추 0.1초 연사 터치를 단행합니다. (누적 경과: {elapsed_exit_time}초, 복구 시도 {exit_recovery_retry_count}회)")
+                        sx = int(720 * scale_x)
+                        sy1 = int(1500 * scale_y)
+                        sy2 = int(900 * scale_y)
+                        safe_device_shell(device, f"input swipe {sx} {sy1} {sx} {sy2} 300")
+                        time.sleep(1.5)
+                        coords_exit_immediate = find_and_get_field_btn_coords(img_np, t_move_exit, 0.70)
+                        if not coords_exit_immediate:
+                            coords_exit_immediate = (int(1338 * scale_x), int(462 * scale_y))
+                        ex_immediate, ey_immediate = coords_exit_immediate
+                        safe_device_shell(device, f"input tap {ex_immediate} {ey_immediate}")
+                        time.sleep(0.1)
+                        safe_device_shell(device, f"input tap {ex_immediate} {ey_immediate}")
+                        time.sleep(2.0)
+
+                        exit_last_action_was_exit_tap = True
+                        exit_clicked_once = False
+                        exit_stuck_count = 0
+                        exit_prev_minimap = None
+                        state = "FIELD_WAIT"
+                        last_click_time = time.time()
+                        continue
+
+                    # 🚨 [v1.14.0-hotfix2] 정지 스택 1~2회차 신속 예비 연타 복구 작동 (유령성4층 상자파밍 외)
                     if exit_stuck_count == 1:
                         # 1회차: '상자 이동' 단추 5회 연타 주입
                         coords_chest = find_chest_btn_coords(img_np, t_move_chest_act, t_move_chest_deact, 0.70)
