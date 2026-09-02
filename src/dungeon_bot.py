@@ -19,9 +19,17 @@ came_from_chest = False
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.19.0
-# - 최근 수정일: 2026-08-29
+# - 현재 버전: 1.19.1
+# - 최근 수정일: 2026-09-02
 # - 수정 기록:
+#   1.19.1: 유령성4층 착지 스턱을 1회차부터 즉시 전진 스와이프로 단축(재개버튼 신호로 미리 판별하려던
+#     시도는 전환 창이 스크린샷 폴링보다 짧고 매칭 방식으로 밝기차를 못 구분해 실전에서 매번 실패함이
+#     진단 로그로 확인돼 폐기 - 대신 실전 로그로 "1회차 정체 = 예외 없이 항상 진짜 스턱"임이 반복 확인돼
+#     범용 1~2단계 완충 연타를 건너뛰고 1회차부터 전진 스와이프+출구 재탭을 실행하도록 변경, 3층 상자를
+#     잘못 열어버릴 위험이 있던 1회차 상자 버튼 연타도 이 던전에선 배제). 재개 오진 방지 재확인 경로의
+#     중복 ADB 스크린샷 1회 제거(try_resume_move가 이미 찍은 화면을 재사용) 및 정비/전투/상자 처리 직후
+#     FIELD_WAIT 재진입 시 불필요한 4초 쿨타임 파쇄(last_click_time = 0.0 추가) - "재개 오진 방지" 재확인
+#     체감 지연이 8초→4초로 단축됨(사용자 실기 확인). 상세는 CLAUDE.md/history.log 참고.
 #   1.19.0: 유령성4층 상자파밍 나가기 안정화 2건. (1) '없습니다' 토스트(toastmsg_nochest.png)가 "상자
 #     없음"/"경로 없음" 두 메시지에 공용으로 쓰이는데, 직전에 어떤 버튼을 눌렀는지 안 가리고 매 틱 무조건
 #     "경로 없음"으로 해석해 불필요한 전진 스와이프가 나가던 결함 완치(사용자 실기 확인: 상자 버튼 눌러서
@@ -540,17 +548,19 @@ def find_checkpoint_btn_coords(img_np, t_act, t_deact, threshold_val=0.70):
 # 던전 필드에서 멈춰서 확인하는 시간 자체가 기습 위험이라, 중단된 이동을 처음부터 다시 찾지 않고 "재개"
 # 버튼으로 즉시 이어간다. 버튼을 못 찾으면 아무 것도 안 하고 'not_found'만 반환 - 호출부는 다음 정상
 # FIELD_WAIT 사이클(상자 버튼)이 자연스럽게 이어받도록 그대로 둔다. 반환값: 'not_found' | 'moved' |
-# 'no_chest' | 'none'.
+# 'no_chest' | 'none'. 두 번째 반환값은 이 함수가 마지막으로 캡처한 스크린샷(없으면 인자로 받은 img_np) -
+# 호출부(resume_or_confirm_chest)가 같은 화면을 재활용해 ADB 스크린샷 왕복을 한 번 아낄 수 있게 한다.
 def try_resume_move(device, img_np, t_move_resume_act, t_move_resume_deact, t_no_chest=None):
     resume_coords = find_checkpoint_btn_coords(img_np, t_move_resume_act, t_move_resume_deact, 0.70)
     if not resume_coords:
-        return 'not_found'
+        return 'not_found', img_np
     rx, ry = resume_coords
     print(f"⏭️ [이동 재개] '재개(1번 Redo)' ({rx}, {ry}) 터치 주입")
     safe_device_shell(device, f"input tap {rx} {ry}")
 
     time.sleep(0.5)
     prev_mini = None
+    last_img = img_np
     h, w = img_np.shape[:2]
     scale_x, scale_y = w / 1440.0, h / 2560.0
     for _step in range(2):
@@ -558,22 +568,23 @@ def try_resume_move(device, img_np, t_move_resume_act, t_move_resume_deact, t_no
             raw = device.screencap()
             if raw is None: continue
             img_np_sub = np.array(Image.open(io.BytesIO(raw)))
+            last_img = img_np_sub
         except Exception:
             continue
 
         if t_no_chest is not None and check_template_present(img_np_sub, t_no_chest, 0.55):
-            return 'no_chest'
+            return 'no_chest', last_img
 
         gray_sub = cv2.cvtColor(img_np_sub, cv2.COLOR_RGB2GRAY)
         mini = gray_sub[int(115 * scale_y):int(315 * scale_y), int(1117 * scale_x):int(1317 * scale_x)]
         if prev_mini is not None:
             diff = cv2.absdiff(mini, prev_mini)
             if (np.mean(diff) / 255.0) >= 0.05:
-                return 'moved'
+                return 'moved', last_img
         prev_mini = mini
         time.sleep(0.3)
 
-    return 'none'
+    return 'none', last_img
 
 # 🚨 [2026-08-28 재개 오진 방지 - 사용자 확정 설계] 재개 버튼이 이미 도착한 예전 목적지를 다시 가리켜서
 # "없습니다" 토스트가 뜰 수 있다. 이걸 곧바로 던전 나가기 신호로 오인하지 않도록, 상자 버튼(4번)으로 한
@@ -581,16 +592,14 @@ def try_resume_move(device, img_np, t_move_resume_act, t_move_resume_deact, t_no
 # 전환), False면 정상(다음 FIELD_WAIT 사이클에 맡김).
 def resume_or_confirm_chest(device, img_np, t_move_resume_act, t_move_resume_deact,
                              t_move_chest_act, t_move_chest_deact, t_no_chest):
-    outcome = try_resume_move(device, img_np, t_move_resume_act, t_move_resume_deact, t_no_chest)
+    outcome, img_check = try_resume_move(device, img_np, t_move_resume_act, t_move_resume_deact, t_no_chest)
     if outcome != 'no_chest':
         return False
 
+    # 🚨 [2026-08-30 재개 오진 방지 경로 단축] try_resume_move()가 '없습니다' 판정 때 이미 찍어둔 스크린샷을
+    # 그대로 재사용한다(상자 버튼 위치는 토스트 유무와 무관하므로 재사용 가능) - ADB 스크린샷 왕복 1회를
+    # 절약해 이 재확인 경로의 체감 지연을 줄인다(사용자 지적: "이거 꽤 오래걸리는데").
     print("⚠️ [재개 오진 방지] 재개 중 '없습니다' 감지 - 상자 버튼으로 1회 재확인합니다.")
-    try:
-        raw = device.screencap()
-        img_check = np.array(Image.open(io.BytesIO(raw))) if raw else img_np
-    except Exception:
-        img_check = img_np
     coords = find_chest_btn_coords(img_check, t_move_chest_act, t_move_chest_deact, 0.70)
     if not coords:
         return False
@@ -1516,6 +1525,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                     device, img_np, t_move_resume_act, t_move_resume_deact,
                                     t_move_chest_act, t_move_chest_deact, t_no_chest
                                 )
+                                last_click_time = 0.0  # 🚀 [2026-08-30] FIELD_WAIT 상자탭 4초 쿨타임 파쇄
                             state = "FIELD_WAIT"
                             time.sleep(2.0)  # 전투 종료 안착 연출 마진
                             continue
@@ -1529,6 +1539,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                     device, img_np, t_move_resume_act, t_move_resume_deact,
                                     t_move_chest_act, t_move_chest_deact, t_no_chest
                                 )
+                                last_click_time = 0.0  # 🚀 [2026-08-30] FIELD_WAIT 상자탭 4초 쿨타임 파쇄
                             state = "FIELD_WAIT"
                             continue
                         state = "FIELD_WAIT"
@@ -1695,6 +1706,8 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                     exit_prev_minimap = None
                                     exit_last_action_was_exit_tap = False
                                     last_click_time = 0.0
+                                else:
+                                    last_click_time = 0.0  # 🚀 [2026-08-30] FIELD_WAIT 상자탭 4초 쿨타임 파쇄
                             elif last_target_coords:
                                 print(f"⏭️ [즉각 이동 재개] 정비 직후 딜레이 파쇄! 이전 타겟 좌표 ({last_target_coords[0]}, {last_target_coords[1]}) 즉시 재사격")
                                 safe_device_shell(device, f"input tap {last_target_coords[0]} {last_target_coords[1]}")
@@ -2398,6 +2411,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                         device, img_np, t_move_resume_act, t_move_resume_deact,
                         t_move_chest_act, t_move_chest_deact, t_no_chest
                     )
+                    last_click_time = 0.0  # 🚀 [2026-08-30] FIELD_WAIT 상자탭 4초 쿨타임 파쇄
                 state = "FIELD_WAIT"
                 time.sleep(3.0)
             else: time.sleep(0.3)

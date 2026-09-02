@@ -4,7 +4,7 @@ import datetime
 import time
 import json
 
-CURRENT_VERSION = "1.19.0" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
+CURRENT_VERSION = "1.19.1" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
 
 # ==============================================================================
 # ⚙️ [Daphne 마스터 글로벌 제어 세팅 변수 구역 - 진짜 최상단 제어판]
@@ -113,9 +113,17 @@ else:
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.19.0
-# - 최근 수정일: 2026-08-29
+# - 현재 버전: 1.19.1
+# - 최근 수정일: 2026-09-02
 # - 수정 기록:
+#   1.19.1: 재부팅 로그 파일명이 "reboot2" 이상으로 절대 안 올라가던 결함 완치 - 에뮬레이터 콜드 리부트
+#     분기(조건 A/B) 직후 clear_restart_counter()를 호출해 카운터를 0으로 지운 채로 다음 프로세스를
+#     띄우고 있었음(사용자 지적: "분명 2번 이상 리붓인데 reboot2를 본 적이 없다" - 정확한 관찰이었음).
+#     리부트 카운트가 2 이상 되는 바로 그 시점에 매번 스스로 지워버리는 구조라 reboot2 이상 표기가
+#     구조적으로 불가능했음. 리부트 직전 clear 2곳을 제거해 카운터가 다음 프로세스로 그대로 이어지도록
+#     완치(정상 주행 돌입 시 클리어되는 다른 지점은 그대로 유지 - "회복되면 리셋" 취지 보존). 아울러
+#     "수동/원격 시작만 start로 표기"를 보장하기 위해 던전별 `.bat` 3종 맨 앞에 restart_counter.txt 삭제를
+#     추가(원격 시작도 같은 `.bat`를 실행하는 구조라 자동 적용됨). 상세는 dungeon_bot.py/chest_opener.py 참고.
 #   1.19.0: MuMu 멀티 인스턴스(0/1/2번) 자동 감지 지원(포트→인덱스 매핑, 재부팅 시 마지막 접속 포트 기준
 #     자동 재선택) 및 재부팅 시 뮤뮤 설정 파일이 프로젝트 루트에 잘못 쓰이던 결함 완치(subprocess.Popen에
 #     cwd 미지정 → 정품 설치 루트로 명시). 앱 재시작 우선 정책 복원(뮤뮤 재부팅 직행에서 원복) 및 가로화면
@@ -1137,7 +1145,16 @@ def restart_process(reason):
     if ENABLE_EMULATOR_REBOOT and consecutive_restart_count >= 2:
         print(f"      🚨 [연속 재시작 한계 도달] 재시작 시도가 {consecutive_restart_count}회 연속 격발되었습니다. 에뮬레이터 완전 재시작으로 강제 극복합니다.")
         reboot_emulator()
-        clear_restart_counter()
+        # 🚨 [2026-09-02 로그 파일명 reboot2+ 미표기 결함 완치] 여기서 clear_restart_counter()를 호출하면
+        # restart_counter.txt가 0으로 리셋된 채로 다음 프로세스가 부팅되어, init_main_logger()가 그 값을
+        # 읽어 로그 파일명을 "reboot2"가 아니라 "start"로 잘못 붙였음(실전 확인: 연속 자동 재부팅이 실제로
+        # 여러 번 있었는데도 로그에는 매번 reboot1 아니면 start만 찍히고 reboot2 이상을 본 적이 없다는
+        # 사용자 지적). 카운터를 여기서 지우지 않고 그대로 넘기면, 다음 프로세스의 init_main_logger()가
+        # 정확한 누적 횟수(2, 3, ...)로 로그 파일명을 붙인다 - "정상 주행 돌입"(던전 1주회/여관 숙박 성공)
+        # 시점에 이미 별도로 클리어되므로, 진짜 안정화된 뒤엔 여전히 카운터가 자연스럽게 리셋된다. "수동/원격
+        # 시작만 start로, 그 이후 자동 재시작은 reboot로 누적"은 대신 각 .bat 파일이 기동 직전에
+        # restart_counter.txt를 지우는 방식으로 보장한다(진짜 새 시작인지는 .bat/원격시작 지점에서만 확실히
+        # 알 수 있고, os.execv 자가재시작은 이 파일을 거치지 않으므로 값이 그대로 보존됨).
         print("      ➔ 🚀 파이썬 프로세스를 전격 재시작합니다.")
         os.execv(sys.executable, [sys.executable] + sys.argv)
         return
@@ -1178,7 +1195,8 @@ def restart_process(reason):
     if ENABLE_EMULATOR_REBOOT and not device_online:
         print("      🚨 [디바이스 오프라인 감지] ADB 연결 수립 결과 디바이스가 오프라인이거나 감지되지 않습니다. 즉시 에뮬레이터 콜드 리부트를 수행합니다.")
         reboot_emulator()
-        clear_restart_counter()
+        # 🚨 [2026-09-02] 위 조건 A와 동일 사유로 clear_restart_counter() 제거 - 로그 파일명 reboot2+ 표기를
+        # 위해 카운터를 다음 프로세스로 그대로 넘긴다.
         print("      ➔ 🚀 파이썬 프로세스를 전격 재시작합니다.")
         os.execv(sys.executable, [sys.executable] + sys.argv)
         return

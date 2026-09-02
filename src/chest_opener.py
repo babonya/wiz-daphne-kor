@@ -160,8 +160,8 @@ def solve_trap_game(device, img_np):
         device.shell(f"input tap {release_x} {release_y}")
         time.sleep(0.1)
         
-    print("⏳ 15연타 난사 완료. 정산창 연출 진입을 위해 1.0초간 충분히 대기합니다...")
-    time.sleep(1.0)
+    print("⏳ 15연타 난사 완료. 정산창 연출 진입을 위해 0.3초 대기합니다...")
+    time.sleep(0.3)
     return True
 
 def open_and_disarm_chest(device, img_np, thresh_yeolda, chest_opener_slot=6, masked_adventurer_slot=4):
