@@ -389,8 +389,23 @@ def sync_screenshots_loop(session_start_ts, log_dir):
     if os.path.exists(cache_file):
         try:
             with open(cache_file, "r", encoding="utf-8") as f:
-                copied_files = set(json.load(f))
-            print(f"📸 [스크린샷 동기화] 디스크 캐시에서 기존 복사 이력 {len(copied_files)}건 복원 완료.")
+                loaded = set(json.load(f))
+            # 🚨 [2026-09-03 무한 증식 완치] 이 캐시는 "복사 완료" 이력을 영원히 누적만 하고 정리하는 로직이
+            # 없었음(실측: 860건 중 426건이 이미 원본이 삭제된 죽은 항목) - 새 스크린샷 감지마다 집합 전체를
+            # JSON으로 다시 쓰는 구조라(아래 참고) 커질수록 매 주기 쓰기 비용도 계속 늘어남. 원본이 이미
+            # 없는 경로는 다시 복사될 일도 없으므로(같은 경로에 파일이 재생성되지 않는 한) 안전하게 제거.
+            copied_files = {p for p in loaded if os.path.exists(p)}
+            pruned = len(loaded) - len(copied_files)
+            msg = f"📸 [스크린샷 동기화] 디스크 캐시에서 기존 복사 이력 {len(copied_files)}건 복원 완료."
+            if pruned > 0:
+                msg += f" (원본 삭제된 죽은 항목 {pruned}건 정리)"
+            print(msg)
+            if pruned > 0:
+                try:
+                    with open(cache_file, "w", encoding="utf-8") as f:
+                        json.dump(list(copied_files), f, ensure_ascii=False, indent=2)
+                except Exception:
+                    pass
         except Exception as e:
             print(f"⚠️ [스크린샷 동기화] 캐시 로드 실패 (새로 생성): {e}")
             
