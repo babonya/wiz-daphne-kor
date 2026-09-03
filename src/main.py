@@ -582,25 +582,35 @@ def capture_root_cmd_pid():
     # 몇 번을 재시작하든 이 값은 계속 살아남는다.
     if "DAPHNE_ROOT_CMD_PID" in os.environ:
         return os.environ["DAPHNE_ROOT_CMD_PID"]
+    # 🚨 [2026-09-03 콘솔창 안 닫힘 잔존 사례 완치] 이 캡처는 딱 한 번(최초 부팅, 아직 진짜 cmd.exe가 직계
+    # 부모일 때)만 기회가 있는데, 부팅 직후는 ADB 연결/화면 분석 등으로 시스템이 바쁜 시점이라 powershell
+    # 기동(자체 오버헤드 있음)이나 tasklist 호출이 5초 타임아웃을 넘겨 실패할 수 있음. 예전엔 이 실패를
+    # 재시도 없이 빈 문자열("")로 환경변수에 영구 캐싱해버려서, 그 세션이 끝날 때까지(재시작을 몇 번
+    # 거치든) 콘솔창 종료 기능이 통째로 비활성화됐음(사용자 재보고: "여전히 남는 경우가 있다"). 단발성
+    # 타임아웃/일시적 지연에 당하지 않도록, 실패 시 최대 3회까지 짧은 간격으로 재시도한다.
+    import subprocess
     root_pid = ""
-    try:
-        import subprocess
-        result = subprocess.run(
-            ["powershell", "-NoProfile", "-Command",
-             f'(Get-CimInstance Win32_Process -Filter "ProcessId={os.getpid()}").ParentProcessId'],
-            capture_output=True, text=True, timeout=5
-        )
-        ppid_str = result.stdout.strip()
-        if ppid_str.isdigit():
-            check = subprocess.run(
-                ["tasklist", "/FI", f"PID eq {ppid_str}", "/FO", "CSV", "/NH"],
+    for attempt in range(3):
+        try:
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 f'(Get-CimInstance Win32_Process -Filter "ProcessId={os.getpid()}").ParentProcessId'],
                 capture_output=True, text=True, timeout=5
             )
-            out = check.stdout.strip()
-            if out and not out.upper().startswith("INFO:") and out.split(",")[0].strip('"').lower() == "cmd.exe":
-                root_pid = ppid_str
-    except Exception:
-        pass
+            ppid_str = result.stdout.strip()
+            if ppid_str.isdigit():
+                check = subprocess.run(
+                    ["tasklist", "/FI", f"PID eq {ppid_str}", "/FO", "CSV", "/NH"],
+                    capture_output=True, text=True, timeout=5
+                )
+                out = check.stdout.strip()
+                if out and not out.upper().startswith("INFO:") and out.split(",")[0].strip('"').lower() == "cmd.exe":
+                    root_pid = ppid_str
+                    break
+        except Exception:
+            pass
+        if attempt < 2:
+            time.sleep(1.0)
     os.environ["DAPHNE_ROOT_CMD_PID"] = root_pid
     return root_pid
 
