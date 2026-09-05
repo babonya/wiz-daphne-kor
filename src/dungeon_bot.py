@@ -1269,6 +1269,14 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
         if dungeon_name == "북쪽의 유령선" and farming_method == "상자파밍" and from_dungeon_select and is_initial_start:
             if check_field_anchor_present(img_np, t_field, field_threshold):
                 print("🚪 [유령성 4층 진입] 3층 필드 도착 확인 - 체크포인트 이동 + 스와이프로 4층 진입을 시도합니다.")
+                # 🚨 [2026-09-05 화면 과도기 카운터 미리셋 완치] 아래 공용 전처리 블록(check_field_anchor_present
+                # 성공 시 transition_delay_count = 0)과 달리 이 블록은 3층 필드 도착이라는 명백한 "화면 안착"
+                # 이벤트를 감지하고도 카운터를 리셋 안 하고 있었음 - 그 결과 3층 로딩 대기(1~4)에 이어 4층
+                # 로딩 대기가 1부터 다시 시작하지 않고 5~8로 누적되던 결함(사용자 실기 확인: "화면과도기 감지가
+                # 초기화가 안된다"). 서로 독립된 두 번의 정상 로딩을 하나의 10회 예산으로 합쳐 세는 셈이라,
+                # 실제로는 각각 문제없는 로딩인데도 예산이 조기 소진돼 "길 잃음 복구"가 잘못 격발될 위험이
+                # 있었음. 공용 블록과 동일하게 여기서도 리셋한다.
+                transition_delay_count = 0
                 is_initial_start = False
                 check_coords = find_checkpoint_btn_coords(img_np, t_move_check_act, t_move_check_deact, 0.70)
                 if check_coords:
@@ -1384,6 +1392,11 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     time.sleep(2.0)
                     state = "IN_COMBAT"
                     last_state_changed_time = time.time()
+                    # 🚨 [2026-09-05] 아래 "공식" 사망 감지 분기(~1413-1426, 동일한 get_dead_match_score
+                    # 체크)는 transition_delay_count를 리셋하는데 이 정체(stuck) 복구 경로의 쌍둥이 분기는
+                    # 빠뜨리고 있었음 - 유령성4층 진입 카운터 미리셋 버그와 같은 유형(사용자가 지적한 "공용
+                    # 리셋 지점과 특수 분기가 불일치하는" 구조적 패턴). CLAUDE.md/AGENTS.md 컨벤션 참고.
+                    transition_delay_count = 0
                     continue
 
                 # 🚨 [v1.14.0-hotfix5] 일반 정체 30초 지속 시 비상 뒤로가기(KEYCODE_BACK)를 날려 팝업 갇힘을 극복
