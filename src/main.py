@@ -63,6 +63,8 @@ PRESET_ID_MAP = {
     "GHOST_2F_MINE": "유령성 2층 채굴",
     "GHOST_4F_CHEST": "유령성 4층 상자파밍",
     "WOLF_1F_CHEST": "백아1층 파밍",
+    "ISBERG_HEAVYSNOW_6F_CHEST": "이스벨크 대설지대 6층 상자파밍",
+    "ISBERG_HEAVYSNOW_CHURCH_CHEST": "이스벨크 대설지대 교회구역 상자파밍",
 }
 _preset_id_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "daphne_preset_id.txt")
 _preset_id_from_file = None
@@ -80,6 +82,10 @@ TOWN_NAME = "이스벨크"
 DUNGEON_NAME = "백아의 동굴"
 DUNGEON_FLOOR_NAME = "백아1층"
 FARMING_METHOD = "상자파밍"
+# 🆕 [대설지대 전용, 2026-09-07] 캠핑/하켄 있는 던전에서만 쓰는 3개 필드 - 다른 던전은 기본값(기존 동작)
+RETURN_METHOD = "exit_button"
+RESUPPLY_MODE = "items_only"
+INN_VISIT_LOOP_INTERVAL = 0
 
 # main.py 파일이 위치한 src/ 폴더를 기준으로 presets.json의 물리 절대 경로를 도출합니다. (v1.17.0-hotfix1부터 presets.json이 src/ 안으로 이동)
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -96,6 +102,9 @@ if os.path.exists(presets_path):
                 DUNGEON_NAME = p_info.get("dungeon", DUNGEON_NAME)
                 DUNGEON_FLOOR_NAME = p_info.get("floor", DUNGEON_FLOOR_NAME)
                 FARMING_METHOD = p_info.get("farming_method", FARMING_METHOD)
+                RETURN_METHOD = p_info.get("return_method", RETURN_METHOD)
+                RESUPPLY_MODE = p_info.get("resupply_mode", RESUPPLY_MODE)
+                INN_VISIT_LOOP_INTERVAL = p_info.get("inn_visit_loop_interval", INN_VISIT_LOOP_INTERVAL)
                 print(f"📂 [프리셋 로드 성공] 활성화된 프리셋: {sel_preset}")
                 print(f"   - 마을: {TOWN_NAME} | 던전: {DUNGEON_NAME} | 층: {DUNGEON_FLOOR_NAME} | 방식: {FARMING_METHOD}")
             else:
@@ -1629,7 +1638,7 @@ def start_grand_orchestrator():
     if TOWN_NAME == "노던할로우":
         t_go_village = load_template("templates/Worldmap/FFXI_village.png")
     else:
-        t_go_village = load_template("templates/Worldmap/Vill_isbelk_btn.png")
+        t_go_village = load_template("templates/Worldmap/Vill_isberg_btn.png")
 
     if DUNGEON_NAME == "북쪽의 유령선":
         t_dungeon_sel = load_template("templates/FFXI/FFXI_dungeon_Anchor.png")
