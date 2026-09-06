@@ -1,0 +1,22 @@
+{
+  "inven_cleanup_btn": {
+    "source_image": "1-1 inven_cleanup_btn.png",
+    "roi": {
+      "x1": 733,
+      "y1": 1822,
+      "x2": 819,
+      "y2": 1911
+    },
+    "roi_name": "dun_sel_refill_btn"
+  },
+  "inven_cleanup_refill": {
+    "source_image": "1-2 inven_cleanup_refill.png",
+    "roi": {
+      "x1": 865,
+      "y1": 2266,
+      "x2": 1075,
+      "y2": 2339
+    },
+    "roi_name": "inven_refill_btn"
+  }
+}

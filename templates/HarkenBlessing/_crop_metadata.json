@@ -1,0 +1,12 @@
+{
+  "Father": {
+    "source_image": "heavysnow_no1_harkenblessing_purple.png",
+    "roi": {
+      "x1": 410,
+      "y1": 1725,
+      "x2": 1029,
+      "y2": 1789
+    },
+    "roi_name": null
+  }
+}

@@ -4,7 +4,7 @@ import datetime
 import time
 import json
 
-CURRENT_VERSION = "1.19.1" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
+CURRENT_VERSION = "1.19.2" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
 
 # ==============================================================================
 # ⚙️ [Daphne 마스터 글로벌 제어 세팅 변수 구역 - 진짜 최상단 제어판]
@@ -113,9 +113,20 @@ else:
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.19.1
-# - 최근 수정일: 2026-09-02
+# - 현재 버전: 1.19.2
+# - 최근 수정일: 2026-09-07
 # - 수정 기록:
+#   1.19.2: 대설지대 던전 추가 전 마지막 안정화 릴리즈 - (1) adb connect 시도마다 CLI가 성공/실패를 줄줄이
+#     찍어 오류처럼 보이던 문제 완치: 출력을 nul로 죽이고 최종 연결된 인스턴스 번호+포트만 한 줄로 출력
+#     (connect_all_mumu_ports_quietly() 신설, connect_mumu()/restart_process() 양쪽 적용). (2) 원격 정지
+#     시 콘솔창이 잔존하는 결함 완치: capture_root_cmd_pid()의 PowerShell/tasklist 캡처가 부팅 시 시스템
+#     부하로 1회 실패하면 그대로 영구 비활성화되던 걸 3회 재시도(1초 간격)로 보강. (3) .copied_screenshots.json
+#     스크린샷 동기화 캐시가 삭제된 원본을 계속 들고 있어 무한 증식하던 결함 완치(로드 시 실존 파일만 남기고
+#     정리). (4) 미사용 toastmsg_noway 도장 삭제(toastmsg_nochest와 내용 겹쳐 애초에 코드에서 참조된 적 없음).
+#     (5) 정체(stuck) 복구 30초 메가블록 내 사망감지 분기가 "공식" 사망감지 분기와 동일한 체크를 하면서도
+#     transition_delay_count 리셋만 빠뜨린 쌍둥이 결함 완치(같은 유형이 하루 전 유령성4층 진입 카운터
+#     미리셋 버그로 이미 한 번 확인돼, 재발 방지 컨벤션을 CLAUDE.md/AGENTS.md에 추가). 상세는 각 커밋
+#     참고 - 이 버전은 신규 던전(대설지대) 로직은 포함하지 않은 순수 안정화 릴리즈.
 #   1.19.1: 재부팅 로그 파일명이 "reboot2" 이상으로 절대 안 올라가던 결함 완치 - 에뮬레이터 콜드 리부트
 #     분기(조건 A/B) 직후 clear_restart_counter()를 호출해 카운터를 0으로 지운 채로 다음 프로세스를
 #     띄우고 있었음(사용자 지적: "분명 2번 이상 리붓인데 reboot2를 본 적이 없다" - 정확한 관찰이었음).
@@ -758,6 +769,12 @@ def get_reboot_vm_index():
         return MUMU_PORT_TO_INDEX[_last_connected_mumu_port]
     return MUMU_VM_INDEX
 
+def connect_all_mumu_ports_quietly():
+    # 🚨 [2026-09-06 연결 스팸 완치] adb connect CLI 자체가 포트마다 성공/실패 문구를 줄줄이 찍어
+    # 실제 오류처럼 보인다는 지적 - 출력을 nul로 죽이고, 호출부가 최종 결과만 한 줄로 알린다.
+    for port in ["16384", "16385", "5555", "16416", "5557", "16448", "5559"]:
+        os.system(f"adb connect 127.0.0.1:{port} > nul 2>&1")
+
 def reboot_emulator():
     print("\n🖥️🚨 [에뮬레이터 콜드 리부트 작동] MuMu Player가 정지했거나 오프라인 상태입니다. 완전 리셋을 수행합니다!")
     # 1. 윈도우 taskkill을 통해 모든 뮤뮤 플레이어 프로세스 강제 킬
@@ -1189,13 +1206,7 @@ def restart_process(reason):
     os.system("adb kill-server")
     time.sleep(1.0)
     os.system("adb start-server")
-    os.system("adb connect 127.0.0.1:16384")
-    os.system("adb connect 127.0.0.1:16385")
-    os.system("adb connect 127.0.0.1:5555")
-    os.system("adb connect 127.0.0.1:16416")  # 🚨 [2026-08-29] MuMu 멀티 인스턴스 1번 포트(추정값) 추가
-    os.system("adb connect 127.0.0.1:5557")
-    os.system("adb connect 127.0.0.1:16448")  # 🚨 [2026-08-29] MuMu 멀티 인스턴스 2번 포트(실측) 추가
-    os.system("adb connect 127.0.0.1:5559")
+    connect_all_mumu_ports_quietly()
     time.sleep(4.0)
 
     # 디바이스 온라인 상태 검증
@@ -1212,7 +1223,9 @@ def restart_process(reason):
         if not device: device = client.device("127.0.0.1:5559")
         if device and device.get_state() == "device":
             device_online = True
-            record_mumu_port(device.serial.split(":")[-1])  # 🚨 [2026-08-29] 콜드 리부트 시 같은 인스턴스를 재실행하기 위한 기록
+            port = device.serial.split(":")[-1]
+            print(f"      ✅ 인스턴스 {MUMU_PORT_TO_INDEX.get(port, '?')}번 ({port}포트)에 연결 성공했습니다.")
+            record_mumu_port(port)  # 🚨 [2026-08-29] 콜드 리부트 시 같은 인스턴스를 재실행하기 위한 기록
     except:
         pass
 
@@ -1255,15 +1268,8 @@ def restart_process(reason):
 
 def connect_mumu():
     global global_device
-    print("🚀 [ADB 메인 연결] 사령탑 시스템 가동... 7중 포트 자동 스위칭 터널을 개설합니다.")
     os.system("adb start-server")
-    os.system("adb connect 127.0.0.1:16384")
-    os.system("adb connect 127.0.0.1:16385")
-    os.system("adb connect 127.0.0.1:5555")
-    os.system("adb connect 127.0.0.1:16416")  # 🚨 [2026-08-29] MuMu 멀티 인스턴스 1번 포트(추정값) 추가
-    os.system("adb connect 127.0.0.1:5557")
-    os.system("adb connect 127.0.0.1:16448")  # 🚨 [2026-08-29] MuMu 멀티 인스턴스 2번 포트(실측) 추가
-    os.system("adb connect 127.0.0.1:5559")
+    connect_all_mumu_ports_quietly()
     time.sleep(1.0)
     try:
         client = AdbClient(host="127.0.0.1", port=5037)
@@ -1275,10 +1281,12 @@ def connect_mumu():
         if not device: device = client.device("127.0.0.1:16448")
         if not device: device = client.device("127.0.0.1:5559")
         if device:
-            print("✅ [ADB 메인 연결 성공] 하이브리드 자동 포트 제어 레이더 가동 완료.")
-            record_mumu_port(device.serial.split(":")[-1])  # 🚨 [2026-08-29] 콜드 리부트 시 같은 인스턴스를 재실행하기 위한 기록
+            port = device.serial.split(":")[-1]
+            print(f"✅ 인스턴스 {MUMU_PORT_TO_INDEX.get(port, '?')}번 ({port}포트)에 연결 성공했습니다.")
+            record_mumu_port(port)  # 🚨 [2026-08-29] 콜드 리부트 시 같은 인스턴스를 재실행하기 위한 기록
             global_device = device
             return device
+        print("⚠️ [ADB 연결 실패] 사용 가능한 MuMu 인스턴스를 찾지 못했습니다.")
         return None
     except Exception as e:
         print(f"❌ ADB 연결 치명적 실패: {e}")

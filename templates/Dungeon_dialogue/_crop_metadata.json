@@ -1,0 +1,92 @@
+{
+  "Dun_dilog_fight": {
+    "source_image": "combat_dialogue.png",
+    "roi": {
+      "x1": 628,
+      "y1": 1073,
+      "x2": 811,
+      "y2": 1137
+    },
+    "roi_name": null
+  },
+  "Dun_dilog_ignore": {
+    "source_image": "combat_dialogue.png",
+    "roi": {
+      "x1": 555,
+      "y1": 1234,
+      "x2": 881,
+      "y2": 1296
+    },
+    "roi_name": null
+  },
+  "Dun_dilog_assault": {
+    "source_image": "combat_dialogue.png",
+    "roi": {
+      "x1": 606,
+      "y1": 1396,
+      "x2": 835,
+      "y2": 1458
+    },
+    "roi_name": null
+  },
+  "Dun_dilog_begging": {
+    "source_image": "combat_dialogue.png",
+    "roi": {
+      "x1": 609,
+      "y1": 1549,
+      "x2": 830,
+      "y2": 1617
+    },
+    "roi_name": null
+  },
+  "Dun_dilog_healing": {
+    "source_image": "combat_dialogue.png",
+    "roi": {
+      "x1": 536,
+      "y1": 1719,
+      "x2": 892,
+      "y2": 1773
+    },
+    "roi_name": null
+  },
+  "Dun_camping_rest": {
+    "source_image": "camping_rest1.png",
+    "roi": {
+      "x1": 667,
+      "y1": 1990,
+      "x2": 771,
+      "y2": 2045
+    },
+    "roi_name": null
+  },
+  "Dun_camping_rest2": {
+    "source_image": "camping_rest2.png",
+    "roi": {
+      "x1": 663,
+      "y1": 2161,
+      "x2": 771,
+      "y2": 2218
+    },
+    "roi_name": null
+  },
+  "Dun_seller_let_me_see": {
+    "source_image": "대설지대-행상인 (3).png",
+    "roi": {
+      "x1": 590,
+      "y1": 1544,
+      "x2": 846,
+      "y2": 1620
+    },
+    "roi_name": null
+  },
+  "Dun_seller_hammer": {
+    "source_image": "대설지대-행상인 (6).png",
+    "roi": {
+      "x1": 509,
+      "y1": 1552,
+      "x2": 622,
+      "y2": 1617
+    },
+    "roi_name": null
+  }
+}

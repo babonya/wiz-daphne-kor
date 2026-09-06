@@ -1,0 +1,42 @@
+{
+  "dungeon_Heavysnow": {
+    "source_image": "2 이스벨크 마을외곽.png",
+    "roi": {
+      "x1": 924,
+      "y1": 1374,
+      "x2": 1164,
+      "y2": 1444
+    },
+    "roi_name": null
+  },
+  "Heavysnow_4F": {
+    "source_image": "3 마을외곽-대설지대.png",
+    "roi": {
+      "x1": 760,
+      "y1": 660,
+      "x2": 1129,
+      "y2": 725
+    },
+    "roi_name": null
+  },
+  "Heavysnow_6F": {
+    "source_image": "3 마을외곽-대설지대.png",
+    "roi": {
+      "x1": 838,
+      "y1": 949,
+      "x2": 1261,
+      "y2": 1016
+    },
+    "roi_name": null
+  },
+  "Heavysnow_church": {
+    "source_image": "3 마을외곽-대설지대.png",
+    "roi": {
+      "x1": 927,
+      "y1": 1380,
+      "x2": 1164,
+      "y2": 1450
+    },
+    "roi_name": null
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "FieldMap_automove": {
+    "source_image": "캠핑_아웃사이트_오른쪽마지날.png",
+    "roi": {
+      "x1": 1075,
+      "y1": 490,
+      "x2": 1240,
+      "y2": 550
+    },
+    "roi_name": null
+  },
+  "FieldMap_harkenLarge_left": {
+    "source_image": "교회구역_필드맵확장_대하켄.png",
+    "roi": {
+      "x1": 1275,
+      "y1": 1121,
+      "x2": 1347,
+      "y2": 1167
+    },
+    "roi_name": null
+  },
+  "FieldMap_harkenLarge_Automove": {
+    "source_image": "교회구역_대하켄_자동이동.png",
+    "roi": {
+      "x1": 1108,
+      "y1": 935,
+      "x2": 1272,
+      "y2": 997
+    },
+    "roi_name": null
+  },
+  "Fieldmap_exit_icon": {
+    "source_image": "Fieldmap_camping_automoving.png",
+    "roi": {
+      "x1": 340,
+      "y1": 2239,
+      "x2": 445,
+      "y2": 2336
+    },
+    "roi_name": null
+  }
+}
