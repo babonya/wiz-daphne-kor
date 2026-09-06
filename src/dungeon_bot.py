@@ -317,6 +317,126 @@ def check_dialogue_indicator_present(img_np, template, threshold=0.75):
     roi = img_np[2349:2433, 1293:1377]
     return check_template_present(roi, template, threshold)
 
+# 🆕 [2026-09-07 대설지대] main.py의 "대화창 저격"(1850-1882행, templates/inn_sleep/arrow_clean.png)을
+# dungeon_bot.py에도 이식하되 크롭 영역을 넓힌다 - main.py 원본은 화면 극하단([2200:2560,1100:1440])만
+# 보는데, 인벤정리 완료 토스트("소지품을 정리했습니다")처럼 화면 중간(y≈1587)에 뜨는 대화창은 그 영역
+# 밖이라 못 잡는다(실측 확인: 좁은 크롭 0점, 화면 하단 절반 검색 시 0.927). 그 대신 임계값은 그대로
+# 0.82 유지(main.py 주석: "지형 오탐 억제 목적으로 0.70→0.82 상향") - 크롭을 넓힌 만큼 지형 오탐 여지가
+# 늘 수 있으니 임계값을 낮추지 않는다.
+DIALOGUE_ADVANCE_ARROW_ZONE = (1300, 2560, 0, 1440)  # (y1, y2, x1, x2)
+
+def check_dialogue_advance_arrow_present(img_np, template, threshold=0.82):
+    if img_np is None or template is None:
+        return False
+    y1, y2, x1, x2 = DIALOGUE_ADVANCE_ARROW_ZONE
+    h, w = img_np.shape[:2]
+    if h < y2 or w < x2:
+        return False
+    zone = img_np[y1:y2, x1:x2]
+    gray_zone = cv2.cvtColor(zone, cv2.COLOR_RGB2GRAY)
+    _, thresh_zone = cv2.threshold(gray_zone, 160, 255, cv2.THRESH_BINARY)
+    if thresh_zone.shape[0] < template.shape[0] or thresh_zone.shape[1] < template.shape[1]:
+        return False
+    result = cv2.matchTemplate(thresh_zone, template, cv2.TM_CCOEFF_NORMED)
+    _, max_val, _, _ = cv2.minMaxLoc(result)
+    return max_val > threshold
+
+def find_and_click_dialogue_advance_arrow(device, img_np, template, threshold=0.82):
+    """공용 대화 진행(황금 화살표) 탭 - 인벤정리/행상인/캠핑/중립몹 대화 진행에 공용으로 재사용."""
+    if img_np is None or template is None:
+        return False
+    y1, y2, x1, x2 = DIALOGUE_ADVANCE_ARROW_ZONE
+    h, w = img_np.shape[:2]
+    if h < y2 or w < x2:
+        return False
+    zone = img_np[y1:y2, x1:x2]
+    gray_zone = cv2.cvtColor(zone, cv2.COLOR_RGB2GRAY)
+    _, thresh_zone = cv2.threshold(gray_zone, 160, 255, cv2.THRESH_BINARY)
+    if thresh_zone.shape[0] < template.shape[0] or thresh_zone.shape[1] < template.shape[1]:
+        return False
+    result = cv2.matchTemplate(thresh_zone, template, cv2.TM_CCOEFF_NORMED)
+    _, max_val, _, max_loc = cv2.minMaxLoc(result)
+    if max_val > threshold:
+        th, tw = template.shape[:2]
+        real_x = x1 + max_loc[0] + int(tw / 2)
+        real_y = y1 + max_loc[1] + int(th / 2)
+        safe_device_shell(device, f"input tap {real_x} {real_y}")
+        return True
+    return False
+
+# 🆕 [2026-09-07 대설지대] 압축 미니맵의 커서(플레이어 진행방향 화살표)로 이동/정체를 판정한다 - 대설지대는
+# 배경(눈보라 파티클 등)이 계속 흔들려서 기존 미니맵 픽셀 diff 비교(Y:115-315,X:1117-1317, 평균차 0.05
+# 기준)가 오작동한다. 실측(4방향 도장을 실제 압축 미니맵 스크린샷에 검색): 실제 방향(up)은 0.935, 나머지
+# 3방향은 화면 곳곳의 우연한 오탐으로 0.84~0.85까지 나옴 - 임계값을 0.90으로 잡아야 오탐을 피한다.
+MINIMAP_CURSOR_ZONE = (170, 270, 1170, 1270)  # (y1, y2, x1, x2) - cursor_up 실측 중심(1219,220) 기준 여유를 둔 크롭
+
+def get_minimap_cursor_direction(img_np, t_cursor_up, t_cursor_down, t_cursor_left, t_cursor_right, threshold=0.90):
+    """압축 미니맵 커서가 4방향 중 어느 쪽으로 잡히는지 반환("up"/"down"/"left"/"right"), 전부 미검출이면 None."""
+    if img_np is None:
+        return None
+    y1, y2, x1, x2 = MINIMAP_CURSOR_ZONE
+    h, w = img_np.shape[:2]
+    if h < y2 or w < x2:
+        return None
+    zone = img_np[y1:y2, x1:x2]
+    gray_zone = cv2.cvtColor(zone, cv2.COLOR_RGB2GRAY)
+    best_dir, best_score = None, threshold
+    for direction, temp in (("up", t_cursor_up), ("down", t_cursor_down), ("left", t_cursor_left), ("right", t_cursor_right)):
+        if temp is None:
+            continue
+        if zone.shape[0] < temp.shape[0] or zone.shape[1] < temp.shape[1]:
+            continue
+        result = cv2.matchTemplate(gray_zone, temp, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, _ = cv2.minMaxLoc(result)
+        if max_val > best_score:
+            best_dir, best_score = direction, max_val
+    return best_dir
+
+# 🆕 [2026-09-07 대설지대] "쉰다"→"쉰다" 2연속 탭 + 휴식 대화 진행 - 6층 귀환뿐 아니라 앞으로 캠핑을 쓸
+# 때마다(주회 나가기 전이든 던전 진입 직후든) 항상 고정되는 시퀀스라 독립 헬퍼로 분리(사용자 확정).
+def perform_camping_rest(device, t_camp_rest1, t_camp_rest2, t_dialogue_arrow, max_wait=15.0):
+    """캠핑 지점에 도착한 뒤 호출 - "쉰다" 2연속 탭 후 휴식 대화를 공용 화살표 헬퍼로 넘긴다."""
+    start_time = time.time()
+    tapped_rest1 = False
+    tapped_rest2 = False
+    while time.time() - start_time < max_wait:
+        raw = device.screencap()
+        if not raw:
+            time.sleep(0.5)
+            continue
+        img_np = np.array(Image.open(io.BytesIO(raw)))
+
+        if not tapped_rest1:
+            coords = find_and_get_coords(img_np, t_camp_rest1, 0.70)
+            if coords:
+                print(f"🏕️ [캠핑] '쉰다' 1차 탭: {coords}")
+                safe_device_shell(device, f"input tap {coords[0]} {coords[1]}")
+                tapped_rest1 = True
+                time.sleep(1.5)
+                continue
+
+        if tapped_rest1 and not tapped_rest2:
+            coords = find_and_get_coords(img_np, t_camp_rest2, 0.70)
+            if coords:
+                print(f"🏕️ [캠핑] '쉰다' 2차 탭: {coords}")
+                safe_device_shell(device, f"input tap {coords[0]} {coords[1]}")
+                tapped_rest2 = True
+                time.sleep(1.5)
+                continue
+
+        if tapped_rest2:
+            if find_and_click_dialogue_advance_arrow(device, img_np, t_dialogue_arrow):
+                time.sleep(1.0)
+                continue
+            # 화살표도 없고 두 번의 "쉰다"도 이미 다 눌렀으면 휴식 시퀀스 종료로 간주
+            print("🏕️ [캠핑] 휴식 시퀀스 종료.")
+            return True
+
+        time.sleep(0.5)
+
+    print("⚠️ [캠핑] 휴식 시퀀스가 제한 시간 내 끝나지 않았습니다.")
+    return False
+
 def check_gray_template_present_specific(img_np, gray_temp, threshold_val=0.65):
     if gray_temp is None or img_np is None: return False
     gray_img = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY) if len(img_np.shape) == 3 else img_np
@@ -784,6 +904,7 @@ def classify_blessing_tier(rgb):
 # 통째로 사라져 매칭 자체가 불가능함(실측으로 확인).
 NAMED_BLESSING_PRIORITY = [
     # (도장 경로, 우선순위 점수 - 높을수록 우선, 색상등급 최대치 4보다 항상 큼, 라벨)
+    ("templates/HarkenBlessing/Father.png", 110, "신부님은 아이들의 아버지"),  # 🆕 [2026-09-07] 대설지대 최우선 가호(사용자 확정)
     ("templates/HarkenBlessing/demon_hunter.png", 100, "데몬족 헌터"),
     ("templates/HarkenBlessing/od_blessing.png", 90, "오드의 가호"),
 ]
