@@ -1713,6 +1713,7 @@ def start_grand_orchestrator():
     need_pickaxe_refill = False  # 💡 [광석파밍 전용] True면 다음 던전선택 도달 시 재진입 대신 마을로 회군
     waiting_for_village_dialogue = False
     heavysnow_resupply_pending = False  # 🆕 [2026-09-07 대설지대] 귀환 직후 마을외곽에서 인벤정리/여관 후처리가 필요한지
+    heavysnow_resupply_attempts = 0     # 🆕 후처리가 막혔을 때 주회 자체가 멈추지 않도록 하는 포기 카운터
 
     force_first_analysis = True
     last_action_time = time.time()
@@ -2258,33 +2259,47 @@ def start_grand_orchestrator():
                 time.sleep(3.0)
             continue
 
-        # 🆕 [2026-09-07 대설지대] 마을외곽 진입 목록 화면("대설 지대"/"마을로 돌아가기" 두 줄) - 귀환 직후
-        # 다시 여기로 돌아오므로, 인벤정리 후처리가 대기 중이면 재진입 전에 먼저 처리한다.
+        # 🆕 [2026-09-07 대설지대] 귀환 직후 인벤정리 후처리 - ⚠️ 반드시 아래 "마을외곽 화면 분류"보다
+        # 먼저, 그리고 그 화면 앵커에 종속되지 않는 최상위 블록으로 둬야 한다. 소지품 보충 팝업이 열리면
+        # 화면 전체를 덮어 "대설 지대" 행이 가려지기 때문(실측: 팝업 화면에서 대설지대 앵커 1.000 → 0.134).
+        # 마을외곽 앵커 안에 넣어두면 팝업을 연 순간 이 블록이 더 이상 안 돌아 '보충한다'를 영원히 못 누른다.
+        if DUNGEON_NAME == "대설지대" and heavysnow_resupply_pending:
+            if heavysnow_resupply_attempts == 0 and RESUPPLY_MODE == "inn":
+                print("⚠️ [마을외곽 후처리] resupply_mode='inn'(여관 경유)은 아직 미구현 - 인벤정리만 수행합니다.")
+            heavysnow_resupply_attempts += 1
+            resupply_handled = True
+            # 순서 주의: 팝업이 열려 있으면 그 아래 인벤정리 버튼은 못 누르므로 '보충한다'를 먼저 본다.
+            if find_and_click_template(device, img_np, t_inven_cleanup_refill, 0.70):
+                print("🎒 [마을외곽 후처리] '보충한다' 버튼 터치 성공.")
+                time.sleep(1.5)
+            elif dungeon_bot.find_and_click_dialogue_advance_arrow(device, img_np, t_arrow_clean):
+                print("🎒 [마을외곽 후처리] 정리 완료 토스트 확인 - 후처리 종료, 재진입을 재개합니다.")
+                heavysnow_resupply_pending = False
+                heavysnow_resupply_attempts = 0
+                time.sleep(1.0)
+            elif find_and_click_template(device, img_np, t_inven_cleanup_btn, 0.70):
+                print("🎒 [마을외곽 후처리] 인벤정리 버튼 터치 성공.")
+                time.sleep(1.5)
+            else:
+                resupply_handled = False
+            # 🚨 후처리가 어떤 이유로든 막히면 주회 자체가 멈추면 안 되므로, 일정 횟수 뒤엔 포기하고
+            # 재진입을 계속한다(인벤정리는 실패해도 주회는 계속 도는 게 낫다는 판단).
+            if heavysnow_resupply_attempts >= 25:
+                print("⚠️ [마을외곽 후처리] 인벤정리 절차가 25회 시도 내에 끝나지 않아 이번 주회는 건너뜁니다.")
+                heavysnow_resupply_pending = False
+                heavysnow_resupply_attempts = 0
+            if resupply_handled:
+                last_action_time = time.time()
+                continue
+            time.sleep(1.0)
+            # 후처리 화면이 아직 아니면(로딩 중 등) 아래 일반 화면분류로 흘려보낸다.
+
+        # 🆕 [2026-09-07 대설지대] 마을외곽 진입 목록 화면("대설 지대"/"마을로 돌아가기" 두 줄)
         if DUNGEON_NAME == "대설지대" and check_template_present(img_np, t_dungeon_heavysnow, 0.80):
             if last_logged_status != "VILLAGE_OUTSKIRTS":
                 last_action_time = time.time()
                 last_logged_status = "VILLAGE_OUTSKIRTS"
                 print("🌲 [마을외곽 도달] 대설지대 진입 목록 화면 확인.")
-
-            if heavysnow_resupply_pending:
-                if RESUPPLY_MODE == "inn":
-                    print("⚠️ [마을외곽 후처리] resupply_mode='inn'(여관 경유)은 아직 미구현 - 인벤정리만 수행합니다.")
-                if find_and_click_template(device, img_np, t_inven_cleanup_btn, 0.70):
-                    print("🎒 [마을외곽 후처리] 인벤정리 버튼 터치 성공.")
-                    last_action_time = time.time()
-                    time.sleep(1.5)
-                elif find_and_click_template(device, img_np, t_inven_cleanup_refill, 0.70):
-                    print("🎒 [마을외곽 후처리] '보충한다' 버튼 터치 성공.")
-                    last_action_time = time.time()
-                    time.sleep(1.5)
-                elif dungeon_bot.find_and_click_dialogue_advance_arrow(device, img_np, t_arrow_clean):
-                    print("🎒 [마을외곽 후처리] 정리 완료 토스트 확인 - 후처리 종료, 재진입을 재개합니다.")
-                    heavysnow_resupply_pending = False
-                    last_action_time = time.time()
-                    time.sleep(1.0)
-                else:
-                    time.sleep(1.0)
-                continue
 
             if find_and_click_template(device, img_np, t_dungeon_heavysnow, 0.80):
                 print("👉 [마을외곽] '대설 지대' 목록 터치 성공.")
@@ -2342,6 +2357,7 @@ def start_grand_orchestrator():
                     is_fully_healed = False
                     if exit_by_user:
                         heavysnow_resupply_pending = True  # 🆕 귀환 완료(마을외곽 도착) -> 다음 틱에 후처리
+                        heavysnow_resupply_attempts = 0
                 except Exception as bot_err:
                     restart_process(f"대설지대 진입 시퀀스 중 ADB 통신 치명적 예외 발생: {bot_err}")
             else:
