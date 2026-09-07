@@ -2082,7 +2082,7 @@ def start_grand_orchestrator():
                 
                 run_skill_logic = ENABLE_FIRST_COMBAT_SKILL and (not global_skill_setup_completed)
                 try:
-                    exit_by_user, skill_ok, need_pickaxe_result = dungeon_bot.start_main_macro(device, run_skill_logic, HEALING_LOOPS, bool(ENABLE_HEAL_AFTER_CHEST), healer_slot=HEALER_SLOT, masked_adventurer_slot=MASKED_ADVENTURER_SLOT, chest_opener_slot=CHEST_OPENER_SLOT, farming_method=FARMING_METHOD, dungeon_name=DUNGEON_NAME, from_dungeon_select=False)
+                    exit_by_user, skill_ok, need_pickaxe_result = dungeon_bot.start_main_macro(device, run_skill_logic, HEALING_LOOPS, bool(ENABLE_HEAL_AFTER_CHEST), healer_slot=HEALER_SLOT, masked_adventurer_slot=MASKED_ADVENTURER_SLOT, chest_opener_slot=CHEST_OPENER_SLOT, farming_method=FARMING_METHOD, dungeon_name=DUNGEON_NAME, from_dungeon_select=False, dungeon_floor_name=DUNGEON_FLOOR_NAME, return_method=RETURN_METHOD)
                     if FARMING_METHOD == "광석파밍":
                         need_pickaxe_refill = need_pickaxe_result
                     if skill_ok:
@@ -2206,7 +2206,7 @@ def start_grand_orchestrator():
 
                     run_skill_logic = ENABLE_FIRST_COMBAT_SKILL and (not global_skill_setup_completed)
                     try:
-                        exit_by_user, skill_ok, need_pickaxe_result = dungeon_bot.start_main_macro(device, run_skill_logic, HEALING_LOOPS, bool(ENABLE_HEAL_AFTER_CHEST), healer_slot=HEALER_SLOT, masked_adventurer_slot=MASKED_ADVENTURER_SLOT, chest_opener_slot=CHEST_OPENER_SLOT, farming_method=FARMING_METHOD, dungeon_name=DUNGEON_NAME, from_dungeon_select=True)
+                        exit_by_user, skill_ok, need_pickaxe_result = dungeon_bot.start_main_macro(device, run_skill_logic, HEALING_LOOPS, bool(ENABLE_HEAL_AFTER_CHEST), healer_slot=HEALER_SLOT, masked_adventurer_slot=MASKED_ADVENTURER_SLOT, chest_opener_slot=CHEST_OPENER_SLOT, farming_method=FARMING_METHOD, dungeon_name=DUNGEON_NAME, from_dungeon_select=True, dungeon_floor_name=DUNGEON_FLOOR_NAME, return_method=RETURN_METHOD)
                         if skill_ok: global_skill_setup_completed = True
                         if exit_by_user: last_action_time = time.time() - 20.0
                         else: last_action_time = time.time()

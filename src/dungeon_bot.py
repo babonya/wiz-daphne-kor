@@ -1159,6 +1159,223 @@ def trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessin
 
     return True
 
+# 🆕 [2026-09-07 대설지대] 필드맵을 확장해 캠프/대하켄 아이콘을 찾아 자동이동으로 복귀하는 범용 귀환 루틴 -
+# 캠핑/하켄 아이콘이 있는 던전이면 대설지대 외에도 재사용할 예정이라 던전 이름을 함수명에 넣지 않는다.
+# TRIGGER_EXIT의 기존 나가기-버튼-도보 로직을 대체(return_method가 "exit_button"이면 이 함수 자체를
+# 호출하지 않으므로 다른 던전은 전혀 영향 없음). 템플릿은 이 함수 안에서 직접 로드한다(inn_manager의
+# run_inn_sleep_sequence()와 같은 자가완결형 패턴 - 던전 탈출 시 1회만 호출되므로 매 틱 성능 부담 없음).
+FIELDMAP_EXPAND_TAP_COORDS = (1217, 219)  # (1204,202)~(1231,237) 영역 중앙, 사용자 실측 검증
+FIELDMAP_EXPANDED_ANCHOR_ZONE = (2239, 2336, 340, 445)  # (y1,y2,x1,x2) - 확장 시 필드 앵커 백업 크롭 자리
+
+def _check_fieldmap_expanded(img_np, t_field_expanded, threshold=0.65):
+    if t_field_expanded is None or img_np is None:
+        return False
+    y1, y2, x1, x2 = FIELDMAP_EXPANDED_ANCHOR_ZONE
+    h, w = img_np.shape[:2]
+    if h < y2 or w < x2:
+        return False
+    crop = img_np[y1:y2, x1:x2]
+    if crop.shape[0] < t_field_expanded.shape[0] or crop.shape[1] < t_field_expanded.shape[1]:
+        return False
+    gray_crop = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY)
+    result = cv2.matchTemplate(gray_crop, t_field_expanded, cv2.TM_CCOEFF_NORMED)
+    _, max_val, _, _ = cv2.minMaxLoc(result)
+    return max_val > threshold
+
+def _find_automove_near(img_np, tap_x, tap_y, t_automove_primary, t_automove_fallback, threshold=0.65):
+    """탭 지점 위쪽(Y축 -170px 부근)을 중심으로 자동이동 버튼을 국소 검색 - 실측: 반투명 아이콘이라
+    원본 그레이스케일 매칭이 이진화보다 훨씬 안정적(0.90 vs 0.54~0.74)이므로 이진화하지 않는다."""
+    h, w = img_np.shape[:2]
+    x1, x2 = max(0, tap_x - 220), min(w, tap_x + 220)
+    y1, y2 = max(0, tap_y - 320), min(h, tap_y - 30)
+    if x2 <= x1 or y2 <= y1:
+        return None
+    crop = img_np[y1:y2, x1:x2]
+    gray_crop = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY)
+    for temp in (t_automove_primary, t_automove_fallback):
+        if temp is None or crop.shape[0] < temp.shape[0] or crop.shape[1] < temp.shape[1]:
+            continue
+        result = cv2.matchTemplate(gray_crop, temp, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, max_loc = cv2.minMaxLoc(result)
+        if max_val > threshold:
+            th, tw = temp.shape[:2]
+            return x1 + max_loc[0] + int(tw / 2), y1 + max_loc[1] + int(th / 2)
+    return None
+
+def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_combat_slow=None, max_swipe_attempts=8):
+    """
+    필드맵을 확장해 캠프/대하켄 아이콘을 찾아 자동이동으로 복귀하는 범용 귀환 루틴.
+    return_method: "camp_then_exit_button" | "camp_then_harken" | "harken_only" ("exit_button"은 호출 안 함).
+    반환: True(귀환 완료, 마을외곽/하켄 목록까지 처리) / False(실패 - 호출부가 재시도/앱재시작 판단).
+    """
+    if return_method not in ("camp_then_exit_button", "camp_then_harken", "harken_only"):
+        print(f"⚠️ [필드맵 귀환] 알 수 없는 return_method '{return_method}' - 호출 오류로 판단, 실패 처리.")
+        return False
+    is_camp_branch = return_method in ("camp_then_exit_button", "camp_then_harken")
+
+    t_field = load_grayscale_template("templates/Field/field_anchor.png")
+    t_field_expanded = load_grayscale_template("templates/Field/Fieldmap_exit_icon.png")
+    t_camp = load_grayscale_template("templates/Field/Fieldmap_camping.png")
+    t_harken_large = load_grayscale_template("templates/Field/FieldMap_harkenLarge_left.png")
+    t_automove_camp = load_grayscale_template("templates/Field/FieldMap_automove.png")
+    t_automove_harken = load_grayscale_template("templates/Field/FieldMap_harkenLarge_Automove.png")
+    t_camp_rest1 = load_template("templates/Dungeon_dialogue/Dun_camping_rest.png")
+    t_camp_rest2 = load_template("templates/Dungeon_dialogue/Dun_camping_rest2.png")
+    t_dialogue_arrow = load_template("templates/inn_sleep/arrow_clean.png")
+    t_move_exit = load_grayscale_template("templates/Field/exit_dungeon.png")
+    t_harken_return = load_color_template("templates/FFXI/harken_return.png")
+    t_harken_blessing_donothing = load_template("templates/Field/harken_blessing_donothing.png")
+    t_yeolda = load_template("templates/chestopening/yeolda_clean.png")
+    t_move_resume_act = load_grayscale_template("templates/Field/resume_act.png")
+    t_move_resume_deact = load_grayscale_template("templates/Field/resume_deact.png")
+
+    # 🎯 캠핑 분기는 캠프 아이콘/캠핑용 자동이동만, 하켄 분기(교회구역)는 대하켄/대하켄용 자동이동만
+    # 참조한다 - 처음부터 완전히 분리된 갈래라 서로의 탭 좌표/도장을 참조하지 않는다(사용자가 걱정한
+    # "캠핑 처리 중 나가기가 잘못 눌리는" 꼬임 방지).
+    target_icon = t_camp if is_camp_branch else t_harken_large
+    automove_primary = t_automove_camp if is_camp_branch else t_automove_harken
+    automove_fallback = t_automove_harken if is_camp_branch else t_automove_camp
+
+    # 1. 압축 미니맵 확장 탭
+    ex, ey = FIELDMAP_EXPAND_TAP_COORDS
+    print(f"🗺️ [필드맵 귀환] 미니맵 확장 탭: ({ex},{ey})")
+    safe_device_shell(device, f"input tap {ex} {ey}")
+    time.sleep(1.0)
+
+    raw = device.screencap()
+    if not raw:
+        print("⚠️ [필드맵 귀환] 확장 직후 스크린샷 실패.")
+        return False
+    img_np = np.array(Image.open(io.BytesIO(raw)))
+
+    # 2. 확장 확인
+    if not _check_fieldmap_expanded(img_np, t_field_expanded):
+        print("⚠️ [필드맵 귀환] 미니맵 확장이 확인되지 않았습니다 - 좌표/타이밍 재검토 필요.")
+        return False
+
+    # 3. 목표 아이콘 탐색 (안 보이면 스와이프 재시도 - 필드맵은 월드맵보다 훨씬 작아 폭/횟수는
+    # 실기 로그로 튜닝 예정, 우선 보수적인 소폭 스와이프로 시작)
+    icon_coords = None
+    swipe_waypoints = [
+        (720, 1600, 720, 900),   # 위로
+        (720, 900, 720, 1900),   # 아래로(원위치+더)
+        (1100, 1300, 400, 1300), # 왼쪽으로
+        (400, 1300, 1300, 1300), # 오른쪽으로(원위치+더)
+    ]
+    for attempt in range(max_swipe_attempts):
+        icon_coords = find_gray_coords_specific(img_np, target_icon, 0.65)
+        if icon_coords:
+            break
+        wp = swipe_waypoints[attempt % len(swipe_waypoints)]
+        print(f"🔍 [필드맵 귀환] 목표 아이콘 미검출 - 스와이프 탐색 {attempt + 1}/{max_swipe_attempts}")
+        safe_device_shell(device, f"input swipe {wp[0]} {wp[1]} {wp[2]} {wp[3]} 400")
+        time.sleep(1.0)
+        raw = device.screencap()
+        if not raw:
+            continue
+        img_np = np.array(Image.open(io.BytesIO(raw)))
+
+    if not icon_coords:
+        print("⚠️ [필드맵 귀환] 스와이프 탐색 끝까지 목표 아이콘을 찾지 못했습니다.")
+        return False
+
+    # 4. 아이콘 탭 → Y축 -170px 부근 국소 검색으로 자동이동 버튼 확인 (가장자리 탭 실패 시 재탐색)
+    tap_x, tap_y = icon_coords
+    automove_coords = None
+    for retry in range(3):
+        print(f"📍 [필드맵 귀환] 목표 아이콘 탭: ({tap_x},{tap_y})")
+        safe_device_shell(device, f"input tap {tap_x} {tap_y}")
+        time.sleep(0.8)
+        raw = device.screencap()
+        if not raw:
+            continue
+        img_np = np.array(Image.open(io.BytesIO(raw)))
+        automove_coords = _find_automove_near(img_np, tap_x, tap_y, automove_primary, automove_fallback)
+        if automove_coords:
+            break
+        print(f"⚠️ [필드맵 귀환] 자동이동 버튼 미검출(가장자리 탭 추정) - 재탐색 {retry + 1}/3")
+        icon_coords = find_gray_coords_specific(img_np, target_icon, 0.65)
+        if icon_coords:
+            tap_x, tap_y = icon_coords
+        else:
+            safe_device_shell(device, f"input swipe 720 1300 820 1450 300")  # 살짝 안쪽으로 밀어보기
+            time.sleep(1.0)
+
+    if not automove_coords:
+        print("⚠️ [필드맵 귀환] 자동이동 버튼을 끝내 찾지 못했습니다.")
+        return False
+
+    # 5. 자동이동 탭 → 도착 대기(전투/행상인 조우로 멈추면 재개 버튼으로 이어감)
+    safe_device_shell(device, f"input tap {automove_coords[0]} {automove_coords[1]}")
+    print(f"🚶 [필드맵 귀환] 자동이동 탭: {automove_coords}")
+    time.sleep(2.0)
+
+    arrival_deadline = time.time() + 60.0
+    arrived = False
+    while time.time() < arrival_deadline:
+        raw = device.screencap()
+        if not raw:
+            time.sleep(1.0)
+            continue
+        img_np = np.array(Image.open(io.BytesIO(raw)))
+
+        if check_combat_template_present(img_np, t_combat_in, 0.80) or check_combat_template_present(img_np, t_combat_slow, 0.80):
+            print("⚔️ [필드맵 귀환] 자동이동 중 전투 조우 - 전투는 기존 루프가 처리하도록 대기.")
+            time.sleep(2.0)
+            continue
+
+        if is_camp_branch:
+            if find_and_get_coords(img_np, t_camp_rest1, 0.70):
+                arrived = True
+                break
+        else:
+            if check_and_handle_harken_menu(device, t_harken_blessing_donothing, t_harken_return, img_np=img_np, t_yeolda=t_yeolda) in ("returned", "blessing"):
+                # harken_only는 하켄 메뉴가 뜨는 순간이 곧 도착이자 처리 완료 - 바로 성공 반환.
+                print("✅ [필드맵 귀환] 하켄 메뉴 처리 완료(harken_only).")
+                return True
+
+        # 자동이동이 멈춘 것으로 보이면(도착 신호도 없고 전투도 아님) 재개 버튼으로 이어간다.
+        resume_coords = find_checkpoint_btn_coords(img_np, t_move_resume_act, t_move_resume_deact, 0.70)
+        if resume_coords:
+            print(f"🔁 [필드맵 귀환] 자동이동 중단 감지 - 재개 버튼 탭: {resume_coords}")
+            safe_device_shell(device, f"input tap {resume_coords[0]} {resume_coords[1]}")
+        time.sleep(2.0)
+
+    if is_camp_branch and not arrived:
+        print("⚠️ [필드맵 귀환] 캠핑 지점 도착을 확인하지 못했습니다(60초 초과).")
+        return False
+
+    # 6. 캠핑 분기: 휴식 시퀀스 → 필드 복귀 확인 → 일반 나가기 버튼
+    if is_camp_branch:
+        if not perform_camping_rest(device, t_camp_rest1, t_camp_rest2, t_dialogue_arrow):
+            return False
+
+        field_deadline = time.time() + 20.0
+        while time.time() < field_deadline:
+            raw = device.screencap()
+            if not raw:
+                time.sleep(1.0)
+                continue
+            img_np = np.array(Image.open(io.BytesIO(raw)))
+            if check_field_anchor_present(img_np, t_field, 0.65):
+                break
+            time.sleep(1.0)
+
+        exit_coords = find_and_get_field_btn_coords(img_np, t_move_exit, 0.70)
+        if not exit_coords:
+            print("⚠️ [필드맵 귀환] 휴식 후 일반 나가기 버튼을 찾지 못했습니다.")
+            return False
+        print(f"🚪 [필드맵 귀환] 휴식 후 나가기 버튼 탭: {exit_coords}")
+        safe_device_shell(device, f"input tap {exit_coords[0]} {exit_coords[1]}")
+        time.sleep(2.0)
+
+        if return_method == "camp_then_exit_button":
+            # 하켄 경유가 아닌 던전용 - 이 시점부터는 기존 TRIGGER_EXIT의 도보 탈출 대기 로직이 이어받는다.
+            return True
+
+    # 7. 하켄 메뉴 처리(캠핑 분기의 "캠핑 후 하켄" 케이스만 여기 도달 - harken_only는 위에서 이미 return됨)
+    return trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing, t_combat_in, t_combat_slow, t_yeolda)
+
 def fire_target_monster_body(device, img_np, t_next, t_arrow):
     target_coords = find_and_get_coords(img_np, t_next, 0.65)
     if target_coords:
@@ -1182,7 +1399,7 @@ def fire_target_monster_body(device, img_np, t_next, t_arrow):
 
 
 
-def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_chest=True, healer_slot=5, masked_adventurer_slot=5, chest_opener_slot=6, farming_method="상자파밍", dungeon_name="일반 던전", from_dungeon_select=False):
+def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_chest=True, healer_slot=5, masked_adventurer_slot=5, chest_opener_slot=6, farming_method="상자파밍", dungeon_name="일반 던전", from_dungeon_select=False, dungeon_floor_name=None, return_method="exit_button"):
     # - farming_method: "상자파밍"(범용 상자 순회 방식) 또는 "광석파밍"(FFXI 유령선 전용)
     # - dungeon_name: "북쪽의 유령선"과 같이 특수 던전 제어 구분을 위함 (일반 상자파밍 던전은 범용 로직 공유)
     if not device: return False, False, False
@@ -2120,6 +2337,15 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                 if time.time() - last_click_time > 4.0: state = "FIELD_WAIT"
 
         if state == "TRIGGER_EXIT":
+            # 🆕 [2026-09-07 대설지대] 나가기-버튼-도보 대신 필드맵 아이콘(캠핑/대하켄) 경유 귀환이 필요한
+            # 던전은 여기서 완전히 별개의 경로로 분기 - 아래의 기존 정체감지/도보-나가기 로직은 전혀 타지
+            # 않는다(return_to_town_via_fieldmap_icon()이 자체 타임아웃/재시도를 갖고 있음).
+            if dungeon_name == "대설지대" and return_method != "exit_button":
+                print(f"🚪 [TRIGGER_EXIT] 필드맵 아이콘 경유 귀환 루틴 진입 (return_method={return_method})")
+                if return_to_town_via_fieldmap_icon(device, return_method, t_combat_in, t_combat_slow):
+                    return True, skill_mission_success_this_combat, need_pickaxe_refill
+                raise RuntimeError("필드맵 아이콘 경유 귀환 루틴 실패 - 프로세스 강제 재시작으로 복구를 시도합니다.")
+
             # 🚨 [v1.14.0-hotfix4] 독립형 절대 Watchdog 가드 이식:
             # 백스텝 복구 드래그 동작 등으로 인해 미니맵이 강제로 움직여 exit_stuck_count가 0으로 도중에 초기화되더라도,
             # 최초 정체 발생 시점(exit_first_start_time) 기준으로 exit_watchdog_seconds 동안 필드를 벗어나지 못했다면 무조건 강제 앱 리셋 복구 프로세스를 작동시킵니다.
