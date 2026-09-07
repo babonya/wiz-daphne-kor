@@ -1557,6 +1557,10 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     t_seller_let_me_see = load_template("templates/Dungeon_dialogue/Dun_seller_let_me_see.png")
     t_seller_hammer = load_template("templates/Dungeon_dialogue/Dun_seller_hammer.png")
     t_dialogue_arrow_common = load_template("templates/inn_sleep/arrow_clean.png")
+    t_cursor_up = load_grayscale_template("templates/Field/cursor_up.png")
+    t_cursor_down = load_grayscale_template("templates/Field/cursor_down.png")
+    t_cursor_left = load_grayscale_template("templates/Field/cursor_left.png")
+    t_cursor_right = load_grayscale_template("templates/Field/cursor_right.png")
 
     t_heal_auto = load_template("templates/healer_auto_btn.png")
     t_heal_confirm = load_template("templates/confirm_recover.png")
@@ -1658,6 +1662,8 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     minimap_expanded = False
     checkpoint_pressed_count = 0
     is_initial_start = True
+    blizzard_exit_tapped = False  # 🆕 [2026-09-08 대설지대] 눈보라 서브구역에서 나가기를 이미 눌렀는지
+    prev_cursor_dir = None  # 🆕 [2026-09-08 대설지대] 커서 기반 이동감지용 직전 방향
     need_pickaxe_refill = False  # 💡 [광석파밍 전용] 곡괭이 소진으로 탈출한 경우에만 True. 사령탑이 이 플래그로만 마을 회군 여부를 판단합니다.
 
     cap_fail_counter = 0
@@ -2369,6 +2375,42 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                 return False, skill_mission_success_this_combat, need_pickaxe_refill
                         continue
 
+                    # 🆕 [2026-09-08 대설지대 눈보라 서브구역] 배경(눈보라 파티클)이 계속 흔들려 미니맵
+                    # 자체가 안 뜨는 구간 - 압축 미니맵 커서 4방향이 전부 미검출인데 필드 앵커는 정상이면
+                    # 이 서브구역으로 판정한다. 상자 버튼 자체가 비활성이라(사용자 확인) 기존
+                    # resume_or_confirm_chest()의 "상자로 재확인" 단계를 쓸 수 없어 별도 분기로 처리:
+                    # 재개 반복 -> "없습니다" 뜨면 나가기 1회(자력 탈출 수단이 이것뿐) -> 커서가 다시
+                    # 감지되면(=일반 구간 복귀) 이 분기 자체를 안 타게 되어 아래 기존 상자 시퀀스가
+                    # 자동으로 이어받는다 -> 그때도 "없습니다"면 비로소 진짜 상자 없음으로 확정.
+                    if dungeon_name == "대설지대" and check_field_anchor_present(img_np, t_field, 0.65):
+                        cursor_dir = get_minimap_cursor_direction(img_np, t_cursor_up, t_cursor_down, t_cursor_left, t_cursor_right)
+                        if cursor_dir is None:
+                            if not blizzard_exit_tapped:
+                                resume_coords = find_checkpoint_btn_coords(img_np, t_move_resume_act, t_move_resume_deact, 0.70)
+                                if resume_coords:
+                                    print(f"❄️ [눈보라구간] 재개 버튼 탭: {resume_coords}")
+                                    safe_device_shell(device, f"input tap {resume_coords[0]} {resume_coords[1]}")
+                                    time.sleep(1.2)
+                                    raw_bz = device.screencap()
+                                    if raw_bz:
+                                        img_np_bz = np.array(Image.open(io.BytesIO(raw_bz)))
+                                        if check_template_present(img_np_bz, t_no_chest, 0.55):
+                                            exit_coords = find_and_get_field_btn_coords(img_np_bz, t_move_exit, 0.70)
+                                            if exit_coords:
+                                                print(f"❄️ [눈보라구간] '없습니다' 감지 - 나가기 1회 탭: {exit_coords}")
+                                                safe_device_shell(device, f"input tap {exit_coords[0]} {exit_coords[1]}")
+                                                blizzard_exit_tapped = True
+                                            time.sleep(1.5)
+                                else:
+                                    print("❄️ [눈보라구간] 재개 버튼 미검출 - 다음 틱 재시도.")
+                            transition_delay_count = 0
+                            last_state_changed_time = time.time()
+                            time.sleep(1.0)
+                            continue
+                        else:
+                            # 커서가 다시 보임 = 눈보라를 벗어남 - 다음 상자 확인부터는 정상 플래그로.
+                            blizzard_exit_tapped = False
+
                     # 이하 기존 상자 파밍 시퀀스
                     if check_field_anchor_present(img_np, t_field, 0.65):
                         coords = find_chest_btn_coords(img_np, t_move_chest_act, t_move_chest_deact, 0.70)
@@ -2415,19 +2457,32 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                     img_np = img_np_sub
                                     break
                                 
-                                # 미니맵 스크롤 감지
-                                h, w = img_np_sub.shape[:2]
-                                scale_x, scale_y = w / 1440.0, h / 2560.0
-                                gray_sub = cv2.cvtColor(img_np_sub, cv2.COLOR_RGB2GRAY)
-                                mini = gray_sub[int(115 * scale_y):int(315 * scale_y), int(1117 * scale_x):int(1317 * scale_x)]
-                                
-                                if prev_mini is not None:
-                                    diff = cv2.absdiff(mini, prev_mini)
-                                    if (np.mean(diff) / 255.0) >= 0.05:
+                                # 🆕 [2026-09-08 대설지대] 배경(눈보라 파티클 등)이 계속 흔들려 미니맵 픽셀
+                                # diff 비교가 오작동하므로, 압축 미니맵 커서 방향이 바뀌는지로 판정한다
+                                # (실측 근거는 get_minimap_cursor_direction() 주석 참고). 다른 던전은 기존
+                                # diff 비교를 그대로 쓴다.
+                                if dungeon_name == "대설지대":
+                                    cursor_dir = get_minimap_cursor_direction(img_np_sub, t_cursor_up, t_cursor_down, t_cursor_left, t_cursor_right)
+                                    if prev_cursor_dir is not None and cursor_dir is not None and cursor_dir != prev_cursor_dir:
                                         moved = True
                                         img_np = img_np_sub
                                         break
-                                prev_mini = mini
+                                    if cursor_dir is not None:
+                                        prev_cursor_dir = cursor_dir
+                                else:
+                                    # 미니맵 스크롤 감지
+                                    h, w = img_np_sub.shape[:2]
+                                    scale_x, scale_y = w / 1440.0, h / 2560.0
+                                    gray_sub = cv2.cvtColor(img_np_sub, cv2.COLOR_RGB2GRAY)
+                                    mini = gray_sub[int(115 * scale_y):int(315 * scale_y), int(1117 * scale_x):int(1317 * scale_x)]
+
+                                    if prev_mini is not None:
+                                        diff = cv2.absdiff(mini, prev_mini)
+                                        if (np.mean(diff) / 255.0) >= 0.05:
+                                            moved = True
+                                            img_np = img_np_sub
+                                            break
+                                    prev_mini = mini
                                 time.sleep(0.4)
                             
                             if opened or toast_detected or moved:
