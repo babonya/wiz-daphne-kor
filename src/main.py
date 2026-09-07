@@ -1665,6 +1665,7 @@ def start_grand_orchestrator():
     t_heavysnow_floor = load_template(f"templates/Vill_Isberg/{HEAVYSNOW_FLOOR_FILE_MAP.get(DUNGEON_FLOOR_NAME, 'Heavysnow_6F')}.png")
     t_inven_cleanup_btn = load_template("templates/Dungeon_select/inven_cleanup_btn.png")
     t_inven_cleanup_refill = load_template("templates/Dungeon_select/inven_cleanup_refill.png")
+    t_back_to_village = load_template("templates/Vill_Isberg/back_to_village.png")
 
     # 🚨 [2026-08-18 하켄 메뉴 시작 인식 결함 완치] 매크로를 하켄 메뉴(귀환목록/가호팝업)가 떠 있는 상태에서
     # (재)시작하면, 아래 스캐너가 마을/세계지도/던전선택/여관/필드/상자 등 알려진 앵커 어느 것과도 안 맞아
@@ -1714,6 +1715,7 @@ def start_grand_orchestrator():
     waiting_for_village_dialogue = False
     heavysnow_resupply_pending = False  # 🆕 [2026-09-07 대설지대] 귀환 직후 마을외곽에서 인벤정리/여관 후처리가 필요한지
     heavysnow_resupply_attempts = 0     # 🆕 후처리가 막혔을 때 주회 자체가 멈추지 않도록 하는 포기 카운터
+    heavysnow_force_inn_this_cycle = False  # 🆕 [2026-09-08] inn_visit_loop_interval 조건으로 이번 주회만 여관 강제
 
     force_first_analysis = True
     last_action_time = time.time()
@@ -2264,28 +2266,50 @@ def start_grand_orchestrator():
         # 화면 전체를 덮어 "대설 지대" 행이 가려지기 때문(실측: 팝업 화면에서 대설지대 앵커 1.000 → 0.134).
         # 마을외곽 앵커 안에 넣어두면 팝업을 연 순간 이 블록이 더 이상 안 돌아 '보충한다'를 영원히 못 누른다.
         if DUNGEON_NAME == "대설지대" and heavysnow_resupply_pending:
-            if heavysnow_resupply_attempts == 0 and RESUPPLY_MODE == "inn":
-                print("⚠️ [마을외곽 후처리] resupply_mode='inn'(여관 경유)은 아직 미구현 - 인벤정리만 수행합니다.")
             heavysnow_resupply_attempts += 1
             resupply_handled = True
-            # 순서 주의: 팝업이 열려 있으면 그 아래 인벤정리 버튼은 못 누르므로 '보충한다'를 먼저 본다.
-            if find_and_click_template(device, img_np, t_inven_cleanup_refill, 0.70):
-                print("🎒 [마을외곽 후처리] '보충한다' 버튼 터치 성공.")
-                time.sleep(1.5)
-            elif dungeon_bot.find_and_click_dialogue_advance_arrow(device, img_np, t_arrow_clean):
-                print("🎒 [마을외곽 후처리] 정리 완료 토스트 확인 - 후처리 종료, 재진입을 재개합니다.")
-                heavysnow_resupply_pending = False
-                heavysnow_resupply_attempts = 0
-                time.sleep(1.0)
-            elif find_and_click_template(device, img_np, t_inven_cleanup_btn, 0.70):
-                print("🎒 [마을외곽 후처리] 인벤정리 버튼 터치 성공.")
-                time.sleep(1.5)
+
+            if RESUPPLY_MODE == "inn" or heavysnow_force_inn_this_cycle:
+                # 🆕 [2026-09-08] 여관 경유: 캠핑이 없어 HP/MP를 여관에 의존하는 던전(교회구역 기본값) 또는
+                # inn_visit_loop_interval 조건으로 이번 주회만 강제된 경우.
+                # 마을로 돌아가기 -> town square -> 여관(체력회복+아이템정리 동시 처리, inn_manager가
+                # 이미 소지품 정리 팝업까지 다 처리해주므로 인벤정리 버튼은 따로 누르지 않는다).
+                if check_grayscale_template_present(img_np, t_village, 0.65):
+                    print("🏠 [마을외곽 후처리] town square 도착 확인 - 여관 숙박을 실행합니다.")
+                    try:
+                        inn_manager.run_inn_sleep_sequence(device)
+                    except Exception as inn_err:
+                        restart_process(f"대설지대 여관 경유 후처리 중 ADB 통신 치명적 예외 발생: {inn_err}")
+                    is_fully_healed = True
+                    heavysnow_resupply_pending = False
+                    heavysnow_resupply_attempts = 0
+                    heavysnow_force_inn_this_cycle = False
+                elif find_and_click_template(device, img_np, t_back_to_village, 0.70):
+                    print("🏠 [마을외곽 후처리] '마을로 돌아가기' 터치 성공.")
+                    time.sleep(2.0)
+                else:
+                    resupply_handled = False
             else:
-                resupply_handled = False
+                # items_only: 인벤정리 버튼만(6층 기본값 - 캠핑으로 이미 회복했을 때)
+                # 순서 주의: 팝업이 열려 있으면 그 아래 인벤정리 버튼은 못 누르므로 '보충한다'를 먼저 본다.
+                if find_and_click_template(device, img_np, t_inven_cleanup_refill, 0.70):
+                    print("🎒 [마을외곽 후처리] '보충한다' 버튼 터치 성공.")
+                    time.sleep(1.5)
+                elif dungeon_bot.find_and_click_dialogue_advance_arrow(device, img_np, t_arrow_clean):
+                    print("🎒 [마을외곽 후처리] 정리 완료 토스트 확인 - 후처리 종료, 재진입을 재개합니다.")
+                    heavysnow_resupply_pending = False
+                    heavysnow_resupply_attempts = 0
+                    time.sleep(1.0)
+                elif find_and_click_template(device, img_np, t_inven_cleanup_btn, 0.70):
+                    print("🎒 [마을외곽 후처리] 인벤정리 버튼 터치 성공.")
+                    time.sleep(1.5)
+                else:
+                    resupply_handled = False
+
             # 🚨 후처리가 어떤 이유로든 막히면 주회 자체가 멈추면 안 되므로, 일정 횟수 뒤엔 포기하고
-            # 재진입을 계속한다(인벤정리는 실패해도 주회는 계속 도는 게 낫다는 판단).
+            # 재진입을 계속한다(인벤정리/여관은 실패해도 주회는 계속 도는 게 낫다는 판단).
             if heavysnow_resupply_attempts >= 25:
-                print("⚠️ [마을외곽 후처리] 인벤정리 절차가 25회 시도 내에 끝나지 않아 이번 주회는 건너뜁니다.")
+                print("⚠️ [마을외곽 후처리] 후처리 절차가 25회 시도 내에 끝나지 않아 이번 주회는 건너뜁니다.")
                 heavysnow_resupply_pending = False
                 heavysnow_resupply_attempts = 0
             if resupply_handled:
@@ -2358,6 +2382,13 @@ def start_grand_orchestrator():
                     if exit_by_user:
                         heavysnow_resupply_pending = True  # 🆕 귀환 완료(마을외곽 도착) -> 다음 틱에 후처리
                         heavysnow_resupply_attempts = 0
+                        # 🆕 [2026-09-08] 캠핑은 HP/MP만 회복하고 레벨업은 여관 취침으로만 적용되므로,
+                        # N주회마다 한 번은 resupply_mode와 무관하게 여관을 강제로 들르게 한다(0=비활성).
+                        heavysnow_force_inn_this_cycle = (
+                            INN_VISIT_LOOP_INTERVAL > 0 and dungeon_run_count % INN_VISIT_LOOP_INTERVAL == 0
+                        )
+                        if heavysnow_force_inn_this_cycle:
+                            print(f"🏠 [주회 카운터] {dungeon_run_count}주회 도달 - inn_visit_loop_interval={INN_VISIT_LOOP_INTERVAL} 조건으로 이번엔 여관을 경유합니다.")
                 except Exception as bot_err:
                     restart_process(f"대설지대 진입 시퀀스 중 ADB 통신 치명적 예외 발생: {bot_err}")
             else:

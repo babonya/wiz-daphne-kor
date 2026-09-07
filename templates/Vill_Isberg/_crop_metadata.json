@@ -38,5 +38,15 @@
       "y2": 1450
     },
     "roi_name": null
+  },
+  "back_to_village": {
+    "source_image": "2 이스벨크 마을외곽.png",
+    "roi": {
+      "x1": 865,
+      "y1": 1545,
+      "x2": 1245,
+      "y2": 1615
+    },
+    "roi_name": null
   }
 }
