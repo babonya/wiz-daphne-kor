@@ -447,6 +447,49 @@ def perform_camping_rest(device, t_camp_rest1, t_camp_rest2, t_dialogue_arrow, t
     print(f"⚠️ [캠핑] 휴식 시퀀스가 제한 시간({max_wait:.0f}초) 내 끝나지 않았습니다('쉰다' {rest_taps}회 탭).")
     return rest_taps >= 2  # 쉰다를 다 눌렀는데 필드 복귀만 못 잡은 경우엔 일단 다음 단계로 진행시킨다.
 
+# 🆕 [2026-09-08 대설지대] 행상인 조우(대사(1,2,5) -> 선택(3,상품보기) -> 대사(5) -> 아이템목록(6,낡은 망치)
+# -> 구매완료(7,화살표)) 처리. trigger_harken_escape()/perform_camping_rest()와 같은 자가완결형 블로킹
+# 함수 - 이동 중 아무 때나 튀어나올 수 있는 진짜 인터럽트라 공용 전처리 블록에서 진입만 감지하고 나머지는
+# 이 함수가 전부 처리한다. 화면 7개가 이어지지만 "화면이 몇 번째인지" 추적하지 않는다(교훈: 비슷한 화면을
+# 도장으로 구분하려 들지 말 것) - 우선순위(구매 대상 > 상품 보기 선택 > 대화 화살표)대로 보이는 걸 누르고,
+# 필드로 돌아오면 종료하는 수렴 루프로 충분하다. 사용자 확정: 항상 상품 보기 -> 낡은 망치 구매.
+def handle_merchant_encounter(device, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, max_wait=60.0):
+    start_time = time.time()
+    while time.time() - start_time < max_wait:
+        raw = device.screencap()
+        if not raw:
+            time.sleep(0.5)
+            continue
+        img_np = np.array(Image.open(io.BytesIO(raw)))
+
+        if check_field_anchor_present(img_np, t_field, 0.65):
+            print("🛒 [행상인] 필드 복귀 확인 - 조우 종료.")
+            return True
+
+        coords = find_and_get_coords(img_np, t_seller_hammer, 0.70)
+        if coords:
+            print(f"🛒 [행상인] '낡은 망치' 구매 선택: {coords}")
+            safe_device_shell(device, f"input tap {coords[0]} {coords[1]}")
+            time.sleep(1.2)
+            continue
+
+        coords = find_and_get_coords(img_np, t_seller_let_me_see, 0.70)
+        if coords:
+            print(f"🛒 [행상인] '상품 보기' 선택: {coords}")
+            safe_device_shell(device, f"input tap {coords[0]} {coords[1]}")
+            time.sleep(1.2)
+            continue
+
+        if find_and_click_dialogue_advance_arrow(device, img_np, t_dialogue_arrow):
+            print("🛒 [행상인] 대화 진행(화살표 탭).")
+            time.sleep(1.0)
+            continue
+
+        time.sleep(0.7)
+
+    print(f"⚠️ [행상인] 조우 처리가 제한 시간({max_wait:.0f}초) 내 끝나지 않았습니다.")
+    return False
+
 def check_gray_template_present_specific(img_np, gray_temp, threshold_val=0.65):
     if gray_temp is None or img_np is None: return False
     gray_img = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY) if len(img_np.shape) == 3 else img_np
@@ -1506,7 +1549,15 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     t_no_chest = load_template("templates/Field/toastmsg_nochest.png")
     t_yeolda = load_template("templates/chestopening/yeolda_clean.png")
     t_dialogue_indicator = load_template("templates/chestopening/dialogue_indicator.png")
-    
+
+    # 🆕 [2026-09-08 대설지대] 중립몹 조우 / 행상인 조우 인터럽트 핸들러용 도장 - 다른 던전은
+    # dungeon_name == "대설지대" 조건에서만 실제로 참조되므로 로드만 해도 영향 없음.
+    t_dilog_fight = load_template("templates/Dungeon_dialogue/Dun_dilog_fight.png")
+    t_seller_label = load_template("templates/Dungeon_dialogue/Dun_seller_label.png")
+    t_seller_let_me_see = load_template("templates/Dungeon_dialogue/Dun_seller_let_me_see.png")
+    t_seller_hammer = load_template("templates/Dungeon_dialogue/Dun_seller_hammer.png")
+    t_dialogue_arrow_common = load_template("templates/inn_sleep/arrow_clean.png")
+
     t_heal_auto = load_template("templates/healer_auto_btn.png")
     t_heal_confirm = load_template("templates/confirm_recover.png")
     t_heal_close = load_template("templates/close_panel.png")
@@ -1900,6 +1951,29 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     time.sleep(2.0)
                     last_state_changed_time = time.time()
                     continue
+
+                # 🆕 [2026-09-08 대설지대] 이동 중 아무 때나 튀어나올 수 있는 진짜 인터럽트 2종.
+                # ⚠️ 순서 중요: 중립몹 조우 화면에도 대화 화살표가 함께 찍혀 있어서, 화살표를 먼저 처리하는
+                # 코드가 있다면 이 검사보다 반드시 뒤에 둬야 한다(안 그러면 화살표를 눌러 "회복약을 쓴다"
+                # 등 엉뚱한 선택지가 골라질 수 있음). 현재 이 공용 블록엔 화살표 핸들러가 없어 순서 문제는
+                # 없지만, 나중에 추가할 때도 이 규칙을 지킬 것.
+                if dungeon_name == "대설지대":
+                    fight_coords = find_and_get_coords(img_np, t_dilog_fight, 0.70)
+                    if fight_coords:
+                        print(f"⚔️ [중립몹 조우] '싸운다' 선택지 발견 - 고정 선택 탭: {fight_coords}")
+                        safe_device_shell(device, f"input tap {fight_coords[0]} {fight_coords[1]}")
+                        transition_delay_count = 0
+                        last_state_changed_time = time.time()
+                        time.sleep(1.0)
+                        continue
+
+                    if check_template_present(img_np, t_seller_label, 0.80):
+                        print("🛒 [행상인 조우] '수상한 행상인' 대사 화면 감지 - 조우 처리 루틴 진입.")
+                        handle_merchant_encounter(device, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow_common, t_field)
+                        transition_delay_count = 0
+                        last_state_changed_time = time.time()
+                        time.sleep(0.5)
+                        continue
 
                 if check_template_present_multipass(img_np, t_yeolda, yeolda_threshold):
                     transition_delay_count = 0
