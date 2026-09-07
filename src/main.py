@@ -1656,6 +1656,16 @@ def start_grand_orchestrator():
         else:
             t_enter_dungeon = load_template("templates/WolfCave/Wolf_B1_btn.png")
 
+    # 🆕 [2026-09-07 대설지대] "마을경유형" 진입(town → 마을외곽 → 던전 목록) - village_common/README.md가
+    # 예고해뒀던 첫 연동. 이 값들은 항상 로드해두고, 실제 사용(클릭 시도)만 DUNGEON_NAME == "대설지대"로
+    # 제한한다(다른 던전은 아래 화면분류 루프에서 이 도장들을 아예 참조하지 않으므로 영향 없음).
+    t_go_outside = load_grayscale_template("templates/village_common/go_outside.png")
+    t_dungeon_heavysnow = load_template("templates/Vill_Isberg/dungeon_Heavysnow.png")
+    HEAVYSNOW_FLOOR_FILE_MAP = {"6층": "Heavysnow_6F", "교회구역": "Heavysnow_church", "4층": "Heavysnow_4F"}
+    t_heavysnow_floor = load_template(f"templates/Vill_Isberg/{HEAVYSNOW_FLOOR_FILE_MAP.get(DUNGEON_FLOOR_NAME, 'Heavysnow_6F')}.png")
+    t_inven_cleanup_btn = load_template("templates/Dungeon_select/inven_cleanup_btn.png")
+    t_inven_cleanup_refill = load_template("templates/Dungeon_select/inven_cleanup_refill.png")
+
     # 🚨 [2026-08-18 하켄 메뉴 시작 인식 결함 완치] 매크로를 하켄 메뉴(귀환목록/가호팝업)가 떠 있는 상태에서
     # (재)시작하면, 아래 스캐너가 마을/세계지도/던전선택/여관/필드/상자 등 알려진 앵커 어느 것과도 안 맞아
     # "아웃게임 무반응 정체"만 무한 반복하며 아무 행동도 못 하던 실전 결함 확인(2026-08-18 01:16~, 5분 절대
@@ -1702,6 +1712,7 @@ def start_grand_orchestrator():
     is_fully_healed = False
     need_pickaxe_refill = False  # 💡 [광석파밍 전용] True면 다음 던전선택 도달 시 재진입 대신 마을로 회군
     waiting_for_village_dialogue = False
+    heavysnow_resupply_pending = False  # 🆕 [2026-09-07 대설지대] 귀환 직후 마을외곽에서 인벤정리/여관 후처리가 필요한지
 
     force_first_analysis = True
     last_action_time = time.time()
@@ -2247,6 +2258,97 @@ def start_grand_orchestrator():
                 time.sleep(3.0)
             continue
 
+        # 🆕 [2026-09-07 대설지대] 마을외곽 진입 목록 화면("대설 지대"/"마을로 돌아가기" 두 줄) - 귀환 직후
+        # 다시 여기로 돌아오므로, 인벤정리 후처리가 대기 중이면 재진입 전에 먼저 처리한다.
+        if DUNGEON_NAME == "대설지대" and check_template_present(img_np, t_dungeon_heavysnow, 0.80):
+            if last_logged_status != "VILLAGE_OUTSKIRTS":
+                last_action_time = time.time()
+                last_logged_status = "VILLAGE_OUTSKIRTS"
+                print("🌲 [마을외곽 도달] 대설지대 진입 목록 화면 확인.")
+
+            if heavysnow_resupply_pending:
+                if RESUPPLY_MODE == "inn":
+                    print("⚠️ [마을외곽 후처리] resupply_mode='inn'(여관 경유)은 아직 미구현 - 인벤정리만 수행합니다.")
+                if find_and_click_template(device, img_np, t_inven_cleanup_btn, 0.70):
+                    print("🎒 [마을외곽 후처리] 인벤정리 버튼 터치 성공.")
+                    last_action_time = time.time()
+                    time.sleep(1.5)
+                elif find_and_click_template(device, img_np, t_inven_cleanup_refill, 0.70):
+                    print("🎒 [마을외곽 후처리] '보충한다' 버튼 터치 성공.")
+                    last_action_time = time.time()
+                    time.sleep(1.5)
+                elif dungeon_bot.find_and_click_dialogue_advance_arrow(device, img_np, t_arrow_clean):
+                    print("🎒 [마을외곽 후처리] 정리 완료 토스트 확인 - 후처리 종료, 재진입을 재개합니다.")
+                    heavysnow_resupply_pending = False
+                    last_action_time = time.time()
+                    time.sleep(1.0)
+                else:
+                    time.sleep(1.0)
+                continue
+
+            if find_and_click_template(device, img_np, t_dungeon_heavysnow, 0.80):
+                print("👉 [마을외곽] '대설 지대' 목록 터치 성공.")
+                last_action_time = time.time()
+                time.sleep(2.0)
+            else:
+                print("⚠️ [마을외곽] '대설 지대' 목록 매칭 실패. 재스캔 대기...")
+                time.sleep(1.0)
+            continue
+
+        # 🆕 [2026-09-07 대설지대] 대설지대 내부 경로 목록 화면(경로1~9 + 교회구역 + 돌아간다) - 목표 층
+        # 행을 클릭해 진입한다. 화면 구조가 유령성 하켄 귀환목록과 사실상 동일해 dungeon_bot.py 내부의
+        # check_and_handle_harken_menu()가 던전 안에서의 귀환 처리를 그대로 담당할 수 있다.
+        if DUNGEON_NAME == "대설지대" and check_template_present(img_np, t_heavysnow_floor, 0.80):
+            if last_logged_status != "HEAVYSNOW_ROUTE_SEL":
+                last_action_time = time.time()
+                last_logged_status = "HEAVYSNOW_ROUTE_SEL"
+                print(f"🚪 [대설지대 경로선택 도달] '{DUNGEON_FLOOR_NAME}' 경로 목록 확인.")
+
+            should_reenter = (LIMIT_DUNGEON_LOOPS == 0) or (dungeon_run_count < LIMIT_DUNGEON_LOOPS)
+            if not should_reenter:
+                print("      ⚠️ [주회 한도 도달] 대설지대 재진입을 보류하고 뒤로가기로 마을외곽으로 복귀합니다.")
+                device.shell("input keyevent 4")
+                last_action_time = time.time()
+                time.sleep(2.0)
+                continue
+
+            if find_and_click_template(device, img_np, t_heavysnow_floor, 0.80):
+                print(f"👉 [대설지대 경로선택] '{DUNGEON_FLOOR_NAME}' 행 터치 성공.")
+                print("⏳ [던전 진입 대기] 필드 안착을 최대 10초간 폴링합니다...")
+                poll_start = time.time()
+                entered = False
+                while time.time() - poll_start < 10.0:
+                    time.sleep(0.8)
+                    try:
+                        raw_poll = device.screencap()
+                        if raw_poll:
+                            img_np_poll = np.array(Image.open(io.BytesIO(raw_poll)))
+                            if check_field_anchor_present(img_np_poll, t_field, 0.65):
+                                print(f"      ✅ [던전 진입 확인] 필드 안착 확인 (대기 {time.time()-poll_start:.1f}초)")
+                                entered = True
+                                break
+                    except Exception:
+                        pass
+                if not entered:
+                    print("      ⚠️ [던전 진입 대기 초과] 10초 내 필드 안착 미확인. 일단 진입 시퀀스를 시도합니다.")
+
+                run_skill_logic = ENABLE_FIRST_COMBAT_SKILL and (not global_skill_setup_completed)
+                try:
+                    exit_by_user, skill_ok, need_pickaxe_result = dungeon_bot.start_main_macro(device, run_skill_logic, HEALING_LOOPS, bool(ENABLE_HEAL_AFTER_CHEST), healer_slot=HEALER_SLOT, masked_adventurer_slot=MASKED_ADVENTURER_SLOT, chest_opener_slot=CHEST_OPENER_SLOT, farming_method=FARMING_METHOD, dungeon_name=DUNGEON_NAME, from_dungeon_select=True, dungeon_floor_name=DUNGEON_FLOOR_NAME, return_method=RETURN_METHOD)
+                    if skill_ok: global_skill_setup_completed = True
+                    last_action_time = time.time()
+                    dungeon_run_count += 1
+                    clear_restart_counter()
+                    is_fully_healed = False
+                    if exit_by_user:
+                        heavysnow_resupply_pending = True  # 🆕 귀환 완료(마을외곽 도착) -> 다음 틱에 후처리
+                except Exception as bot_err:
+                    restart_process(f"대설지대 진입 시퀀스 중 ADB 통신 치명적 예외 발생: {bot_err}")
+            else:
+                print("⚠️ [대설지대 경로선택] 목표 경로 행 매칭 실패. 재스캔 대기...")
+                time.sleep(1.0)
+            continue
+
         if check_grayscale_template_present(img_np, t_world_map, 0.83):
             first_stuck_time_str = ""
             if last_logged_status != "WORLDMAP":
@@ -2369,6 +2471,11 @@ def start_grand_orchestrator():
                     find_and_click_template(device, img_np, t_char_down, 0.65)
                     last_action_time = time.time()
                     time.sleep(1.0)
+                # 🆕 [2026-09-07 대설지대] "마을경유형" 진입 - 힐 완료 후에는 월드맵 이탈 대신 마을외곽으로.
+                elif DUNGEON_NAME == "대설지대" and find_and_click_grayscale_template(device, img_np, t_go_outside, 0.75):
+                    print("🌲 [마을] '마을외곽' 도장 인식 및 터치 성공. 대설지대 진입 목록으로 이동합니다.")
+                    last_action_time = time.time()
+                    time.sleep(2.0)
                 elif find_and_click_grayscale_template(device, img_np, t_worldmap_icon, 0.80):
                     print("🗺️ [마을] 월드맵 아이콘 인식 및 터치 성공. 세계지도로 이탈합니다.")
                     last_action_time = time.time()
