@@ -1325,23 +1325,52 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
     # 🚨 [2026-09-07] 예전엔 탭 1회 + 1초 대기 후 단 한 번만 확인하고 실패 시 곧바로 False(→호출부에서
     # RuntimeError→앱 재시작)로 빠졌다. 확장 애니메이션이 조금만 늦거나 탭이 한 번 씹혀도 앱을 통째로
     # 재시작하는 과한 실패라, 최대 3회까지 재탭하며 총 ~9초간 확인한다.
+    # 🚨 [2026-09-08 실전 확인] 사용자 지적 + 실제 로그로 확인된 결함: 이 구간에 전투 감지가 전혀 없어서,
+    # 탭 직전~직후(맵이 "완전히" 열리기 전까지)에 몹을 조우하면 화면이 전투로 바뀌는데도 계속 같은 좌표를
+    # 재탭하기만 하다 3회를 다 소진해 앱을 통째로 재시작해버렸다(실전: 확장 탭 3회 동안 조우 추정, 매번
+    # 미확장 판정 후 RuntimeError). 완전히 확장되면 던전 자체 타이머가 멈춰 그 이후엔 조우가 없다는
+    # 사용자 확인에 따라, "확장 확인 전까지"만 전투를 감시하면 된다 - 전투면 탭/재시도 횟수를 소모하지
+    # 않고 자동전투가 끝나기를 기다렸다가 이어간다(다른 루프와 동일 방침 - 전투를 대신 치러주지 않음).
     ex, ey = FIELDMAP_EXPAND_TAP_COORDS
     img_np = None
     expanded = False
-    for expand_try in range(3):
-        print(f"🗺️ [필드맵 귀환] 미니맵 확장 탭 {expand_try + 1}/3: ({ex},{ey})")
+    expand_attempts_used = 0
+    combat_wait_deadline = time.time() + 180.0  # 절대 워치독 - 전투가 끝없이 이어지는 이상 상황 대비
+    while expand_attempts_used < 3 and time.time() < combat_wait_deadline:
+        # 탭 전 전투 여부 확인 - 전투 중이면 탭 자체를 보류하고 대기(재시도 횟수 소모 안 함)
+        raw = device.screencap()
+        if not raw:
+            time.sleep(1.0)
+            continue
+        img_np = np.array(Image.open(io.BytesIO(raw)))
+        if check_combat_template_present(img_np, t_combat_in, 0.80) or check_combat_template_present(img_np, t_combat_slow, 0.80):
+            print("⚔️ [필드맵 귀환] 미니맵 확장 시도 전 전투 조우 - 자동전투 종료를 기다립니다.")
+            time.sleep(2.0)
+            continue
+
+        expand_attempts_used += 1
+        print(f"🗺️ [필드맵 귀환] 미니맵 확장 탭 {expand_attempts_used}/3: ({ex},{ey})")
         safe_device_shell(device, f"input tap {ex} {ey}")
+
+        combat_interrupted = False
         for _poll in range(3):
             time.sleep(1.0)
             raw = device.screencap()
             if not raw:
                 continue
             img_np = np.array(Image.open(io.BytesIO(raw)))
+            if check_combat_template_present(img_np, t_combat_in, 0.80) or check_combat_template_present(img_np, t_combat_slow, 0.80):
+                print("⚔️ [필드맵 귀환] 탭 직후 전투 조우 감지 - 이번 시도는 재시도 횟수에서 제외합니다.")
+                combat_interrupted = True
+                expand_attempts_used -= 1  # 전투로 무산된 시도는 예산에서 다시 돌려준다
+                break
             if _check_fieldmap_expanded(img_np, t_field_expanded):
                 expanded = True
                 break
         if expanded:
             break
+        if combat_interrupted:
+            time.sleep(2.0)
 
     if not expanded or img_np is None:
         print("⚠️ [필드맵 귀환] 미니맵 확장이 확인되지 않았습니다 - 좌표/타이밍 재검토 필요.")
