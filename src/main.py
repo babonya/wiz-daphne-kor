@@ -941,14 +941,34 @@ def recover_app_startup(device):
     download_started_at = None
     DOWNLOAD_GRACE_SECONDS = 1200.0  # 20분 - 기가바이트급 다운로드도 넉넉히 커버, 필요시 조정 가능
 
+    # 🚨 [2026-09-08 무한 정체 완치] 이 루프의 캡처 실패 경로 2개(None 반환 / Image.open 예외)는 원래
+    # counter를 증가시키지 않고 조용히 continue만 했다 - 그래서 screencap이 계속 깨진 데이터를 돌려주면
+    # (실전 로그: "cannot identify image file <_io.BytesIO ...>") while 조건이 영원히 안 끝나고, 로그도
+    # 한 줄 안 남아서 "🔮 앱 기동 복구 시스템 작동" 직후 아무 출력 없이 멈춘 것처럼 보였음(사용자 확인:
+    # 이삼일에 한 번 꼴로 재현). 240초 Watchdog이 결국 구해주긴 하지만 그때까지 아무 진단 정보도 없다.
+    # 메인 루프(start_grand_orchestrator)가 이미 쓰고 있는 검증된 패턴(연속 실패 카운터 + 매 실패마다 사유
+    # 로그 + 한계 도달 시 restart_process)을 이식하되, 한계치는 메인 루프의 5회(2.5초)보다 넉넉한 20회(10초)로
+    # 잡는다 - 실전 로그(2026-09-08 20:51)에서 캡처가 깨진 시점이 ADB 연결 성공 겨우 2초 뒤였다. 즉 에뮬레이터가
+    # 막 뜬 직후 화면 서브시스템이 아직 준비되지 않은 과도기일 가능성이 높아, 조금만 기다리면 저절로 회복될
+    # 상황에서 2.5초 만에 앱/에뮬레이터 재시작을 걸어버리면 오히려 손해다(메인 루프는 이미 정상 주행 중이라
+    # 같은 실패가 진짜 이상 신호지만, 이 함수는 부팅 직후 구간이라 성격이 다르다).
+    startup_cap_fail_counter = 0
+    STARTUP_CAP_FAIL_LIMIT = 20  # 0.5초 간격 × 20회 = 약 10초 유예 (240초 워치독보다 24배 빠름)
     while counter < max_try:
         try:
             raw_cap = device.screencap()
             if raw_cap is None:
-                time.sleep(0.5)
-                continue
+                raise RuntimeError("Screencap returned None")
             img_np = np.array(Image.open(io.BytesIO(raw_cap)))
-        except:
+            if startup_cap_fail_counter:
+                print(f"✅ [기동 복구 캡처 회복] {startup_cap_fail_counter}회 실패 후 화면 캡처가 정상화되었습니다.")
+            startup_cap_fail_counter = 0
+        except Exception as cap_err:
+            startup_cap_fail_counter += 1
+            print(f"⚠️ [기동 복구 캡처 실패] 화면 캡처 유실! 오류: {cap_err} ({startup_cap_fail_counter}/{STARTUP_CAP_FAIL_LIMIT})")
+            if startup_cap_fail_counter >= STARTUP_CAP_FAIL_LIMIT:
+                restart_process(f"기동 복구(recover_app_startup) 중 화면 캡처 {STARTUP_CAP_FAIL_LIMIT}회 연속 실패: {cap_err}")
+                return True
             time.sleep(0.5)
             continue
 
