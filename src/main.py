@@ -4,7 +4,7 @@ import datetime
 import time
 import json
 
-CURRENT_VERSION = "1.19.2" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
+CURRENT_VERSION = "1.20.0" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
 
 # ==============================================================================
 # ⚙️ [Daphne 마스터 글로벌 제어 세팅 변수 구역 - 진짜 최상단 제어판]
@@ -30,7 +30,7 @@ CHEST_OPENER_SLOT = 6                   # 🔑 [상자 해제 따개 슬롯] 1�
 # 🖥️ [MuMu 에뮬레이터 콜드 리부트 자동 제어 세팅]
 ENABLE_EMULATOR_REBOOT = True       # 🔄 [에뮬레이터 리부트] 디바이스 오프라인/5분 정체 지속 시 에뮬레이터 자체를 강제 재시작할지 설정
 MUMU_EXECUTABLE_PATH = r"C:\Program Files\Netease\MuMuPlayer\nx_main\MuMuNxMain.exe"  # 뮤뮤 실행 파일 경로
-MUMU_VM_INDEX = "0"                  # 🚨 [2026-08-29] 배포판 기본값(대부분 사용자는 인스턴스 #0)이자, 아직 한
+MUMU_VM_INDEX = "2"                  # 🚨 [v1.20.0] 안드15 전용화에 맞춰 기본값을 인스턴스 #2(안드15)로 변경. 아직 한
                                     #    번도 ADB 연결에 성공하지 못한 상태에서 콜드 리부트가 걸릴 때만 쓰이는
                                     #    폴백입니다. 평소엔 마지막으로 실제 연결됐던 포트를 보고 자동으로
                                     #    인스턴스 번호를 골라 재실행하므로(MUMU_PORT_TO_INDEX), 인스턴스 번호가
@@ -122,9 +122,28 @@ else:
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.19.2
-# - 최근 수정일: 2026-09-07
+# - 현재 버전: 1.20.0
+# - 최근 수정일: 2026-09-08
 # - 수정 기록:
+#   1.20.0: 🚨 뮤뮤 안드로이드 15 전용화 + 안드15 화면 캡처 전면 실패 완치. (1) 근본 원인은 뮤뮤의
+#     '앱 상주' 기능(디바이스 설정 - 기타 - "애플리케이션이 실행 중입니다", 중국어 원문 应用保活)이었다.
+#     이게 켜져 있으면 뮤뮤가 앱마다 별도의 안드로이드 디스플레이를 만드는데, 그러면 (a) screencap이
+#     PNG 앞에 347바이트 경고문("[Warning] Multiple displays were found...")을 평문으로 뱉어
+#     Image.open()이 첫 바이트부터 실패하고(실측: 연속 10회 100% 실패), (b) 게임이 별도 디스플레이로
+#     밀려나는데 input tap은 기본 디스플레이(안드로이드 홈)로 가서 클릭이 전부 엉뚱한 화면으로 샌다
+#     (실측: 탭 한 번에 뮤뮤 스토어 검색창이 열림). 설정을 끄면 디스플레이가 1개로 돌아오고 캡처/입력이
+#     모두 정상화된다(실측 확인). (2) 그래서 우회하지 않고 진단한다 - adb_screencap_patch.py 신설:
+#     check_display_configuration()이 연결 직후 디스플레이 개수를 세어 2개 이상이면 원인과 해결법
+#     (설정 경로까지)을 찍고 매크로를 즉시 정지시킨다. 캡처만 게임 화면으로 우회하면 "화면은 제대로
+#     읽으면서 클릭은 홈 화면으로 나가는" 더 위험한 상태가 되기 때문(같은 게임의 다른 매크로 WVD도
+#     이 경고문을 감지하면 우회 없이 스크립트를 정지시킨다 - wvd-master/src/script.py:639,691).
+#     install_screencap_patch()는 만일을 대비해 PNG 시그니처 앞 쓰레기를 잘라내는 안전망만 담당하며,
+#     device.screencap() 호출부가 6개 파일 44곳이라 개별 치환 대신 ppadb의 Transport.screencap을
+#     한 번 래핑하는 방식을 썼다(CLAUDE.md의 "한 곳만 빠뜨려도 조용히 터진다" 경고 패턴 회피).
+#     (3) 안드12 인스턴스는 그래픽 렌더러 에러(901)로 사실상 못 쓰게 돼 이 버전부터 지원 중단 -
+#     pick_supported_device()가 포트 번호가 아니라 getprop ro.build.version.release로 안드15 이상만
+#     선별한다(인스턴스를 다시 만들어 포트가 바뀌어도 안 깨짐). MUMU_VM_INDEX 기본값 "0"→"2",
+#     포트 스캔 순서도 안드15 우선으로 통일.
 #   1.19.2: 대설지대 던전 추가 전 마지막 안정화 릴리즈 - (1) adb connect 시도마다 CLI가 성공/실패를 줄줄이
 #     찍어 오류처럼 보이던 문제 완치: 출력을 nul로 죽이고 최종 연결된 인스턴스 번호+포트만 한 줄로 출력
 #     (connect_all_mumu_ports_quietly() 신설, connect_mumu()/restart_process() 양쪽 적용). (2) 원격 정지
@@ -692,6 +711,12 @@ from PIL import Image
 from ppadb.client import Client as AdbClient
 import traceback
 
+# 🚨 [v1.20.0] 캡처 데이터 앞에 경고문이 섞여 들어와도 디코딩되도록 ppadb의 screencap을 한 번
+#    래핑해둔다(안전망). 이 시점이 모든 client.device(...) 호출보다 먼저라 전 디바이스에 적용된다.
+#    (호출부 44곳을 각각 고치지 않는 이유는 adb_screencap_patch.py 상단 주석 참고)
+from adb_screencap_patch import install_screencap_patch, check_display_configuration
+install_screencap_patch()
+
 import dungeon_bot
 import inn_manager
 import chest_opener
@@ -768,6 +793,49 @@ MUMU_PORT_TO_INDEX = {
 }
 _last_connected_mumu_port = None
 
+# 🚨 [v1.20.0 안드15 전용화] 이 버전부터 MuMu Player 안드로이드 15 인스턴스만 지원한다.
+#    배경: 안드12 인스턴스는 그래픽 렌더러 에러(901)가 반복돼 사실상 못 쓰게 됐고, 안드15 인스턴스가
+#    OpenGL + 30fps 조합에서 안정적으로 도는 것을 확인했다. 문제는 아래 포트 스캔이 예전엔 5555(안드12)를
+#    가장 먼저 시도해서, 안드12 인스턴스가 켜져 있으면 그쪽에 붙어버렸다는 것.
+#    ⚠️ 인스턴스 "번호"가 아니라 디바이스가 직접 보고하는 "안드로이드 버전"으로 판정한다 - 나중에
+#    인스턴스를 지웠다 다시 만들어 번호(=포트)가 바뀌어도 안 깨지게 하기 위함.
+MIN_ANDROID_VERSION = 15
+MUMU_ADB_PORTS = ["16448", "5559", "16384", "16385", "5555", "16416", "5557"]  # 안드15(2번) 포트 우선
+
+def get_device_android_version(device):
+    """디바이스가 보고하는 안드로이드 메이저 버전(int). 조회 실패 시 0."""
+    try:
+        raw_ver = (device.shell("getprop ro.build.version.release") or "").strip()
+        return int(raw_ver.split(".")[0])
+    except Exception:
+        return 0
+
+def pick_supported_device(client, verbose=True):
+    """붙어 있는 MuMu 포트 중 안드15 이상인 첫 디바이스를 고른다.
+
+    반환: (device, port, android_version). 지원 대상이 없으면 (None, None, 0).
+    verbose=False면 미지원 안내를 찍지 않는다 - 에뮬레이터 부팅 대기 루프처럼 5초마다 반복 호출되는
+    자리에서 아직 부팅 중인 디바이스를 두고 경고문이 도배되는 걸 막기 위함.
+    """
+    rejected = []
+    for port in MUMU_ADB_PORTS:
+        try:
+            device = client.device(f"127.0.0.1:{port}")
+            if not device or device.get_state() != "device":
+                continue
+            android_version = get_device_android_version(device)
+            if android_version >= MIN_ANDROID_VERSION:
+                return device, port, android_version
+            rejected.append((port, android_version))
+        except Exception:
+            continue
+
+    if rejected and verbose:
+        detail = ", ".join(f"{p}포트=안드{v if v else '?'}" for p, v in rejected)
+        print(f"❌ [미지원 에뮬레이터] 연결된 인스턴스가 전부 안드로이드 {MIN_ANDROID_VERSION} 미만입니다({detail}).")
+        print(f"   이 버전부터는 MuMu Player 안드로이드 {MIN_ANDROID_VERSION} 인스턴스만 지원합니다. 해당 인스턴스를 켜주세요.")
+    return None, None, 0
+
 def record_mumu_port(port_str):
     global _last_connected_mumu_port
     if port_str in MUMU_PORT_TO_INDEX:
@@ -781,7 +849,7 @@ def get_reboot_vm_index():
 def connect_all_mumu_ports_quietly():
     # 🚨 [2026-09-06 연결 스팸 완치] adb connect CLI 자체가 포트마다 성공/실패 문구를 줄줄이 찍어
     # 실제 오류처럼 보인다는 지적 - 출력을 nul로 죽이고, 호출부가 최종 결과만 한 줄로 알린다.
-    for port in ["16384", "16385", "5555", "16416", "5557", "16448", "5559"]:
+    for port in MUMU_ADB_PORTS:
         os.system(f"adb connect 127.0.0.1:{port} > nul 2>&1")
 
 def reboot_emulator():
@@ -822,7 +890,7 @@ def reboot_emulator():
     print("      ➔ ⏳ 에뮬레이터 부팅 및 ADB 포트 활성화를 대기합니다 (최대 60초)...")
     start_wait = time.time()
     connected = False
-    target_ports = ["16384", "16385", "5555", "16416", "5557", "16448", "5559"]  # 🚨 [2026-08-29] MuMu 멀티 인스턴스 0/1/2번 포트 전부 추가(기존 #0 포트는 그대로 유지) - 1번은 추정값, MUMU_PORT_TO_INDEX 주석 참고
+    target_ports = MUMU_ADB_PORTS  # 🚨 [v1.20.0] 안드15 포트 우선 순서로 통일 (MUMU_ADB_PORTS 주석 참고)
     
     while time.time() - start_wait < 60.0:
         for port in target_ports:
@@ -832,14 +900,12 @@ def reboot_emulator():
         try:
             from ppadb.client import Client as AdbClient
             client = AdbClient(host="127.0.0.1", port=5037)
-            devices = client.devices()
-            valid_device = None
-            for d in devices:
-                if d.get_state() == "device":
-                    valid_device = d
-                    break
+            # 🚨 [v1.20.0] 아무 디바이스나 잡지 않고 안드15 인스턴스가 올라올 때까지 기다린다.
+            #    (부팅 초반엔 getprop이 아직 안 떠서 버전 0으로 걸러지므로 자연스럽게 재시도된다)
+            valid_device, valid_port, valid_ver = pick_supported_device(client, verbose=False)
             if valid_device:
-                print(f"      ✅ ADB 연결 수립 완료! 디바이스 부팅 상태: {valid_device.get_state()}")
+                print(f"      ✅ ADB 연결 수립 완료! 인스턴스 {MUMU_PORT_TO_INDEX.get(valid_port, '?')}번 ({valid_port}포트, 안드로이드 {valid_ver})")
+                record_mumu_port(valid_port)
                 connected = True
                 break
         except:
@@ -853,12 +919,7 @@ def reboot_emulator():
         try:
             from ppadb.client import Client as AdbClient
             client = AdbClient(host="127.0.0.1", port=5037)
-            devices = client.devices()
-            valid_device = None
-            for d in devices:
-                if d.get_state() == "device":
-                    valid_device = d
-                    break
+            valid_device, _valid_port, _valid_ver = pick_supported_device(client, verbose=False)
             if valid_device:
                 launch_daphne_app(valid_device)
                 time.sleep(5.0)
@@ -1243,17 +1304,10 @@ def restart_process(reason):
     device = None
     try:
         client = AdbClient(host="127.0.0.1", port=5037)
-        device = client.device("127.0.0.1:5555")
-        if not device: device = client.device("127.0.0.1:16384")
-        if not device: device = client.device("127.0.0.1:16385")
-        if not device: device = client.device("127.0.0.1:16416")
-        if not device: device = client.device("127.0.0.1:5557")
-        if not device: device = client.device("127.0.0.1:16448")
-        if not device: device = client.device("127.0.0.1:5559")
-        if device and device.get_state() == "device":
+        device, port, android_version = pick_supported_device(client)
+        if device:
             device_online = True
-            port = device.serial.split(":")[-1]
-            print(f"      ✅ 인스턴스 {MUMU_PORT_TO_INDEX.get(port, '?')}번 ({port}포트)에 연결 성공했습니다.")
+            print(f"      ✅ 인스턴스 {MUMU_PORT_TO_INDEX.get(port, '?')}번 ({port}포트, 안드로이드 {android_version})에 연결 성공했습니다.")
             record_mumu_port(port)  # 🚨 [2026-08-29] 콜드 리부트 시 같은 인스턴스를 재실행하기 위한 기록
     except:
         pass
@@ -1302,20 +1356,18 @@ def connect_mumu():
     time.sleep(1.0)
     try:
         client = AdbClient(host="127.0.0.1", port=5037)
-        device = client.device("127.0.0.1:5555")
-        if not device: device = client.device("127.0.0.1:16384")
-        if not device: device = client.device("127.0.0.1:16385")
-        if not device: device = client.device("127.0.0.1:16416")
-        if not device: device = client.device("127.0.0.1:5557")
-        if not device: device = client.device("127.0.0.1:16448")
-        if not device: device = client.device("127.0.0.1:5559")
+        device, port, android_version = pick_supported_device(client)
         if device:
-            port = device.serial.split(":")[-1]
-            print(f"✅ 인스턴스 {MUMU_PORT_TO_INDEX.get(port, '?')}번 ({port}포트)에 연결 성공했습니다.")
+            print(f"✅ 인스턴스 {MUMU_PORT_TO_INDEX.get(port, '?')}번 ({port}포트, 안드로이드 {android_version})에 연결 성공했습니다.")
+            # 🚨 [v1.20.0] 뮤뮤 '앱 상주'가 켜져 있으면 앱마다 별도 디스플레이가 생겨서, 매크로가 읽는
+            #    화면과 클릭이 나가는 화면이 서로 달라진다(실측: 탭이 안드로이드 홈으로 새어 뮤뮤 스토어
+            #    검색창이 열림). 이 상태로 계속 돌면 게임 대신 홈 화면을 마구 누르므로 여기서 멈춘다.
+            if not check_display_configuration(device):
+                sys.exit(1)
             record_mumu_port(port)  # 🚨 [2026-08-29] 콜드 리부트 시 같은 인스턴스를 재실행하기 위한 기록
             global_device = device
             return device
-        print("⚠️ [ADB 연결 실패] 사용 가능한 MuMu 인스턴스를 찾지 못했습니다.")
+        print(f"⚠️ [ADB 연결 실패] 안드로이드 {MIN_ANDROID_VERSION} 이상인 MuMu 인스턴스를 찾지 못했습니다.")
         return None
     except Exception as e:
         print(f"❌ ADB 연결 치명적 실패: {e}")
