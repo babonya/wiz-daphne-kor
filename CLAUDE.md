@@ -129,4 +129,10 @@
 ## 일반 원칙
 - 모든 임계값/색상/좌표 수정은 실제 스크린샷 또는 실제 로그로 검증 후 반영한다(추측 금지).
 - 버전 릴리즈 시 `CURRENT_VERSION`(main.py) + `main.py`/`dungeon_bot.py`/`remote_control/server.py`의
-  버전 히스토리 주석 + `Daphne Antigravity.bat` 타이틀 + `README.md` 배너 + `history.log`를 함께 갱신한다.
+  버전 히스토리 주석 + `README.md` 배너 + `history.log`를 함께 갱신한다.
+  (예전 절차에 있던 `Daphne Antigravity.bat` 타이틀 갱신은 삭제 - 지금 `.bat`은 프리셋별로 분리되면서
+  타이틀에 버전이 안 들어간다.)
+- 릴리즈 압축은 손으로 만들지 말고 `python dev/tools/make_release_zip.py`를 쓴다. **깃이 추적하는 파일
+  전부**를 담고 AI 지침 파일(`CLAUDE.md`/`AGENTS.md`)과 wvd 자산(`templates/SkillCast/`, `*_wvd.*`)만
+  빼는 방식이라, 새 폴더/파일을 추가해도 자동으로 포함된다(과거 수동 압축 때 `readme_img/`를 빠뜨릴 뻔한
+  사고가 있었음). README에 이미지를 넣을 때는 루트가 아니라 `readme_img/`에 두고 상대경로로 참조할 것.
