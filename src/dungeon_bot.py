@@ -1287,6 +1287,29 @@ def _find_automove_button(img_np, t_automove_primary, t_automove_fallback, thres
             return max_loc[0] + int(tw / 2), max_loc[1] + int(th / 2)
     return None
 
+# 🚨 [2026-09-08 실전 확인] return_to_town_via_fieldmap_icon()은 자기 안에서 반복 폴링하는 자기완결형
+# 블로킹 함수라, 이 함수가 실행되는 동안은 중립몹/행상인 핸들러가 있는 공용 전처리 블록이 아예 안 돈다
+# (실전 확인: 미니맵 확장 재시도 도중 중립몹 조우가 끼어들었는데 아무도 처리를 못 해 3회 재시도를 전부
+# 헛탭으로 날리고 실패 처리됨 - 사용자 스크린샷+로그로 확인). 전투 감지만으로는 부족하다 - 중립몹 조우는
+# "전투 시작 전" 대사/선택지 화면이라 t_combat_in/slow 도장에 안 걸린다. 이 헬퍼를 각 폴링 루프 안에서
+# 호출해 감지되면 처리하고 True를 반환한다 - 호출부는 재시도 예산을 소모하지 않고 다시 스크린샷부터
+# 진행해야 한다(전투 감지와 동일한 방침).
+def _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field):
+    if img_np is None:
+        return False
+    if t_dilog_fight is not None:
+        fight_coords = find_and_get_coords(img_np, t_dilog_fight, 0.70)
+        if fight_coords:
+            print(f"⚔️ [필드맵 귀환 - 중립몹 조우] '싸운다' 선택지 발견 - 고정 선택 탭: {fight_coords}")
+            safe_device_shell(device, f"input tap {fight_coords[0]} {fight_coords[1]}")
+            time.sleep(1.0)
+            return True
+    if t_seller_label is not None and check_template_present(img_np, t_seller_label, 0.80):
+        print("🛒 [필드맵 귀환 - 행상인 조우] '수상한 행상인' 대사 화면 감지 - 조우 처리 루틴 진입.")
+        handle_merchant_encounter(device, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field)
+        return True
+    return False
+
 def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_combat_slow=None, max_swipe_attempts=8):
     """
     필드맵을 확장해 캠프/대하켄 아이콘을 찾아 자동이동으로 복귀하는 범용 귀환 루틴.
@@ -1313,6 +1336,11 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
     t_yeolda = load_template("templates/chestopening/yeolda_clean.png")
     t_move_resume_act = load_grayscale_template("templates/Field/resume_act.png")
     t_move_resume_deact = load_grayscale_template("templates/Field/resume_deact.png")
+    # 🆕 [2026-09-08] 이 함수 안에서도 중립몹/행상인 조우를 처리하기 위한 도장(_handle_dungeon_interrupt용)
+    t_dilog_fight = load_template("templates/Dungeon_dialogue/Dun_dilog_fight.png")
+    t_seller_label = load_template("templates/Dungeon_dialogue/Dun_seller_label.png")
+    t_seller_let_me_see = load_template("templates/Dungeon_dialogue/Dun_seller_let_me_see.png")
+    t_seller_hammer = load_template("templates/Dungeon_dialogue/Dun_seller_hammer.png")
 
     # 🎯 캠핑 분기는 캠프 아이콘/캠핑용 자동이동만, 하켄 분기(교회구역)는 대하켄/대하켄용 자동이동만
     # 참조한다 - 처음부터 완전히 분리된 갈래라 서로의 탭 좌표/도장을 참조하지 않는다(사용자가 걱정한
@@ -1337,12 +1365,14 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
     expand_attempts_used = 0
     combat_wait_deadline = time.time() + 180.0  # 절대 워치독 - 전투가 끝없이 이어지는 이상 상황 대비
     while expand_attempts_used < 3 and time.time() < combat_wait_deadline:
-        # 탭 전 전투 여부 확인 - 전투 중이면 탭 자체를 보류하고 대기(재시도 횟수 소모 안 함)
+        # 탭 전 전투/중립몹/행상인 조우 여부 확인 - 조우 중이면 탭 자체를 보류(재시도 횟수 소모 안 함)
         raw = device.screencap()
         if not raw:
             time.sleep(1.0)
             continue
         img_np = np.array(Image.open(io.BytesIO(raw)))
+        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field):
+            continue
         if check_combat_template_present(img_np, t_combat_in, 0.80) or check_combat_template_present(img_np, t_combat_slow, 0.80):
             print("⚔️ [필드맵 귀환] 미니맵 확장 시도 전 전투 조우 - 자동전투 종료를 기다립니다.")
             time.sleep(2.0)
@@ -1359,6 +1389,11 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
             if not raw:
                 continue
             img_np = np.array(Image.open(io.BytesIO(raw)))
+            if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field):
+                print("⚠️ [필드맵 귀환] 탭 직후 중립몹/행상인 조우 처리 - 이번 시도는 재시도 횟수에서 제외합니다.")
+                combat_interrupted = True
+                expand_attempts_used -= 1  # 조우로 무산된 시도는 예산에서 다시 돌려준다
+                break
             if check_combat_template_present(img_np, t_combat_in, 0.80) or check_combat_template_present(img_np, t_combat_slow, 0.80):
                 print("⚔️ [필드맵 귀환] 탭 직후 전투 조우 감지 - 이번 시도는 재시도 횟수에서 제외합니다.")
                 combat_interrupted = True
@@ -1385,7 +1420,14 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
         (1100, 1300, 400, 1300), # 왼쪽으로
         (400, 1300, 1300, 1300), # 오른쪽으로(원위치+더)
     ]
+    # 🚨 [2026-09-08] 맵이 완전히 확장되면 던전 타이머(=몹 조우)가 멈춘다는 사용자 확인에 따라 이 이후
+    # 단계는 원칙적으로 조우 위험이 없지만, 그 경계가 100% 확실하진 않으니 값싼 방어로 여기도 체크한다.
     for attempt in range(max_swipe_attempts):
+        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field):
+            raw = device.screencap()
+            if raw:
+                img_np = np.array(Image.open(io.BytesIO(raw)))
+            continue
         icon_coords = find_gray_coords_specific(img_np, target_icon, FIELDMAP_ICON_THRESHOLD)
         if icon_coords:
             break
@@ -1413,6 +1455,8 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
         if not raw:
             continue
         img_np = np.array(Image.open(io.BytesIO(raw)))
+        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field):
+            continue
         automove_coords = _find_automove_button(img_np, automove_primary, automove_fallback)
         if automove_coords:
             break
@@ -1449,6 +1493,10 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
                 print("⚔️ [필드맵 귀환] 자동이동 중 전투 조우 - 자동전투 종료를 기다립니다.")
             interrupted = True
             time.sleep(2.0)
+            continue
+
+        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field):
+            interrupted = True  # 조우 처리 후에도 자동이동이 끊겼을 수 있으니 재개 버튼 대상으로 취급
             continue
 
         if is_camp_branch:
