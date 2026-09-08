@@ -23,7 +23,7 @@
       "exit_button": "기존 나가기-버튼-도보 방식(다른 던전들의 기본 동작).",
       "camp_then_exit_button": "캠핑 후 필드의 일반 나가기 버튼으로 복귀.",
       "camp_then_harken": "캠핑 후 하켄 메뉴로 복귀 (대설지대 6층 기본값).",
-      "harken_only": "캠핑 없이 소하켄/대하켄으로 바로 복귀 (대설지대 교회구역 기본값)."
+      "harken_only": "캠핑 없이 대하켄으로 바로 복귀 (대설지대 교회구역 기본값). ⚠️ 소하켄(FieldMap_harkensmall.png)은 아직 이 값과 연결 안 됨 - 캠핑 없이 소하켄만 쓰는 던전이 생기면 그때 별도 값을 추가할 것."
     },
     "resupply_mode (재정비 방식) - dungeon이 '대설지대'일 때만 사용, 기본값 items_only": {
       "items_only": "마을외곽 인벤정리 버튼만 사용 (6층 기본값 - 캠핑으로 이미 회복했을 때).",
@@ -37,7 +37,8 @@
       "town": "이스벨크",
       "dungeon": "백아의 동굴",
       "floor": "백아1층",
-      "farming_method": "상자파밍"
+      "farming_method": "상자파밍",
+      "return_method": "exit_button"
     },
     "유령성 2층 채굴": {
       "town": "노던할로우",
