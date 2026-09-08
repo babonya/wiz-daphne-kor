@@ -12,7 +12,7 @@
   5. [뮤뮤 안드로이드 15 전용화] 안드12 인스턴스는 렌더러 에러로 사실상 사용 불가 판정. 기존 포트 스캔은 5555(안드12)를 가장 먼저 시도해 안드12가 켜져 있으면 그쪽에 붙었음 - pick_supported_device()를 신설해 인스턴스 "번호"가 아니라 getprop ro.build.version.release로 안드15 이상만 선별(나중에 인스턴스를 다시 만들어 포트가 바뀌어도 안 깨짐). 디바이스 선택 지점 4곳(자가 복구 검증, connect_mumu, 콜드 리부트 대기 루프, 콜드 리부트 앱 실행)을 전부 이 헬퍼로 통일. MUMU_VM_INDEX 기본값 "0"→"2", 포트 스캔 순서도 안드15 우선(MUMU_ADB_PORTS)으로 통일.
   6. [진단 과정에서 확인한 사실들] 뮤뮤15의 화면 3개는 mumuscreen000/001/002로 앱 실행마다 생성/소멸되며 게임의 디스플레이 번호도 매번 바뀜(2번→3번). am start --display 0으로 게임을 기본 화면에 띄우려 해도 뮤뮤가 무시함. "Android 앱 표시 모드"(멀티탭/단일앱)와 "디스플레이 설정(공용)"은 이 문제와 무관함을 실측으로 배제(잘 돌던 안드12 인스턴스가 오히려 멀티탭 모드였음).
 - 검증: 앱 상주 off 후 디스플레이 1개/게임 display 0/무지정 캡처 경고문 없는 1440x2560 세로 확인. 패치된 screencap 연속 5회 전부 정상. check_display_configuration()을 4개 분기(실기 정상/디스플레이 3개 재현/dumpsys 실패/정상)로 검증. pick_supported_device()를 실제 소스에서 추출해 실행 - 16448포트/안드15 정상 선택, 미달 시 안내 후 (None, None, 0) 반환 확인.
-- 적용 파일: src/adb_screencap_patch.py(신설), src/main.py, src/dungeon_bot.py, remote_control/server.py, README.md, 백그라운드실행_off.png(신설, README용 설정 스크린샷), history.log
+- 적용 파일: src/adb_screencap_patch.py(신설), src/main.py, src/dungeon_bot.py, remote_control/server.py, README.md, readme_img/백그라운드실행_off.png(신설, README용 설정 스크린샷 - 기존 유령성3층셋팅.png도 루트에서 readme_img/로 함께 이동), history.log
 
 [1.19.2] 2026-09-07 - 안정화 릴리즈(대설지대 던전 추가 전 마지막) - ADB 연결 로그 정리, 콘솔창 잔존/스크린샷 캐시 무한증식/정체카운터 리셋 누락 완치
 - 내용: 대설지대(이스벨크) 신규 던전 대규모 패치에 들어가기 전, 그동안 쌓인 자잘한 완치 건들을 먼저 정리해 릴리즈. 신규 던전 로직은 포함하지 않음.
