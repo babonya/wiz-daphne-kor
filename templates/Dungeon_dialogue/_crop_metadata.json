@@ -108,5 +108,15 @@
       "y2": 2079
     },
     "roi_name": "camping_dry_msg"
+  },
+  "Dun_HS6_doghole": {
+    "source_image": "대설지대6층_빠져나간다.png",
+    "roi": {
+      "x1": 555,
+      "y1": 1541,
+      "x2": 870,
+      "y2": 1622
+    },
+    "roi_name": null
   }
 }

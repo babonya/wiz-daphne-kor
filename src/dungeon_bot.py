@@ -51,6 +51,14 @@ came_from_chest = False
 #     _find_first_icon() 헬퍼로 교체(같은 게임의 다른 매크로 WVD도 harken→Bharken 순차 폴백 - 같은
 #     설계). 새 앵커 FieldMap_Anchor.png("✕ 닫기", 확장 화면 전용)도 필드맵 확장 판정에 추가.
 #     실전 검증: 대설지대 6층 1주회 완주(진입→상자파밍→상자없음→귀환→인벤정리→재진입) 확인 완료.
+#     (5) [대설지대 6층 신규 조우 + 화살표 사각지대 완치] "울타리에 구멍이 뚫려있다" 조우 -
+#     "빠져나간다" 고정 선택 추가(Dun_HS6_doghole.png, 오탐 검증: 양성 1.000 vs 음성 최고 0.458).
+#     이 조우 직전 도입 대사처럼 "구체적 선택지 없이 화살표만 있는" 화면은 기존 인터럽트 처리
+#     (싸운다/행상인/빠져나간다) 어디에도 안 걸려 커서 미검출만 반복하며 정체했다(실전 로그 17:03,
+#     사용자가 수동으로 화살표를 한 번 눌러 넘기자 정상 처리됨). find_and_click_dialogue_advance_arrow()
+#     를 두 곳(_handle_dungeon_interrupt/메인 루프 공용 블록) 모두에 최하위 폴백으로 추가 - 반드시
+#     구체적 선택지 체크 "뒤"에 둬야 한다(실측 확인: 중립몹 조우 선택지 화면에도 이 화살표가 0.969로
+#     같이 찍혀 있어, 순서를 앞에 두면 화살표를 먼저 눌러 엉뚱한 선택지가 골라짐).
 #   1.19.2: 대설지대 던전 추가 전 마지막 안정화 릴리즈 - 정체(stuck) 복구 30초 메가블록 내 사망감지
 #     분기가 "공식" 사망감지 분기(~1413-1426)와 동일한 get_dead_match_score 체크를 하면서도
 #     transition_delay_count 리셋만 빠뜨린 쌍둥이 결함 완치. 같은 유형 버그 재발 방지를 위해
@@ -1372,7 +1380,7 @@ def _find_automove_button(img_np, t_automove_primary, t_automove_fallback, thres
 # "전투 시작 전" 대사/선택지 화면이라 t_combat_in/slow 도장에 안 걸린다. 이 헬퍼를 각 폴링 루프 안에서
 # 호출해 감지되면 처리하고 True를 반환한다 - 호출부는 재시도 예산을 소모하지 않고 다시 스크린샷부터
 # 진행해야 한다(전투 감지와 동일한 방침).
-def _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field):
+def _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=None):
     if img_np is None:
         return False
     if t_dilog_fight is not None:
@@ -1382,9 +1390,29 @@ def _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_s
             safe_device_shell(device, f"input tap {fight_coords[0]} {fight_coords[1]}")
             time.sleep(1.0)
             return True
+    # 🆕 [2026-09-09 대설지대 6층] "울타리에 구멍이 뚫려있다" 조우 - "빠져나간다"/"그만둔다" 2택,
+    # 항상 빠져나간다를 고정 선택한다(사용자 확정). 오탐 검증: 양성 1.000 vs 음성 최고 0.458(전투 대화창).
+    if t_doghole is not None:
+        doghole_coords = find_and_get_coords(img_np, t_doghole, 0.70)
+        if doghole_coords:
+            print(f"🕳️ [필드맵 귀환 - 울타리 구멍] '빠져나간다' 선택지 발견 - 고정 선택 탭: {doghole_coords}")
+            safe_device_shell(device, f"input tap {doghole_coords[0]} {doghole_coords[1]}")
+            time.sleep(1.0)
+            return True
     if t_seller_label is not None and check_template_present(img_np, t_seller_label, 0.80):
         print("🛒 [필드맵 귀환 - 행상인 조우] '수상한 행상인' 대사 화면 감지 - 조우 처리 루틴 진입.")
         handle_merchant_encounter(device, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field)
+        return True
+    # 🚨 [2026-09-09 실전 확인] 위 3개(싸운다/행상인/빠져나간다)는 전부 "구체적으로 아는 선택지"만 잡는다.
+    # 그런데 그런 선택지가 뜨기 "전" 단계로 서술문만 있고 화살표만 있는 화면(예: 울타리 구멍 조우 직전의
+    # 도입 대사)이 있을 수 있는데, 이건 위 어디에도 안 걸려서 아무도 못 넘기고 커서 미검출만 반복하며
+    # 정체했다(실전 로그 2026-09-09 17:03, 사용자가 수동으로 화살표를 눌러 대화를 한 번 넘기자 그제서야
+    # '빠져나간다' 선택지가 나와 정상 처리됨). ⚠️ 반드시 위 3개 구체적 선택지 체크 "뒤"에 둬야 한다 -
+    # 중립몹 조우 등 실제 선택지 화면에도 이 화살표가 함께 찍혀 있어서, 순서를 앞에 두면 화살표를 먼저
+    # 눌러 엉뚱한 선택지가 골라질 수 있다(사용자 확정 규칙).
+    if t_dialogue_arrow is not None and find_and_click_dialogue_advance_arrow(device, img_np, t_dialogue_arrow):
+        print("💬 [필드맵 귀환 - 대화 진행] 화살표 감지 - 다음 화면으로 넘깁니다.")
+        time.sleep(0.8)
         return True
     return False
 
@@ -1534,6 +1562,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
     t_seller_label = load_template("templates/Dungeon_dialogue/Dun_seller_label.png")
     t_seller_let_me_see = load_template("templates/Dungeon_dialogue/Dun_seller_let_me_see.png")
     t_seller_hammer = load_template("templates/Dungeon_dialogue/Dun_seller_hammer.png")
+    t_doghole = load_template("templates/Dungeon_dialogue/Dun_HS6_doghole.png")  # "울타리 구멍으로 빠져나간다"
 
     # 🎯 캠핑 분기는 캠프 아이콘/캠핑용 자동이동만, 하켄 분기(교회구역)는 대하켄/대하켄용 자동이동만
     # 참조한다 - 처음부터 완전히 분리된 갈래라 서로의 탭 좌표/도장을 참조하지 않는다(사용자가 걱정한
@@ -1574,7 +1603,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
             time.sleep(1.0)
             continue
         img_np = np.array(Image.open(io.BytesIO(raw)))
-        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field):
+        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=t_doghole):
             continue
         # 🚨 [2026-09-08 실전 확인] 예전엔 "전투 도장이 안 보이면 탭"이라는 음성 조건이었는데, 전투 중
         # 단 한 프레임만 매칭이 흔들려도 탭이 나가 자동전투가 깨지고 그대로 멈추는 사고가 났다(실기:
@@ -1607,7 +1636,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
             if not raw:
                 continue
             img_np = np.array(Image.open(io.BytesIO(raw)))
-            if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field):
+            if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=t_doghole):
                 print("⚠️ [필드맵 귀환] 탭 직후 중립몹/행상인 조우 처리 - 이번 시도는 재시도 횟수에서 제외합니다.")
                 combat_interrupted = True
                 expand_attempts_used -= 1  # 조우로 무산된 시도는 예산에서 다시 돌려준다
@@ -1641,7 +1670,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
     # 안에 전투 조우가 없어야 한다. 둘 중 하나라도 어긋나면 확장 상태에서도 전투가 열린다. 그래서 이
     # 이후 단계에도 조우/전투 체크를 계속 유지한다(값싼 방어가 아니라 실제로 필요한 방어다).
     for attempt in range(max_swipe_attempts):
-        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field):
+        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=t_doghole):
             raw = device.screencap()
             if raw:
                 img_np = np.array(Image.open(io.BytesIO(raw)))
@@ -1680,7 +1709,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
         if not raw:
             continue
         img_np = np.array(Image.open(io.BytesIO(raw)))
-        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field):
+        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=t_doghole):
             continue
         automove_coords = _find_automove_button(img_np, automove_primary, automove_fallback)
         if automove_coords:
@@ -1726,7 +1755,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
             print("⚔️ [필드맵 귀환] 자동이동 중 전투 조우 - 메인 루프의 전투 처리로 넘깁니다(전투 종료 후 귀환 재시도).")
             return "combat"
 
-        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field):
+        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=t_doghole):
             interrupted = True  # 조우 처리 후에도 자동이동이 끊겼을 수 있으니 재개 버튼 대상으로 취급
             last_cursor_change_time = time.time()  # 조우 처리에 쓴 시간은 정지 시간으로 치지 않는다
             continue
@@ -1858,6 +1887,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     t_seller_label = load_template("templates/Dungeon_dialogue/Dun_seller_label.png")
     t_seller_let_me_see = load_template("templates/Dungeon_dialogue/Dun_seller_let_me_see.png")
     t_seller_hammer = load_template("templates/Dungeon_dialogue/Dun_seller_hammer.png")
+    t_doghole_common = load_template("templates/Dungeon_dialogue/Dun_HS6_doghole.png")  # "울타리 구멍으로 빠져나간다"
     t_dialogue_arrow_common = load_template("templates/inn_sleep/arrow_clean.png")
     # 🚨 [2026-09-08 실전 확인] 캠핑 선택창("쉰다"/"아무것도 안 한다")은 필드 앵커도 전투 앵커도 없어서,
     # 귀환 루틴 밖에서 이 화면을 만나면 공용 전처리 블록이 "화면 과도기"로 오판하고 30초 뒤 비상
@@ -2308,12 +2338,36 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                         time.sleep(1.0)
                         continue
 
+                    # 🆕 [2026-09-09 대설지대 6층] "울타리에 구멍이 뚫려있다" 조우 - "빠져나간다" 고정 선택
+                    # (오탐 검증: 양성 1.000 vs 음성 최고 0.458).
+                    doghole_coords = find_and_get_coords(img_np, t_doghole_common, 0.70)
+                    if doghole_coords:
+                        print(f"🕳️ [울타리 구멍] '빠져나간다' 선택지 발견 - 고정 선택 탭: {doghole_coords}")
+                        safe_device_shell(device, f"input tap {doghole_coords[0]} {doghole_coords[1]}")
+                        transition_delay_count = 0
+                        last_state_changed_time = time.time()
+                        time.sleep(1.0)
+                        continue
+
                     if check_template_present(img_np, t_seller_label, 0.80):
                         print("🛒 [행상인 조우] '수상한 행상인' 대사 화면 감지 - 조우 처리 루틴 진입.")
                         handle_merchant_encounter(device, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow_common, t_field)
                         transition_delay_count = 0
                         last_state_changed_time = time.time()
                         time.sleep(0.5)
+                        continue
+
+                    # 🚨 [2026-09-09 실전 확인] 위 3개(캠핑/싸운다/행상인)는 전부 "구체적으로 아는 선택지"만
+                    # 잡는다. 그 선택지가 뜨기 "전" 서술문만 있고 화살표만 있는 화면(예: 울타리 구멍 조우
+                    # 직전의 도입 대사)은 위 어디에도 안 걸려서 아무도 못 넘기고 정체했다(실전 로그
+                    # 2026-09-09 17:03, 필드맵 귀환 루틴 안에서 발견 - 이 공용 블록은 필드 이동 전체에
+                    # 걸쳐 있으니 같은 위험을 대칭으로 완치). ⚠️ 반드시 위 3개 뒤에 둬야 한다(순서 원칙은
+                    # _handle_dungeon_interrupt() 주석 참고).
+                    if find_and_click_dialogue_advance_arrow(device, img_np, t_dialogue_arrow_common):
+                        print("💬 [대화 진행] 화살표 감지 - 다음 화면으로 넘깁니다.")
+                        transition_delay_count = 0
+                        last_state_changed_time = time.time()
+                        time.sleep(0.8)
                         continue
 
                 if check_template_present_multipass(img_np, t_yeolda, yeolda_threshold):
