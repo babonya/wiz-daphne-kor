@@ -98,5 +98,15 @@
       "y2": 1985
     },
     "roi_name": null
+  },
+  "Dun_camping_dry": {
+    "source_image": "camping_finished_but_onceagain.png",
+    "roi": {
+      "x1": 118,
+      "y1": 2008,
+      "x2": 834,
+      "y2": 2079
+    },
+    "roi_name": "camping_dry_msg"
   }
 }

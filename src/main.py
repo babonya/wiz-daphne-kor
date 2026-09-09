@@ -123,8 +123,34 @@ else:
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
 # - 현재 버전: 1.20.0
-# - 최근 수정일: 2026-09-08
+# - 최근 수정일: 2026-09-09
 # - 수정 기록:
+#   1.20.0 (2026-09-09 후속): 🚨 대설지대 실전 완주 검증 중 발견된 결함 4건 완치. (1) [30초 정체
+#     함정 완치] 아웃게임 화면 분류의 30초 정체 분기 중 heal_close/exit_mag/고정좌표 폴백 탭 경로만
+#     유일하게 last_action_time을 갱신하지 않아, 마을/세계지도/던전선택/여관 어디에도 안 걸리는 화면을
+#     만나면 영원히 그 분기에 갇혀 바로 아래 있는 is_any_dungeon_sel(공용 세계지도 이탈 버튼) 판정에
+#     도달조차 못했다(실전 로그 2026-09-09 14:03~14:05, 유령성 던전선택 화면에서 대설지대 프리셋을
+#     켰을 때 재현). 다른 분기와 동일하게 last_action_time 갱신을 추가해 완치 - 던전별 코드가 아니라
+#     모든 던전이 공유하는 공용 루프라 유령성/백아에도 잠재하던 결함이었다. (2) [세계지도 목표 아이콘
+#     오지정 완치] "if DUNGEON_NAME == 북쪽의 유령선: ... else: (백아 전용 도장)" 이분법이 대설지대
+#     추가로 깨져, t_go_dungeon이 대설지대에서도 백아 아이콘(Cave_Wolf_btn.png)으로 로드됐다.
+#     대설지대는 세계지도 직행 아이콘이 없는 마을경유형이라 이 아이콘이 세계지도에 있을 리 없어 클릭이
+#     조용히 실패하고 'WORLDMAP 확정'만 반복하며 정체했다 - should_go_town 값과 무관하게 대설지대는
+#     항상 마을(이스벨크) 아이콘을 목표로 하도록 완치. (3) [세계지도 스와이프 탐색 범용화] 목표 아이콘을
+#     찾는 지그재그 스와이프 탐색이 is_ffxi_worldmap(유령성/노던할로우 목표일 때만)으로 게이트돼 있어,
+#     유령성 던전선택에서 대설지대로 이탈했을 때 목표 아이콘(이스벨크)이 화면 밖에 있으면 스와이프
+#     자체가 안 걸려 정체했다(라이브 화면 실측으로 확인: 노던할로우 지역 뷰엔 이스벨크 아이콘이 없음).
+#     게이트를 제거해 모든 목표가 동일한 탐색을 쓰도록 통일 - 아이콘이 이미 보이면 스와이프 타이머(3초)
+#     전에 클릭+continue로 빠져나가므로 기존 동작(백아 등)엔 영향 없음. 실전 검증: 유령성 던전선택
+#     시작 → 세계지도 이탈 → 스와이프 탐색 → 이스벨크 진입까지 확인 완료. (4) [기동 복구 마을외곽 인식
+#     누락 완치] recover_app_startup()의 "인게임 진입 성공" 앵커 목록에 마을외곽/대설지대 경로목록
+#     화면이 빠져 있어 그 화면에서 매크로를 켜면 빈 (1,1) 탭만 35회 반복했다 - 메인 루프가 쓰는 것과
+#     동일한 도장으로 추가. 이 과정에서 HEAVYSNOW_FLOOR_FILE_MAP을 지역변수에서 모듈 전역으로 승격.
+#     (5) [대설지대 귀환/전투/캠핑 로직 대폭 개선, 상세는 dungeon_bot.py 참고] 전투를 메인 루프
+#     IN_COMBAT으로 인계(자동전투 재활성화 보장), 캠핑을 공용 전처리 블록에서도 처리, 재정비 예약을
+#     start_main_macro 호출부 3곳으로 통일, 눈보라 판별을 미니맵 확장 가능 여부로 교체, 필드 버튼
+#     활성/비활성 픽셀 판별 추가, 하켄 대/소 구분 없는 탐색, 캠핑 완료("생명의 우물이 말라버렸다")
+#     감지 추가. 대설지대 6층 1주회 완주(진입→상자파밍→상자없음→귀환→인벤정리→재진입) 실전 검증 완료.
 #   1.20.0: 🚨 뮤뮤 안드로이드 15 전용화 + 안드15 화면 캡처 전면 실패 완치. (1) 근본 원인은 뮤뮤의
 #     '앱 상주' 기능(디바이스 설정 - 기타 - "애플리케이션이 실행 중입니다", 중국어 원문 应用保活)이었다.
 #     이게 켜져 있으면 뮤뮤가 앱마다 별도의 안드로이드 디스플레이를 만드는데, 그러면 (a) screencap이
@@ -132,18 +158,16 @@ else:
 #     Image.open()이 첫 바이트부터 실패하고(실측: 연속 10회 100% 실패), (b) 게임이 별도 디스플레이로
 #     밀려나는데 input tap은 기본 디스플레이(안드로이드 홈)로 가서 클릭이 전부 엉뚱한 화면으로 샌다
 #     (실측: 탭 한 번에 뮤뮤 스토어 검색창이 열림). 설정을 끄면 디스플레이가 1개로 돌아오고 캡처/입력이
-#     모두 정상화된다(실측 확인). (2) 그래서 우회하지 않고 진단한다 - adb_screencap_patch.py 신설:
-#     check_display_configuration()이 연결 직후 디스플레이 개수를 세어 2개 이상이면 원인과 해결법
-#     (설정 경로까지)을 찍고 매크로를 즉시 정지시킨다. 캡처만 게임 화면으로 우회하면 "화면은 제대로
-#     읽으면서 클릭은 홈 화면으로 나가는" 더 위험한 상태가 되기 때문(같은 게임의 다른 매크로 WVD도
-#     이 경고문을 감지하면 우회 없이 스크립트를 정지시킨다 - wvd-master/src/script.py:639,691).
-#     install_screencap_patch()는 만일을 대비해 PNG 시그니처 앞 쓰레기를 잘라내는 안전망만 담당하며,
-#     device.screencap() 호출부가 6개 파일 44곳이라 개별 치환 대신 ppadb의 Transport.screencap을
-#     한 번 래핑하는 방식을 썼다(CLAUDE.md의 "한 곳만 빠뜨려도 조용히 터진다" 경고 패턴 회피).
-#     (3) 안드12 인스턴스는 그래픽 렌더러 에러(901)로 사실상 못 쓰게 돼 이 버전부터 지원 중단 -
-#     pick_supported_device()가 포트 번호가 아니라 getprop ro.build.version.release로 안드15 이상만
-#     선별한다(인스턴스를 다시 만들어 포트가 바뀌어도 안 깨짐). MUMU_VM_INDEX 기본값 "0"→"2",
-#     포트 스캔 순서도 안드15 우선으로 통일.
+#     모두 정상화된다(실측 확인). (2) 그래서 우회하지 않고 진단만 한다 - mumu_display_check.py 신설:
+#     check_display_configuration()이 연결 직후(connect_mumu) 디스플레이 개수를 세어 2개 이상이면
+#     원인과 해결법(설정 경로까지)을 찍고 매크로를 즉시 정지시킨다. ⚠️ 경고문을 잘라내 캡처만 되게
+#     우회하는 안전망도 만들어봤다가 폐기했다 - 그러면 "화면은 제대로 읽으면서 클릭은 홈 화면으로
+#     나가는" 더 위험한 상태로 계속 돌게 된다. 우회하지 않으면 캡처 실패 → 기존 실패 카운터가 재시작
+#     → 재시작 시 이 점검이 잡아내고 멈추는 안전한 경로가 된다(같은 게임의 다른 매크로 WVD도 우회 없이
+#     정지시킨다 - wvd-master/src/script.py:639,691). (3) 안드12 인스턴스는 그래픽 렌더러 에러(901)로
+#     사실상 못 쓰게 돼 이 버전부터 지원 중단 - pick_supported_device()가 포트 번호가 아니라
+#     getprop ro.build.version.release로 안드15 이상만 선별한다(인스턴스를 다시 만들어 포트가 바뀌어도
+#     안 깨짐). MUMU_VM_INDEX 기본값 "0"→"2", 포트 스캔 순서도 안드15 우선으로 통일.
 #   1.19.2: 대설지대 던전 추가 전 마지막 안정화 릴리즈 - (1) adb connect 시도마다 CLI가 성공/실패를 줄줄이
 #     찍어 오류처럼 보이던 문제 완치: 출력을 nul로 죽이고 최종 연결된 인스턴스 번호+포트만 한 줄로 출력
 #     (connect_all_mumu_ports_quietly() 신설, connect_mumu()/restart_process() 양쪽 적용). (2) 원격 정지
@@ -711,11 +735,8 @@ from PIL import Image
 from ppadb.client import Client as AdbClient
 import traceback
 
-# 🚨 [v1.20.0] 캡처 데이터 앞에 경고문이 섞여 들어와도 디코딩되도록 ppadb의 screencap을 한 번
-#    래핑해둔다(안전망). 이 시점이 모든 client.device(...) 호출보다 먼저라 전 디바이스에 적용된다.
-#    (호출부 44곳을 각각 고치지 않는 이유는 adb_screencap_patch.py 상단 주석 참고)
-from adb_screencap_patch import install_screencap_patch, check_display_configuration
-install_screencap_patch()
+# 🚨 [v1.20.0] 뮤뮤 '앱 상주' 설정 점검용 (연결 직후 connect_mumu()에서 호출)
+from mumu_display_check import check_display_configuration
 
 import dungeon_bot
 import inn_manager
@@ -799,6 +820,10 @@ _last_connected_mumu_port = None
 #    가장 먼저 시도해서, 안드12 인스턴스가 켜져 있으면 그쪽에 붙어버렸다는 것.
 #    ⚠️ 인스턴스 "번호"가 아니라 디바이스가 직접 보고하는 "안드로이드 버전"으로 판정한다 - 나중에
 #    인스턴스를 지웠다 다시 만들어 번호(=포트)가 바뀌어도 안 깨지게 하기 위함.
+# 🚨 [2026-09-08] 원래 start_grand_orchestrator() 안의 지역변수였는데, recover_app_startup()도 대설지대
+# 경유 화면(마을외곽/경로 목록)을 인식해야 해서 모듈 전역으로 승격했다(두 함수가 같은 매핑을 써야 함).
+HEAVYSNOW_FLOOR_FILE_MAP = {"6층": "Heavysnow_6F", "교회구역": "Heavysnow_church", "4층": "Heavysnow_4F"}
+
 MIN_ANDROID_VERSION = 15
 MUMU_ADB_PORTS = ["16448", "5559", "16384", "16385", "5555", "16416", "5557"]  # 안드15(2번) 포트 우선
 
@@ -976,6 +1001,16 @@ def recover_app_startup(device):
     t_field = load_grayscale_template("templates/Field/field_anchor.png")
     t_get_item = load_template("templates/chestopening/get_item.png")
     t_app_exit = load_template("templates/app_exit.png")
+
+    # 🚨 [2026-09-08 실전 확인] 대설지대 경유 화면(마을외곽 / 대설지대 경로 목록)은 아래 "인게임 진입 성공"
+    # 앵커 목록 어디에도 없어서, 그 화면에서 매크로를 시작하면 아는 화면이 하나도 없다고 판단해 빈 (1,1)
+    # 탭만 반복하다 35회 예산을 통째로 날렸다(실전 로그 23:09, 마을외곽에서 기동). 메인 루프가 이 두 화면을
+    # 구분할 때 쓰는 것과 완전히 같은 도장/임계값(0.80)을 그대로 재사용한다.
+    t_heavysnow_outskirts = None
+    t_heavysnow_route = None
+    if DUNGEON_NAME == "대설지대":
+        t_heavysnow_outskirts = load_template("templates/Vill_Isberg/dungeon_Heavysnow.png")
+        t_heavysnow_route = load_template(f"templates/Vill_Isberg/{HEAVYSNOW_FLOOR_FILE_MAP.get(DUNGEON_FLOOR_NAME, 'Heavysnow_6F')}.png")
     
     # 🎮 [앱 실행 여부 사전 점검] MuMu는 켜져있지만 위저드리 다프네 앱 자체가 안 켜져 있는 경우(예: 안드로이드 홈 화면),
     # 가로화면도 아니고 아는 인게임 화면도 아니라서 아래 루프가 (1,1) 공허 탭만 반복하다 5분 정체 타이머까지 기다리던 결함을 완치.
@@ -1188,8 +1223,10 @@ def recover_app_startup(device):
             check_template_present(img_np, t_get_item, 0.65) or
             check_template_present(img_np, t_inn_title, 0.83) or
             check_grayscale_template_present(img_np, t_world_map, 0.70) or
-            check_grayscale_template_present(img_np, t_village_anchor, 0.65)):
-            print("✨ [앱 기동 복구 성공] 인게임 화면(필드/전투/던전선택/상자/여관/세계지도/마을 등) 진입 성공! 매크로를 복구합니다.")
+            check_grayscale_template_present(img_np, t_village_anchor, 0.65) or
+            (t_heavysnow_outskirts is not None and check_template_present(img_np, t_heavysnow_outskirts, 0.80)) or
+            (t_heavysnow_route is not None and check_template_present(img_np, t_heavysnow_route, 0.80))):
+            print("✨ [앱 기동 복구 성공] 인게임 화면(필드/전투/던전선택/상자/여관/세계지도/마을/마을외곽 등) 진입 성공! 매크로를 복구합니다.")
             return True
 
         if counter >= 4:
@@ -1733,7 +1770,6 @@ def start_grand_orchestrator():
     # 제한한다(다른 던전은 아래 화면분류 루프에서 이 도장들을 아예 참조하지 않으므로 영향 없음).
     t_go_outside = load_grayscale_template("templates/village_common/go_outside.png")
     t_dungeon_heavysnow = load_template("templates/Vill_Isberg/dungeon_Heavysnow.png")
-    HEAVYSNOW_FLOOR_FILE_MAP = {"6층": "Heavysnow_6F", "교회구역": "Heavysnow_church", "4층": "Heavysnow_4F"}
     t_heavysnow_floor = load_template(f"templates/Vill_Isberg/{HEAVYSNOW_FLOOR_FILE_MAP.get(DUNGEON_FLOOR_NAME, 'Heavysnow_6F')}.png")
     t_inven_cleanup_btn = load_template("templates/Dungeon_select/inven_cleanup_btn.png")
     t_inven_cleanup_refill = load_template("templates/Dungeon_select/inven_cleanup_refill.png")
@@ -1788,6 +1824,30 @@ def start_grand_orchestrator():
     heavysnow_resupply_pending = False  # 🆕 [2026-09-07 대설지대] 귀환 직후 마을외곽에서 인벤정리/여관 후처리가 필요한지
     heavysnow_resupply_attempts = 0     # 🆕 후처리가 막혔을 때 주회 자체가 멈추지 않도록 하는 포기 카운터
     heavysnow_force_inn_this_cycle = False  # 🆕 [2026-09-08] inn_visit_loop_interval 조건으로 이번 주회만 여관 강제
+
+    def mark_heavysnow_resupply_pending():
+        """대설지대 던전 1회차가 끝났을 때 마을외곽 후처리(인벤정리/여관)를 예약한다.
+
+        🚨 [2026-09-08 실전 확인] 예전엔 이 예약을 "대설지대 진입 경로"의 호출부 한 곳에서만, 그것도
+        exit_by_user가 True일 때만 했다. 그런데 start_main_macro() 호출부는 3곳이다 - (1) 부팅 시 이미
+        던전 안이었던 경로, (2) 일반 던전선택 경로, (3) 대설지대 진입 경로. 실전 로그(23:37 세션)에서
+        매크로가 던전 안에 있는 채로 재시작돼 (1)번으로 들어갔고, 귀환은 정상이었는데 예약이 안 걸려
+        인벤정리를 통째로 건너뛰고 곧장 재진입했다. 게다가 하켄 탈출처럼 exit_by_user가 False로 끝나는
+        경로도 마을외곽에 도착하므로, 반환값과 무관하게 "던전 1회차가 끝났으면 무조건 예약"으로 바꾼다
+        (후처리 블록 자체가 화면이 안 맞으면 조용히 흘려보내고 25회 상한도 있어 과예약은 무해하다).
+        """
+        nonlocal heavysnow_resupply_pending, heavysnow_resupply_attempts, heavysnow_force_inn_this_cycle
+        if DUNGEON_NAME != "대설지대":
+            return
+        heavysnow_resupply_pending = True
+        heavysnow_resupply_attempts = 0
+        # 캠핑은 HP/MP만 회복하고 레벨업은 여관 취침으로만 적용되므로, N주회마다 한 번은
+        # resupply_mode와 무관하게 여관을 강제로 들르게 한다(0=비활성).
+        heavysnow_force_inn_this_cycle = (
+            INN_VISIT_LOOP_INTERVAL > 0 and dungeon_run_count % INN_VISIT_LOOP_INTERVAL == 0
+        )
+        if heavysnow_force_inn_this_cycle:
+            print(f"🏠 [주회 카운터] {dungeon_run_count}주회 도달 - inn_visit_loop_interval={INN_VISIT_LOOP_INTERVAL} 조건으로 이번엔 여관을 경유합니다.")
 
     force_first_analysis = True
     last_action_time = time.time()
@@ -2177,6 +2237,7 @@ def start_grand_orchestrator():
                         last_action_time = time.time() - 20.0 
                     else: 
                         last_action_time = time.time()
+                    mark_heavysnow_resupply_pending()
                 except Exception as bot_err:
                     restart_process(f"던전 내부 동작 중 ADB 통신 치명적 예외 발생: {bot_err}")
                 continue
@@ -2194,6 +2255,14 @@ def start_grand_orchestrator():
                     mag_coords_main = find_and_get_coords_main(img_np, t_exit_mag, 0.70)
                     if mag_coords_main: device.shell(f"input tap {mag_coords_main[0]} {mag_coords_main[1]}")
                     else: device.shell("input tap 713 273")
+                # 🚨 [2026-09-09 실전 확인] 이 경로만 유일하게 last_action_time을 안 건드려서, 다음 틱에도
+                # "current_time - last_action_time > 30.0"이 계속 참이 되어 영원히 이 30초 정체 분기로만
+                # 되돌아왔다. 그 아래에 있는 is_any_dungeon_sel(공용 "세계지도를 연다" 버튼)/t_dungeon_sel/
+                # 세계지도/마을외곽 등 "매 틱 상시 판정" 코드가 전부 그 뒤에 있어서 한 번도 실행되지 못했다
+                # - 실전 로그(2026-09-09 14:03~14:05)에서 마을/세계지도/던전선택/여관 점수가 몇 분간 완전히
+                # 똑같은 패턴으로 반복된 게 이 함정에 갇힌 증거. 다른 함수와 동일하게 여기도 last_action_time을
+                # 갱신해야 다음 틱에 상시 판정으로 빠져나가 세계지도 이탈/재이동 로직에 도달할 수 있다.
+                last_action_time = time.time()
                 time.sleep(2.0)
 
             continue
@@ -2302,6 +2371,7 @@ def start_grand_orchestrator():
                             dungeon_run_count += 1
                         clear_restart_counter()
                         is_fully_healed = False
+                        mark_heavysnow_resupply_pending()
                     except Exception as bot_err:
                         restart_process(f"던전 진입 시퀀스 중 ADB 통신 치명적 예외 발생: {bot_err}")
             else:
@@ -2451,16 +2521,7 @@ def start_grand_orchestrator():
                     dungeon_run_count += 1
                     clear_restart_counter()
                     is_fully_healed = False
-                    if exit_by_user:
-                        heavysnow_resupply_pending = True  # 🆕 귀환 완료(마을외곽 도착) -> 다음 틱에 후처리
-                        heavysnow_resupply_attempts = 0
-                        # 🆕 [2026-09-08] 캠핑은 HP/MP만 회복하고 레벨업은 여관 취침으로만 적용되므로,
-                        # N주회마다 한 번은 resupply_mode와 무관하게 여관을 강제로 들르게 한다(0=비활성).
-                        heavysnow_force_inn_this_cycle = (
-                            INN_VISIT_LOOP_INTERVAL > 0 and dungeon_run_count % INN_VISIT_LOOP_INTERVAL == 0
-                        )
-                        if heavysnow_force_inn_this_cycle:
-                            print(f"🏠 [주회 카운터] {dungeon_run_count}주회 도달 - inn_visit_loop_interval={INN_VISIT_LOOP_INTERVAL} 조건으로 이번엔 여관을 경유합니다.")
+                    mark_heavysnow_resupply_pending()
                 except Exception as bot_err:
                     restart_process(f"대설지대 진입 시퀀스 중 ADB 통신 치명적 예외 발생: {bot_err}")
             else:
@@ -2486,76 +2547,92 @@ def start_grand_orchestrator():
             else:
                 should_go_town = (dungeon_run_count >= LIMIT_DUNGEON_LOOPS and not is_fully_healed)
 
-            is_ffxi_worldmap = (TOWN_NAME == "노던할로우" if should_go_town else DUNGEON_NAME == "북쪽의 유령선")
-            
-            if is_ffxi_worldmap:
-                # 3초마다 걸레질 지그재그 탐색 단계(worldmap_drag_step)를 가동
-                if time.time() - worldmap_last_drag_time > 3.0:
-                    print(f"🗺️ [세계지도 - 걸레질 탐색] FFXI 타겟 수색 중 (현재 단계: Step {worldmap_drag_step})")
-                    worldmap_last_drag_time = time.time()
+            # 🚨 [2026-09-09 실전 확인] 예전엔 이 스와이프 탐색이 is_ffxi_worldmap(유령성/노던할로우 목표일
+            # 때만)로 잠겨 있었다. 그런데 이 스와이프 방향/좌표 자체는 유령성 전용이 아니라 지도 전체를
+            # 훑는 범용 패턴이고, 각 스텝의 클릭 대상도 이미 should_go_town 기준 범용으로 짜여 있었다 -
+            # "언제 스와이프를 시작할지"만 유령성 전용으로 게이트돼 있었을 뿐. 백아는 세계지도가 열리자마자
+            # 아이콘이 바로 보이는 경우가 많아 이 게이트가 없어도 티가 안 났지만, 유령성 던전선택에서
+            # 대설지대(이스벨크)로 이탈한 경우처럼 목표 아이콘이 처음부터 화면 밖에 있으면 스와이프 자체가
+            # 아예 안 걸려 영원히 같은 자리에서 빈 클릭만 반복했다(실전 로그 2026-09-09 16:20~16:21, 라이브
+            # 화면으로 확인: 노던할로우 지역이 보이고 이스벨크/대설지대 아이콘은 화면 밖). 아래 블록 진입
+            # 조건을 제거해 모든 목표(유령성/백아/대설지대)가 똑같이 스와이프 탐색을 쓰도록 통일한다.
+            # 안전성: 이 블록 자체는 3초 경과 후에만 스와이프하고, 그 아래 클릭 시도는 매 틱 먼저 실행되므로
+            # 아이콘이 이미 보이는 기존 케이스(백아 등)는 스와이프 타이머가 돌기 전에 클릭+continue로
+            # 빠져나가 기존 동작이 그대로 유지된다.
+            # 3초마다 걸레질 지그재그 탐색 단계(worldmap_drag_step)를 가동
+            if time.time() - worldmap_last_drag_time > 3.0:
+                print(f"🗺️ [세계지도 - 걸레질 탐색] 목표 아이콘 수색 중 (현재 단계: Step {worldmap_drag_step})")
+                worldmap_last_drag_time = time.time()
+                
+                if worldmap_drag_step == 0:
+                    print("🗺️ [Step 0] 맵을 좌상단 원점으로 강력히 리셋합니다 (캘리브레이션 2회).")
+                    device.shell("input swipe 200 200 1200 2000 300")
+                    time.sleep(0.8)
+                    device.shell("input swipe 200 200 1200 2000 300")
+                    time.sleep(0.8)
+                    worldmap_drag_step = 1
                     
-                    if worldmap_drag_step == 0:
-                        print("🗺️ [Step 0] 맵을 좌상단 원점으로 강력히 리셋합니다 (캘리브레이션 2회).")
-                        device.shell("input swipe 200 200 1200 2000 300")
-                        time.sleep(0.8)
-                        device.shell("input swipe 200 200 1200 2000 300")
-                        time.sleep(0.8)
-                        worldmap_drag_step = 1
-                        
-                    elif worldmap_drag_step == 1:
-                        # 💡 [항목3] wvd(900x1600) 좌표를 1.6배 환산 없이 그대로 옮겨써서 이동거리가 이웃 스텝(700~1800px) 대비
-                        # 1/7~1/18 수준(100px)이던 결함을 보정. 이웃 스텝과 비슷한 규모(약 600px)로 상향.
-                        # 최종 이동량은 실제 구동 화면을 보며 미세조정이 필요할 수 있음.
-                        if should_go_town:
-                            print("🗺️ [Step 1] 1번 라인 마을 기본 뷰 정밀 드래그(400, 450 ➔ 800, 50) 주입")
-                            device.shell("input swipe 400 450 800 50 800")
-                        else:
-                            print("🗺️ [Step 1] 1번 라인 던전 기본 뷰 정밀 드래그(650, 430 ➔ 50, 1030) 주입")
-                            device.shell("input swipe 650 430 50 1030 800")
-                        worldmap_drag_step = 2
-                        
-                    elif worldmap_drag_step == 2:
-                        print("🗺️ [Step 2] 1번 라인 가로 추가 탐색 (화면 왼쪽으로 쓸기 ➔ 맵 우측 노출)")
-                        device.shell("input swipe 1000 1200 300 1200 500")
-                        worldmap_drag_step = 3
-                        
-                    elif worldmap_drag_step == 3:
-                        print("🗺️ [Step 3] 세로 1단 하강 (세로 1000px 맵 끌어올리기)")
-                        device.shell("input swipe 600 1600 600 600 500")
-                        worldmap_drag_step = 4
-                        
-                    elif worldmap_drag_step == 4:
-                        print("🗺️ [Step 4] 2번 라인 가로 탐색 (화면 오른쪽으로 쓸기 ➔ 맵 좌측 노출)")
-                        device.shell("input swipe 300 1200 1000 1200 500")
-                        worldmap_drag_step = 5
-                        
-                    elif worldmap_drag_step == 5:
-                        print("🗺️ [Step 5] 2번 라인 가로 추가 탐색 (화면 오른쪽으로 쓸기 ➔ 맵 좌측 추가 노출)")
-                        device.shell("input swipe 300 1200 1000 1200 500")
-                        worldmap_drag_step = 6
-                        
-                    elif worldmap_drag_step == 6:
-                        print("🗺️ [Step 6] 세로 2단 하강 (세로 1000px 맵 한 칸 더 끌어올리기)")
-                        device.shell("input swipe 600 1600 600 600 500")
-                        worldmap_drag_step = 7
-                        
-                    elif worldmap_drag_step == 7:
-                        print("🗺️ [Step 7] 3번 라인 가로 탐색 (화면 다시 왼쪽으로 쓸기 ➔ 맵 우측 노출)")
-                        device.shell("input swipe 1000 1200 300 1200 500")
-                        worldmap_drag_step = 8
-                        
-                    elif worldmap_drag_step == 8:
-                        print("🗺️ [Step 8] 수색 한계 도달! 원점(Step 0)으로 캘리브레이션 롤백합니다.")
-                        worldmap_drag_step = 0
+                elif worldmap_drag_step == 1:
+                    # 💡 [항목3] wvd(900x1600) 좌표를 1.6배 환산 없이 그대로 옮겨써서 이동거리가 이웃 스텝(700~1800px) 대비
+                    # 1/7~1/18 수준(100px)이던 결함을 보정. 이웃 스텝과 비슷한 규모(약 600px)로 상향.
+                    # 최종 이동량은 실제 구동 화면을 보며 미세조정이 필요할 수 있음.
+                    if should_go_town:
+                        print("🗺️ [Step 1] 1번 라인 마을 기본 뷰 정밀 드래그(400, 450 ➔ 800, 50) 주입")
+                        device.shell("input swipe 400 450 800 50 800")
+                    else:
+                        print("🗺️ [Step 1] 1번 라인 던전 기본 뷰 정밀 드래그(650, 430 ➔ 50, 1030) 주입")
+                        device.shell("input swipe 650 430 50 1030 800")
+                    worldmap_drag_step = 2
                     
-                    time.sleep(1.5)
-                    try:
-                        raw_cap_w = device.screencap()
-                        if raw_cap_w:
-                            img_np = np.array(Image.open(io.BytesIO(raw_cap_w)))
-                    except: pass
+                elif worldmap_drag_step == 2:
+                    print("🗺️ [Step 2] 1번 라인 가로 추가 탐색 (화면 왼쪽으로 쓸기 ➔ 맵 우측 노출)")
+                    device.shell("input swipe 1000 1200 300 1200 500")
+                    worldmap_drag_step = 3
+                    
+                elif worldmap_drag_step == 3:
+                    print("🗺️ [Step 3] 세로 1단 하강 (세로 1000px 맵 끌어올리기)")
+                    device.shell("input swipe 600 1600 600 600 500")
+                    worldmap_drag_step = 4
+                    
+                elif worldmap_drag_step == 4:
+                    print("🗺️ [Step 4] 2번 라인 가로 탐색 (화면 오른쪽으로 쓸기 ➔ 맵 좌측 노출)")
+                    device.shell("input swipe 300 1200 1000 1200 500")
+                    worldmap_drag_step = 5
+                    
+                elif worldmap_drag_step == 5:
+                    print("🗺️ [Step 5] 2번 라인 가로 추가 탐색 (화면 오른쪽으로 쓸기 ➔ 맵 좌측 추가 노출)")
+                    device.shell("input swipe 300 1200 1000 1200 500")
+                    worldmap_drag_step = 6
+                    
+                elif worldmap_drag_step == 6:
+                    print("🗺️ [Step 6] 세로 2단 하강 (세로 1000px 맵 한 칸 더 끌어올리기)")
+                    device.shell("input swipe 600 1600 600 600 500")
+                    worldmap_drag_step = 7
+                    
+                elif worldmap_drag_step == 7:
+                    print("🗺️ [Step 7] 3번 라인 가로 탐색 (화면 다시 왼쪽으로 쓸기 ➔ 맵 우측 노출)")
+                    device.shell("input swipe 1000 1200 300 1200 500")
+                    worldmap_drag_step = 8
+                    
+                elif worldmap_drag_step == 8:
+                    print("🗺️ [Step 8] 수색 한계 도달! 원점(Step 0)으로 캘리브레이션 롤백합니다.")
+                    worldmap_drag_step = 0
+                
+                time.sleep(1.5)
+                try:
+                    raw_cap_w = device.screencap()
+                    if raw_cap_w:
+                        img_np = np.array(Image.open(io.BytesIO(raw_cap_w)))
+                except: pass
             
-            if should_go_town:
+            # 🚨 [2026-09-09 실전 확인] 이 should_go_town 이분법은 "세계지도에 던전 직행 아이콘이 있는"
+            # 백아/유령성 기준으로 짜여 있다. 대설지대는 마을경유형(town → 마을외곽 → 던전 목록)이라
+            # 세계지도에 직행 아이콘이 아예 없다 - t_go_dungeon이 여기선 백아 전용 Cave_Wolf_btn.png로
+            # 잘못 로드되는데(위 "if DUNGEON_NAME == 북쪽의 유령선: ... else: (백아 전용)" 이분법이
+            # 대설지대 추가로 깨졌음), 세계지도에 그 아이콘이 있을 리 없어 클릭이 조용히 실패하고 아무
+            # 동작 없이 'WORLDMAP 확정'만 30초마다 반복하며 정체했다(실전 로그 2026-09-09 14:21~14:23).
+            # 대설지대는 should_go_town 값과 무관하게 항상 마을(이스벨크) 아이콘을 목표로 한다.
+            if should_go_town or DUNGEON_NAME == "대설지대":
                 if find_and_click_template(device, img_np, t_go_village, 0.70):
                     waiting_for_village_dialogue = True
                     last_action_time = time.time()

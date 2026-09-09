@@ -20,12 +20,37 @@ came_from_chest = False
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
 # - 현재 버전: 1.20.0
-# - 최근 수정일: 2026-09-08
+# - 최근 수정일: 2026-09-09
 # - 수정 기록:
-#   1.20.0: (이 파일 자체는 변경 없음, 버전 동기화용) 뮤뮤 안드15 전용화 + 안드15에서 매크로가 화면을
-#     아예 못 읽던 결함 완치. 근본 원인은 뮤뮤 '앱 상주' 설정이 앱마다 별도 디스플레이를 만드는 것이었고,
-#     이 파일의 device.screencap() 호출 33곳도 main.py가 설치하는 adb_screencap_patch의 안전망을 통해
-#     자동으로 덮인다(호출부 수정 불필요). 상세는 main.py 참고.
+#   1.20.0: 뮤뮤 안드15 전용화 대응은 main.py 참고(이 파일은 화면 캡처 방식 변경 없음). 이 버전에서
+#     이 파일은 대설지대 6층 실전 완주 검증 과정에서 발견된 결함들을 완치했다:
+#     (1) [전투를 메인 루프에 인계] return_to_town_via_fieldmap_icon()이 전투를 만나면 예전엔
+#     "자동전투가 끝나길 기다린다"고 자체적으로 대기했는데, 자동전투가 (탭 오발 등으로) 한 번 깨지면
+#     아무도 전투를 몰지 않아 그대로 멈췄다(실전: 사용자가 수동으로 자동전투를 다시 켜줘야 했음).
+#     이제 전투를 만나면 즉시 "combat"을 반환해 메인 루프의 IN_COMBAT 상태 기계(자동전투 재활성화/
+#     스킬/힐링/사망 감지)로 제어를 넘기고, 호출부는 전투가 끝나면 이 루틴을 처음부터 다시 태운다.
+#     확장 탭 판정도 "전투 도장이 안 보이면 탭"(음성 조건, 한 프레임만 흔들려도 오발)에서 "압축
+#     미니맵의 노란 커서가 보일 때만 탭"(양성 조건)으로 교체.
+#     (2) [캠핑을 공용 전처리 블록에서도 처리] 전투로 메인 루프에 제어가 넘어간 사이 캐릭터가 캠프에
+#     도착하면, 캠핑 선택창("쉰다"/"아무것도 안 한다")엔 필드/전투 앵커가 없어 "화면 과도기"로
+#     오판되고 30초 뒤 비상 뒤로가기가 주입돼 캠핑이 취소됐다(실전 로그). 공용 전처리 블록에도 캠핑
+#     가드를 추가하고, 캠핑 완료를 모듈 전역 플래그(reset_camping_done/is_camping_done)로 집계해
+#     "귀환 루틴 안"과 "공용 블록" 어느 쪽에서 캠핑했든 무한 캠핑에 빠지지 않게 했다. "생명의 우물이
+#     말라버렸다"(이 필드에서 이미 캠핑함) 메시지도 캠핑 완료 신호로 인식하도록 Dun_camping_dry.png
+#     신규 도장 추가(오탐 검증: 양성 1.000 vs 다른 화면 최고 0.205).
+#     (3) [눈보라 판별을 미니맵 확장 가능 여부로 교체] "필드 앵커는 있는데 커서 미검출"만으로 눈보라를
+#     판정하면, 캠핑을 마친 자리에서 앱이 재시작돼 커서가 캠프 아이콘에 가려진 경우와 구분이 안 돼
+#     반응 없는 재개 버튼만 무한히 눌렀다(실전: 이동 명령 이력이 없어 재개가 비활성). 미니맵을 눌러
+#     실제로 확장되는지로 확실히 구분하도록 교체(사용자 확인: 눈보라 구간은 확장 자체가 안 됨).
+#     이 과정에서 필드 하단 버튼(재개/상자)의 활성/비활성을 픽셀 단위(밝은픽셀 비율)로 판별하는
+#     is_field_button_active()를 신설 - 도장 매칭(TM_CCOEFF_NORMED)은 밝기를 정규화해버려 활성/
+#     비활성 구분이 원천적으로 불가능함을 실측으로 확인(활성 0.98~0.99 vs 비활성 0.94~0.99, 거의
+#     동일). 아이콘 픽셀 기준으로는 완전히 갈림(활성 최대밝기 160+ vs 비활성 80대). ⚠️ 반드시 터치
+#     "전" 스크린샷으로 판정할 것 - 터치 후에 재면 항상 활성으로 보인다.
+#     (4) [하켄을 대/소 구분 없이 탐색] 필드맵에서 대하켄만 찾던 것을, 대/소 도장을 순서대로 시도하는
+#     _find_first_icon() 헬퍼로 교체(같은 게임의 다른 매크로 WVD도 harken→Bharken 순차 폴백 - 같은
+#     설계). 새 앵커 FieldMap_Anchor.png("✕ 닫기", 확장 화면 전용)도 필드맵 확장 판정에 추가.
+#     실전 검증: 대설지대 6층 1주회 완주(진입→상자파밍→상자없음→귀환→인벤정리→재진입) 확인 완료.
 #   1.19.2: 대설지대 던전 추가 전 마지막 안정화 릴리즈 - 정체(stuck) 복구 30초 메가블록 내 사망감지
 #     분기가 "공식" 사망감지 분기(~1413-1426)와 동일한 get_dead_match_score 체크를 하면서도
 #     transition_delay_count 리셋만 빠뜨린 쌍둥이 결함 완치. 같은 유형 버그 재발 방지를 위해
@@ -402,7 +427,24 @@ def get_minimap_cursor_direction(img_np, t_cursor_up, t_cursor_down, t_cursor_le
 # 때마다(주회 나가기 전이든 던전 진입 직후든) 항상 고정되는 시퀀스라 독립 헬퍼로 분리(사용자 확정).
 CAMP_REST_MAX_TAPS = 4  # "쉰다"는 정상적으로 2회지만, 씹힘 재시도 여유를 두고 폭주는 막는다.
 
-def perform_camping_rest(device, t_camp_rest1, t_camp_rest2, t_dialogue_arrow, t_field, max_wait=60.0):
+# 🚨 [2026-09-08] 캠핑을 어디서 처리했든("귀환 루틴 안" / "공용 전처리 블록") 한 곳에서 집계하기 위한
+# 플래그. 루틴 안에서 캠핑을 마친 직후 전투가 나면 루틴이 "combat"으로 빠져나가는데, 그때 메인 루프가
+# 캠핑 완료 사실을 모르면 다음 TRIGGER_EXIT에서 캠프 아이콘을 다시 찾아가 무한 캠핑에 빠진다.
+# start_main_macro()가 던전 진입마다 reset_camping_done()으로 초기화한다.
+_camping_done_since_reset = False
+
+def reset_camping_done():
+    global _camping_done_since_reset
+    _camping_done_since_reset = False
+
+def _mark_camping_done():
+    global _camping_done_since_reset
+    _camping_done_since_reset = True
+
+def is_camping_done():
+    return _camping_done_since_reset
+
+def perform_camping_rest(device, t_camp_rest1, t_camp_rest2, t_dialogue_arrow, t_field, max_wait=60.0, t_camp_dry=None):
     """
     캠핑 지점에 도착한 뒤 호출 - "쉰다"를 두 번 누르고 휴식 대화를 넘겨 필드로 복귀할 때까지 몰아간다.
 
@@ -423,9 +465,20 @@ def perform_camping_rest(device, t_camp_rest1, t_camp_rest2, t_dialogue_arrow, t
             continue
         img_np = np.array(Image.open(io.BytesIO(raw)))
 
+        # 0) 🆕 [2026-09-09 사용자 확인] "생명의 우물이 말라버렸다." = 이 필드에서 이미 캠핑을 했다는 뜻.
+        # 캠핑은 필드 진입당 1회뿐이라 더 시도해도 소용없다 - 대화를 넘기고 "캠핑 완료"로 친 뒤,
+        # 호출부가 곧바로 나가기(하켄/나가기버튼) 절차로 넘어가게 한다.
+        if t_camp_dry is not None and check_template_present(img_np, t_camp_dry, 0.70):
+            print("🏕️ [캠핑] '생명의 우물이 말라버렸다' - 이 필드에서는 이미 캠핑을 마쳤습니다. 완료로 처리합니다.")
+            find_and_click_dialogue_advance_arrow(device, img_np, t_dialogue_arrow)
+            time.sleep(1.2)
+            _mark_camping_done()
+            return True
+
         # 1) 종료 판정: "쉰다"를 2회 이상 누른 뒤 필드로 돌아왔으면 완료
         if rest_taps >= 2 and t_field is not None and check_field_anchor_present(img_np, t_field, 0.65):
             print(f"🏕️ [캠핑] 휴식 완료 - 필드 복귀 확인({rest_taps}회 '쉰다' 탭).")
+            _mark_camping_done()
             return True
 
         # 2) "쉰다"가 보이면 누른다(1차/2차 화면 구분 없음 - 위 주석 참고)
@@ -1249,21 +1302,42 @@ def trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessin
 # run_inn_sleep_sequence()와 같은 자가완결형 패턴 - 던전 탈출 시 1회만 호출되므로 매 틱 성능 부담 없음).
 FIELDMAP_EXPAND_TAP_COORDS = (1217, 219)  # (1204,202)~(1231,237) 영역 중앙, 사용자 실측 검증
 FIELDMAP_EXPANDED_ANCHOR_ZONE = (2239, 2336, 340, 445)  # (y1,y2,x1,x2) - 확장 시 필드 앵커 백업 크롭 자리
+# 🆕 [2026-09-08] 필드맵이 열렸을 때만 존재하는 전용 앵커("✕ 닫기" 버튼). 위 백업 크롭은 "필드 앵커가
+# 확장 화면에서 옮겨간 자리"를 다시 딴 것이라 의미가 간접적인데, 이건 확장 화면 고유 UI라 판정이 명확하다.
+# 실측(크롭 기준): 확장 화면 0.925~1.000 vs 비확장 화면 -0.09~0.27 → 임계값 0.80이면 양쪽으로 여유가 크다.
+# 다른 도장과의 교차 오탐도 전수 확인함(최고 0.431 = inn_sleep/levelup_close_btn, 안전).
+FIELDMAP_CLOSE_ANCHOR_ZONE = (2395, 2508, 553, 802)  # 도장 ROI (583,2425)-(772,2478) + 여유 30px
+FIELDMAP_CLOSE_ANCHOR_THRESHOLD = 0.80
+FIELDMAP_CLOSE_TAP_COORDS = (677, 2451)  # 위 존의 중앙 - 확장된 필드맵을 닫을 때 탭한다
 
-def _check_fieldmap_expanded(img_np, t_field_expanded, threshold=0.65):
-    if t_field_expanded is None or img_np is None:
-        return False
-    y1, y2, x1, x2 = FIELDMAP_EXPANDED_ANCHOR_ZONE
+def _match_gray_in_zone(img_np, template, zone):
+    """지정 크롭 영역 안에서 그레이스케일 매칭 최고점을 반환. 매칭 불가 상황이면 None."""
+    if template is None or img_np is None:
+        return None
+    y1, y2, x1, x2 = zone
     h, w = img_np.shape[:2]
     if h < y2 or w < x2:
-        return False
+        return None
     crop = img_np[y1:y2, x1:x2]
-    if crop.shape[0] < t_field_expanded.shape[0] or crop.shape[1] < t_field_expanded.shape[1]:
-        return False
+    if crop.shape[0] < template.shape[0] or crop.shape[1] < template.shape[1]:
+        return None
     gray_crop = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY)
-    result = cv2.matchTemplate(gray_crop, t_field_expanded, cv2.TM_CCOEFF_NORMED)
-    _, max_val, _, _ = cv2.minMaxLoc(result)
-    return max_val > threshold
+    _, max_val, _, _ = cv2.minMaxLoc(cv2.matchTemplate(gray_crop, template, cv2.TM_CCOEFF_NORMED))
+    return max_val
+
+
+def _check_fieldmap_expanded(img_np, t_field_expanded, t_close_anchor=None, threshold=0.65):
+    """필드맵이 확장(열림) 상태인지 판정. 두 앵커 중 하나만 잡혀도 확장으로 본다.
+
+    두 도장은 서로 강점이 다르다(실측): 지도를 가장자리까지 끌었을 때는 '닫기' 앵커가 0.925로 조금
+    내려가는 대신 백업 크롭이 0.99를 유지하고, 교회구역처럼 배경이 다른 곳에서는 반대로 '닫기'가
+    0.992로 더 안정적이다(백업은 0.94). 그래서 우선순위(닫기 → 백업)로 두되 둘 다 살려둔다.
+    """
+    close_score = _match_gray_in_zone(img_np, t_close_anchor, FIELDMAP_CLOSE_ANCHOR_ZONE)
+    if close_score is not None and close_score > FIELDMAP_CLOSE_ANCHOR_THRESHOLD:
+        return True
+    backup_score = _match_gray_in_zone(img_np, t_field_expanded, FIELDMAP_EXPANDED_ANCHOR_ZONE)
+    return backup_score is not None and backup_score > threshold
 
 FIELDMAP_ICON_THRESHOLD = 0.80   # 🚨 실측: 대하켄 도장이 엉뚱한 지형에 0.72~0.76으로 오탐(진짜는 0.83~1.00)
 FIELDMAP_AUTOMOVE_THRESHOLD = 0.80  # 🚨 실측: 자동이동 버블 진짜 0.90~1.00 vs 없는 화면 0.47~0.50으로 분리 뚜렷
@@ -1314,25 +1388,131 @@ def _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_s
         return True
     return False
 
+# 🚨 [2026-09-09 실측 확정] 필드 하단 버튼(재개/상자 등)의 활성·비활성 판별.
+#
+# 도장 매칭(TM_CCOEFF_NORMED)으로는 원천적으로 구분이 불가능하다 - 활성/비활성 도장은 모양이 완전히
+# 같고 밝기만 다른데, 그 지표가 밝기를 정규화해버리기 때문(실측: 활성 0.98~0.99 vs 비활성 0.94~0.99).
+# 예전에 "색상/밝기로도 안 된다"고 결론냈던 건 잘못된 실험이었다(사용자 지적) - 검사보다 먼저 터치를
+# 넣어버려서 이미 활성화된 화면을 재고 있었다. 크롭 "평균" 밝기도 버튼 뒤 배경(눈밭/어두운 지형)에
+# 오염돼 애매했다.
+#
+# 아이콘 픽셀 기준으로 보면 아주 깨끗하게 갈린다(실측):
+#   resume_act 도장   : 밝은픽셀(>100) 비율 29.5% / 최대밝기 161.7
+#   resume_deact 도장 : 밝은픽셀 비율  0.0% / 최대밝기  81.7
+#   라이브 화면(비활성 확정)의 재개 버튼 : 0.0% / 83.0
+#   같은 화면의 상자 버튼(활성)          : 24.0% / 171.7   ← 같은 조명에서 정반대로 갈림
+# 비활성은 최대밝기가 83을 넘지 않고 활성은 160을 넘으므로, 문턱은 그 중간(밝은픽셀 5%)이면 충분하다.
+#
+# ⚠️ 반드시 "터치를 넣기 전"의 스크린샷으로 판정할 것. 터치 후에 재면 항상 활성으로 보인다.
+BUTTON_ACTIVE_BRIGHT_PIXEL_RATIO = 0.05   # 밝은픽셀(>100) 비율이 이 값을 넘으면 활성
+BUTTON_ACTIVE_BRIGHTNESS = 100
+
+def is_field_button_active(img_np, coords, template):
+    """필드 하단 버튼이 활성 상태인지 판정. 판정 불가면 None(호출부가 기존 동작을 유지하도록)."""
+    if img_np is None or coords is None or template is None:
+        return None
+    h, w = template.shape[:2]
+    cx, cy = coords
+    y1, x1 = cy - h // 2, cx - w // 2
+    ih, iw = img_np.shape[:2]
+    if y1 < 0 or x1 < 0 or y1 + h > ih or x1 + w > iw:
+        return None
+    crop = img_np[y1:y1 + h, x1:x1 + w]
+    if crop.ndim == 3:
+        gray = crop.mean(axis=2)
+    else:
+        gray = crop.astype(float)
+    return float(np.mean(gray > BUTTON_ACTIVE_BRIGHTNESS)) > BUTTON_ACTIVE_BRIGHT_PIXEL_RATIO
+
+
+def _find_first_icon(img_np, templates):
+    """후보 도장들을 순서대로 시도해 처음 잡히는 좌표를 반환(하켄 대/소처럼 같은 목적의 여러 도장용)."""
+    for tmpl in templates:
+        if tmpl is None:
+            continue
+        coords = find_gray_coords_specific(img_np, tmpl, FIELDMAP_ICON_THRESHOLD)
+        if coords:
+            return coords
+    return None
+
+
+def _return_after_camping(device, return_method, t_move_exit, t_field, t_harken_return,
+                          t_harken_blessing_donothing, t_combat_in, t_combat_slow, t_yeolda):
+    """캠핑을 마치고 필드로 돌아온 상태에서의 공통 꼬리 - 나가기 버튼 탭 → 도보 탈출 확인 또는 하켄 귀환.
+
+    🚨 [2026-09-08 실전 확인] 캠핑은 귀환 루틴 안에서 일어날 수도 있고(정상 흐름), 루틴이 전투로 메인
+    루프에 제어를 넘긴 사이 공용 전처리 블록에서 처리될 수도 있다. 후자의 경우 다음 TRIGGER_EXIT에서
+    루틴이 처음부터 다시 도는데, 그때 "캠핑은 끝났으니 하켄으로 가면 된다"며 return_method를
+    "harken_only"로 바꿔치기했더니 엉뚱한 경로를 탔다 - harken_only는 "필드맵에서 대하켄 아이콘을 찾아
+    자동이동"하는 교회구역용 경로라, 6층에서는 그 아이콘을 못 찾고 스와이프 8회를 모두 소진한 뒤 앱을
+    재시작했다(실전 로그 23:57). 캠핑 이후에 필요한 건 아이콘 탐색이 아니라 "필드의 나가기 버튼 → 하켄
+    귀환"이므로, 그 꼬리를 이렇게 따로 떼어 양쪽에서 같이 쓴다.
+    """
+    exit_coords = None
+    for _try in range(5):
+        raw = device.screencap()
+        if raw:
+            img_np = np.array(Image.open(io.BytesIO(raw)))
+            exit_coords = find_and_get_field_btn_coords(img_np, t_move_exit, 0.70)
+            if exit_coords:
+                break
+        time.sleep(1.0)
+    if not exit_coords:
+        print("⚠️ [필드맵 귀환] 휴식 후 일반 나가기 버튼을 찾지 못했습니다.")
+        return "failed"
+    print(f"🚪 [필드맵 귀환] 휴식 후 나가기 버튼 탭: {exit_coords}")
+    safe_device_shell(device, f"input tap {exit_coords[0]} {exit_coords[1]}")
+    time.sleep(2.0)
+
+    if return_method == "camp_then_exit_button":
+        # 🚨 [2026-09-07 반환 의미 정정] 이 분기는 하켄을 안 거치고 걸어서 던전을 빠져나가는 던전용이라,
+        # 나가기 버튼을 눌렀다는 것만으로는 아직 탈출이 끝난 게 아니다. "필드 화면이 완전히 사라짐"을 확인한다.
+        walk_deadline = time.time() + 90.0
+        while time.time() < walk_deadline:
+            raw = device.screencap()
+            if raw:
+                img_np = np.array(Image.open(io.BytesIO(raw)))
+                if not check_field_anchor_present(img_np, t_field, 0.62):
+                    print("🎉 [필드맵 귀환] 필드 화면 소멸 확인 - 도보 탈출 완료.")
+                    return "returned"
+            time.sleep(2.0)
+        print("⚠️ [필드맵 귀환] 나가기 버튼 이후 90초 내 필드를 벗어나지 못했습니다.")
+        return "failed"
+
+    return "returned" if trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing, t_combat_in, t_combat_slow, t_yeolda) else "failed"
+
+
 def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_combat_slow=None, max_swipe_attempts=8):
     """
     필드맵을 확장해 캠프/대하켄 아이콘을 찾아 자동이동으로 복귀하는 범용 귀환 루틴.
     return_method: "camp_then_exit_button" | "camp_then_harken" | "harken_only" ("exit_button"은 호출 안 함).
-    반환: True(귀환 완료, 마을외곽/하켄 목록까지 처리) / False(실패 - 호출부가 재시도/앱재시작 판단).
+    반환: "returned"(귀환 완료) / "combat"(전투 조우 - 호출부가 메인 루프의 IN_COMBAT으로 넘기고, 전투가
+          끝나면 이 루틴을 처음부터 다시 태운다) / "retry"(자동이동이 멈춰 재개/상자 사다리까지 태웠으나
+          여전히 진행이 없음 - 필드맵을 다시 열어 명령을 새로 내려야 함) / "failed"(실패 - 호출부가
+          재시도/앱재시작 판단).
+
+    🚨 [2026-09-08 실전 확인] 이 루틴은 전투를 절대 스스로 기다리지 않는다. 예전엔 "자동전투가 끝나기를
+    기다린다"는 방침이었는데, 자동전투가 (탭이 잘못 들어가는 등의 이유로) 한 번 깨지면 아무도 전투를
+    몰지 않아 그대로 멈춰버렸다(실기 확인: 사용자가 수동으로 자동전투를 다시 켜줘야 했음). 전투 처리는
+    메인 루프의 IN_COMBAT 상태 기계가 담당하므로(자동전투 재활성화/스킬/힐링/사망 감지 전부 거기 있음),
+    전투를 만나면 즉시 "combat"으로 빠져나가 메인 루프에 제어를 돌려준다.
     """
     if return_method not in ("camp_then_exit_button", "camp_then_harken", "harken_only"):
         print(f"⚠️ [필드맵 귀환] 알 수 없는 return_method '{return_method}' - 호출 오류로 판단, 실패 처리.")
-        return False
+        return "failed"
     is_camp_branch = return_method in ("camp_then_exit_button", "camp_then_harken")
 
     t_field = load_grayscale_template("templates/Field/field_anchor.png")
     t_field_expanded = load_grayscale_template("templates/Field/Fieldmap_exit_icon.png")
+    t_fieldmap_close = load_grayscale_template("templates/Field/FieldMap_Anchor.png")  # 확장 화면 전용 "✕ 닫기"
     t_camp = load_grayscale_template("templates/Field/Fieldmap_camping.png")
     t_harken_large = load_grayscale_template("templates/Field/FieldMap_harkenLarge_left.png")
+    t_harken_small = load_grayscale_template("templates/Field/FieldMap_harkensmall.png")
     t_automove_camp = load_grayscale_template("templates/Field/FieldMap_automove.png")
     t_automove_harken = load_grayscale_template("templates/Field/FieldMap_harkenLarge_Automove.png")
     t_camp_rest1 = load_template("templates/Dungeon_dialogue/Dun_camping_rest.png")
     t_camp_rest2 = load_template("templates/Dungeon_dialogue/Dun_camping_rest2.png")
+    t_camp_dry = load_template("templates/Dungeon_dialogue/Dun_camping_dry.png")  # "생명의 우물이 말라버렸다"
     t_dialogue_arrow = load_template("templates/inn_sleep/arrow_clean.png")
     t_move_exit = load_grayscale_template("templates/Field/exit_dungeon.png")
     t_harken_return = load_color_template("templates/FFXI/harken_return.png")
@@ -1340,6 +1520,15 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
     t_yeolda = load_template("templates/chestopening/yeolda_clean.png")
     t_move_resume_act = load_grayscale_template("templates/Field/resume_act.png")
     t_move_resume_deact = load_grayscale_template("templates/Field/resume_deact.png")
+    # 🆕 [2026-09-08] "지금 확실히 필드 위인가"를 양성 조건으로 판정하기 위한 압축 미니맵 커서 도장 4종
+    t_cursor_up = load_grayscale_template("templates/Field/cursor_up.png")
+    t_cursor_down = load_grayscale_template("templates/Field/cursor_down.png")
+    t_cursor_left = load_grayscale_template("templates/Field/cursor_left.png")
+    t_cursor_right = load_grayscale_template("templates/Field/cursor_right.png")
+    # 🆕 [2026-09-08] 자동이동이 멈췄을 때 기존 재개→상자 사다리를 그대로 재사용하기 위한 도장
+    t_move_chest_act = load_grayscale_template("templates/Field/chest_act.png")
+    t_move_chest_deact = load_grayscale_template("templates/Field/chest_deact.png")
+    t_no_chest = load_template("templates/Field/toastmsg_nochest.png")
     # 🆕 [2026-09-08] 이 함수 안에서도 중립몹/행상인 조우를 처리하기 위한 도장(_handle_dungeon_interrupt용)
     t_dilog_fight = load_template("templates/Dungeon_dialogue/Dun_dilog_fight.png")
     t_seller_label = load_template("templates/Dungeon_dialogue/Dun_seller_label.png")
@@ -1349,7 +1538,17 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
     # 🎯 캠핑 분기는 캠프 아이콘/캠핑용 자동이동만, 하켄 분기(교회구역)는 대하켄/대하켄용 자동이동만
     # 참조한다 - 처음부터 완전히 분리된 갈래라 서로의 탭 좌표/도장을 참조하지 않는다(사용자가 걱정한
     # "캠핑 처리 중 나가기가 잘못 눌리는" 꼬임 방지).
-    target_icon = t_camp if is_camp_branch else t_harken_large
+    # 🚨 캠핑이 이미 끝났다면(공용 전처리 블록이 처리한 경우) 미니맵 확장/캠프 아이콘 탐색을 통째로
+    # 건너뛰고 "나가기 버튼 → 하켄" 꼬리부터 이어간다. 캠프 아이콘을 다시 찾아가면 무한 캠핑이 되고,
+    # 그렇다고 harken_only로 바꿔치우면 6층에 없는 대하켄 아이콘을 찾다가 실패한다(위 함수 주석 참고).
+    if is_camp_branch and is_camping_done():
+        print("🏕️ [필드맵 귀환] 이번 탈출의 캠핑은 이미 끝났습니다 - 나가기 버튼부터 이어서 진행합니다.")
+        return _return_after_camping(device, return_method, t_move_exit, t_field, t_harken_return,
+                                     t_harken_blessing_donothing, t_combat_in, t_combat_slow, t_yeolda)
+
+    # 🆕 [2026-09-09 사용자 지침] 하켄으로 나갈 때는 대/중/소 구분 없이 "하켄이면 아무거나" 찾아야 한다.
+    # 캠핑 분기는 캠프 아이콘 하나만 본다(캠프와 하켄을 섞으면 엉뚱한 곳으로 자동이동할 수 있음).
+    target_icons = [t_camp] if is_camp_branch else [t for t in (t_harken_large, t_harken_small) if t is not None]
     automove_primary = t_automove_camp if is_camp_branch else t_automove_harken
     automove_fallback = t_automove_harken if is_camp_branch else t_automove_camp
 
@@ -1377,9 +1576,24 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
         img_np = np.array(Image.open(io.BytesIO(raw)))
         if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field):
             continue
-        if check_combat_template_present(img_np, t_combat_in, 0.80) or check_combat_template_present(img_np, t_combat_slow, 0.80):
-            print("⚔️ [필드맵 귀환] 미니맵 확장 시도 전 전투 조우 - 자동전투 종료를 기다립니다.")
-            time.sleep(2.0)
+        # 🚨 [2026-09-08 실전 확인] 예전엔 "전투 도장이 안 보이면 탭"이라는 음성 조건이었는데, 전투 중
+        # 단 한 프레임만 매칭이 흔들려도 탭이 나가 자동전투가 깨지고 그대로 멈추는 사고가 났다(실기:
+        # 전투 감지 로그가 연달아 찍히던 와중에 탭이 나갔고, 사용자가 수동으로 자동전투를 다시 켜줬더니
+        # 또 탭이 들어감). 이제 "압축 미니맵의 노란 커서가 실제로 보일 때만" 탭하는 양성 조건으로 바꾼다
+        # - 커서가 보인다 = 지금 확실히 필드 위다. 안 보이면 무슨 화면인지부터 판별한다.
+        if get_minimap_cursor_direction(img_np, t_cursor_up, t_cursor_down, t_cursor_left, t_cursor_right) is None:
+            if check_combat_template_present(img_np, t_combat_in, 0.80) or check_combat_template_present(img_np, t_combat_slow, 0.80):
+                print("⚔️ [필드맵 귀환] 전투 조우 - 메인 루프의 전투 처리로 넘깁니다(전투 종료 후 귀환 재시도).")
+                return "combat"
+            # 커서가 안 보이는 정상 사유가 하나 더 있다 - 맵이 이미 확장돼서 압축 미니맵 자체가 사라진
+            # 경우. 탭 직후 폴링이 확장을 놓쳤을 때 여기서 건져내지 않으면, 다시 탭하지도(재탭하면 오히려
+            # 맵이 닫힘) 확장을 확정하지도 못한 채 워치독까지 대기하게 된다.
+            if _check_fieldmap_expanded(img_np, t_field_expanded, t_fieldmap_close):
+                print("🗺️ [필드맵 귀환] 커서 미검출이지만 확장 상태 확인됨 - 확장 완료로 판정합니다.")
+                expanded = True
+                break
+            print("⏳ [필드맵 귀환] 필드 커서 미검출(전투 아님) - 화면이 안정될 때까지 탭을 보류합니다.")
+            time.sleep(1.5)
             continue
 
         expand_attempts_used += 1
@@ -1399,11 +1613,9 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
                 expand_attempts_used -= 1  # 조우로 무산된 시도는 예산에서 다시 돌려준다
                 break
             if check_combat_template_present(img_np, t_combat_in, 0.80) or check_combat_template_present(img_np, t_combat_slow, 0.80):
-                print("⚔️ [필드맵 귀환] 탭 직후 전투 조우 감지 - 이번 시도는 재시도 횟수에서 제외합니다.")
-                combat_interrupted = True
-                expand_attempts_used -= 1  # 전투로 무산된 시도는 예산에서 다시 돌려준다
-                break
-            if _check_fieldmap_expanded(img_np, t_field_expanded):
+                print("⚔️ [필드맵 귀환] 탭 직후 전투 조우 - 메인 루프의 전투 처리로 넘깁니다(전투 종료 후 귀환 재시도).")
+                return "combat"
+            if _check_fieldmap_expanded(img_np, t_field_expanded, t_fieldmap_close):
                 expanded = True
                 break
         if expanded:
@@ -1413,7 +1625,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
 
     if not expanded or img_np is None:
         print("⚠️ [필드맵 귀환] 미니맵 확장이 확인되지 않았습니다 - 좌표/타이밍 재검토 필요.")
-        return False
+        return "failed"
 
     # 3. 목표 아이콘 탐색 (안 보이면 스와이프 재시도 - 필드맵은 월드맵보다 훨씬 작아 폭/횟수는
     # 실기 로그로 튜닝 예정, 우선 보수적인 소폭 스와이프로 시작)
@@ -1424,15 +1636,17 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
         (1100, 1300, 400, 1300), # 왼쪽으로
         (400, 1300, 1300, 1300), # 오른쪽으로(원위치+더)
     ]
-    # 🚨 [2026-09-08] 맵이 완전히 확장되면 던전 타이머(=몹 조우)가 멈춘다는 사용자 확인에 따라 이 이후
-    # 단계는 원칙적으로 조우 위험이 없지만, 그 경계가 100% 확실하진 않으니 값싼 방어로 여기도 체크한다.
+    # 🚨 [2026-09-08 정정] 예전엔 "맵이 확장되면 던전 타이머(=몹 조우)가 멈춘다"고만 알고 있었는데,
+    # 사용자 실기 확인 결과 조건이 붙는다 - (1) 캐릭터가 움직이는 중이 아니어야 하고, (2) 확장 후 1~2초
+    # 안에 전투 조우가 없어야 한다. 둘 중 하나라도 어긋나면 확장 상태에서도 전투가 열린다. 그래서 이
+    # 이후 단계에도 조우/전투 체크를 계속 유지한다(값싼 방어가 아니라 실제로 필요한 방어다).
     for attempt in range(max_swipe_attempts):
         if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field):
             raw = device.screencap()
             if raw:
                 img_np = np.array(Image.open(io.BytesIO(raw)))
             continue
-        icon_coords = find_gray_coords_specific(img_np, target_icon, FIELDMAP_ICON_THRESHOLD)
+        icon_coords = _find_first_icon(img_np, target_icons)
         if icon_coords:
             break
         wp = swipe_waypoints[attempt % len(swipe_waypoints)]
@@ -1446,7 +1660,14 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
 
     if not icon_coords:
         print("⚠️ [필드맵 귀환] 스와이프 탐색 끝까지 목표 아이콘을 찾지 못했습니다.")
-        return False
+        # 🆕 [2026-09-09 사용자 확인] 캠핑을 마친 자리에서 앱이 재시작되면 캐릭터가 캠프 아이콘 위에
+        # 서 있어서 필드맵에서 그 아이콘을 확인할 수 없다. 이때는 아이콘 탐색을 포기하고 그냥 나가기
+        # 버튼을 눌러 하켄으로 빠져나가면 된다(캠핑은 어차피 필드당 1회라 다시 할 수도 없다).
+        if is_camp_branch:
+            print("🏕️ [필드맵 귀환] 캠프 아이콘 미검출 - 이미 그 자리에 서 있는 경우로 보고 나가기 버튼으로 진행합니다.")
+            return _return_after_camping(device, return_method, t_move_exit, t_field, t_harken_return,
+                                         t_harken_blessing_donothing, t_combat_in, t_combat_slow, t_yeolda)
+        return "failed"
 
     # 4. 아이콘 탭 → 자동이동 버튼 확인(전체검색). 가장자리를 탭하면 버튼이 아예 안 뜨므로 재탐색한다.
     tap_x, tap_y = icon_coords
@@ -1465,7 +1686,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
         if automove_coords:
             break
         print(f"⚠️ [필드맵 귀환] 자동이동 버튼 미검출(가장자리 탭 추정) - 재탐색 {retry + 1}/3")
-        icon_coords = find_gray_coords_specific(img_np, target_icon, FIELDMAP_ICON_THRESHOLD)
+        icon_coords = _find_first_icon(img_np, target_icons)
         if icon_coords:
             tap_x, tap_y = icon_coords
         else:
@@ -1474,7 +1695,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
 
     if not automove_coords:
         print("⚠️ [필드맵 귀환] 자동이동 버튼을 끝내 찾지 못했습니다.")
-        return False
+        return "failed"
 
     # 5. 자동이동 탭 → 도착 대기
     safe_device_shell(device, f"input tap {automove_coords[0]} {automove_coords[1]}")
@@ -1483,7 +1704,16 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
 
     arrival_deadline = time.time() + 60.0
     arrived = False
-    interrupted = False  # 🚨 전투 등으로 이동이 끊겼는지 - 끊겼다 풀린 뒤에만 재개 버튼을 누른다
+    interrupted = False  # 🚨 중립몹/행상인 조우로 이동이 끊겼는지 - 끊겼다 풀린 뒤에만 재개 버튼을 누른다
+                         #    (전투는 여기서 처리하지 않고 "combat"으로 메인 루프에 넘긴다)
+    # 🆕 [2026-09-08 사용자 실기 확인] 자동이동을 눌렀다고 실제로 걸어가는 건 아니다. 필드로 돌아온 뒤
+    # 압축 미니맵 커서의 "방향"이 바뀌는지로 이동 여부를 판정한다 - 커서의 위치는 미니맵 중앙에 고정이라
+    # 위치 추적은 무의미하고(사용자 확인), 직진만 오래 하는 구간은 거의 없어 방향 변화만으로 충분하다.
+    # 정지로 판정되면 기존 재개→상자 사다리(resume_or_confirm_chest)를 그대로 태우고, 그 사다리마저
+    # "없습니다"로 끝나면 필드맵을 다시 열어 캠핑/하켄 명령을 새로 내린다("retry").
+    prev_cursor_dir = None
+    last_cursor_change_time = time.time()
+    AUTOMOVE_STALL_SECONDS = 15.0
     while time.time() < arrival_deadline:
         raw = device.screencap()
         if not raw:
@@ -1492,26 +1722,43 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
         img_np = np.array(Image.open(io.BytesIO(raw)))
 
         if check_combat_template_present(img_np, t_combat_in, 0.80) or check_combat_template_present(img_np, t_combat_slow, 0.80):
-            # 전투는 대신 치러주지 않고 자동전투가 끝나기를 기다린다(trigger_harken_escape의 기존 방침과 동일).
-            if not interrupted:
-                print("⚔️ [필드맵 귀환] 자동이동 중 전투 조우 - 자동전투 종료를 기다립니다.")
-            interrupted = True
-            time.sleep(2.0)
-            continue
+            # 🚨 여기서도 기다리지 않는다 - 메인 루프의 IN_COMBAT이 전투를 몰아야 자동전투가 깨져도 복구된다.
+            print("⚔️ [필드맵 귀환] 자동이동 중 전투 조우 - 메인 루프의 전투 처리로 넘깁니다(전투 종료 후 귀환 재시도).")
+            return "combat"
 
         if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field):
             interrupted = True  # 조우 처리 후에도 자동이동이 끊겼을 수 있으니 재개 버튼 대상으로 취급
+            last_cursor_change_time = time.time()  # 조우 처리에 쓴 시간은 정지 시간으로 치지 않는다
             continue
 
+        # 🆕 이동 여부 판정 - 필드 위(커서 검출)일 때만 의미가 있다
+        cursor_dir = get_minimap_cursor_direction(img_np, t_cursor_up, t_cursor_down, t_cursor_left, t_cursor_right)
+        if cursor_dir is not None:
+            if prev_cursor_dir is None or cursor_dir != prev_cursor_dir:
+                prev_cursor_dir = cursor_dir
+                last_cursor_change_time = time.time()
+            elif time.time() - last_cursor_change_time >= AUTOMOVE_STALL_SECONDS:
+                print(f"🧭 [필드맵 귀환] 커서 방향이 {AUTOMOVE_STALL_SECONDS:.0f}초간 그대로 - 자동이동 정지로 판정, 재개 사다리를 태웁니다.")
+                if resume_or_confirm_chest(device, img_np, t_move_resume_act, t_move_resume_deact,
+                                           t_move_chest_act, t_move_chest_deact, t_no_chest):
+                    print("🔁 [필드맵 귀환] 재개/상자 모두 '없습니다' - 필드맵을 다시 열어 명령을 새로 내립니다.")
+                    return "retry"
+                last_cursor_change_time = time.time()  # 사다리를 태웠으니 정지 시계를 다시 시작
+                continue
+
         if is_camp_branch:
-            if find_and_get_coords(img_np, t_camp_rest1, 0.70):
+            # 🚨 [2026-09-09 실전 확인] "쉰다" 선택창만 도착 신호로 보면, 이 필드에서 이미 캠핑을 한
+            # 경우를 놓친다 - 그때는 선택창 대신 "생명의 우물이 말라버렸다."가 뜬다. 실전 로그(00:21)에서
+            # 이미 캠핑한 캠프사이트 앞에서 매크로를 켜자 60초를 그냥 흘려보내고 앱을 재시작했다.
+            if (find_and_get_coords(img_np, t_camp_rest1, 0.70)
+                    or check_template_present(img_np, t_camp_dry, 0.70)):
                 arrived = True
                 break
         else:
             menu_state = check_and_handle_harken_menu(device, t_harken_blessing_donothing, t_harken_return, img_np=img_np, t_yeolda=t_yeolda)
             if menu_state == "returned":
                 print("✅ [필드맵 귀환] 하켄 '귀환' 클릭 완료.")
-                return True
+                return "returned"
             if menu_state == "blessing":
                 # 🚨 가호 팝업은 "처리했을 뿐" 아직 귀환한 게 아니다 - 팝업을 닫은 뒤 귀환 목록이 다시
                 # 뜨므로 루프를 계속 돈다(trigger_harken_escape의 기존 처리와 동일한 방침).
@@ -1532,51 +1779,25 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
         time.sleep(2.0)
 
     if is_camp_branch and not arrived:
-        print("⚠️ [필드맵 귀환] 캠핑 지점 도착을 확인하지 못했습니다(60초 초과).")
-        return False
+        # 🚨 [2026-09-09 실전 확인] 예전엔 여기서 곧장 실패 처리(→ 앱 강제 재시작)했다. 그런데 이미
+        # 캠프사이트 위/앞에 서 있는 상태에서 자동이동을 누르면 갈 곳이 없어 아무 화면 전환도 없고,
+        # 60초를 통째로 버린 뒤 앱을 재시작하는 최악의 흐름이 됐다(실전 로그 00:21~00:22). 캠핑은
+        # 필드당 1회뿐이라 여기서 더 시도할 실익도 없으니, 아이콘 미검출 케이스와 동일하게 나가기
+        # 버튼 → 하켄 경로로 넘어간다.
+        print("⚠️ [필드맵 귀환] 캠핑 지점 도착을 확인하지 못했습니다(60초 초과) - 이미 캠핑했거나 그 자리에 서 있는 경우로 보고 나가기 버튼으로 진행합니다.")
+        return _return_after_camping(device, return_method, t_move_exit, t_field, t_harken_return,
+                                     t_harken_blessing_donothing, t_combat_in, t_combat_slow, t_yeolda)
 
-    # 6. 캠핑 분기: 휴식 시퀀스(필드 복귀까지 확인해줌) → 일반 나가기 버튼
+    # 6. 캠핑 분기: 휴식 시퀀스(필드 복귀까지 확인해줌) → 캠핑 이후 공통 꼬리
     if is_camp_branch:
-        if not perform_camping_rest(device, t_camp_rest1, t_camp_rest2, t_dialogue_arrow, t_field):
-            return False
+        if not perform_camping_rest(device, t_camp_rest1, t_camp_rest2, t_dialogue_arrow, t_field, t_camp_dry=t_camp_dry):
+            return "failed"
+        return _return_after_camping(device, return_method, t_move_exit, t_field, t_harken_return,
+                                     t_harken_blessing_donothing, t_combat_in, t_combat_slow, t_yeolda)
 
-        # perform_camping_rest()가 이미 필드 복귀를 확인하므로 여기선 나가기 버튼만 몇 번 재시도한다.
-        exit_coords = None
-        for _try in range(5):
-            raw = device.screencap()
-            if raw:
-                img_np = np.array(Image.open(io.BytesIO(raw)))
-                exit_coords = find_and_get_field_btn_coords(img_np, t_move_exit, 0.70)
-                if exit_coords:
-                    break
-            time.sleep(1.0)
-        if not exit_coords:
-            print("⚠️ [필드맵 귀환] 휴식 후 일반 나가기 버튼을 찾지 못했습니다.")
-            return False
-        print(f"🚪 [필드맵 귀환] 휴식 후 나가기 버튼 탭: {exit_coords}")
-        safe_device_shell(device, f"input tap {exit_coords[0]} {exit_coords[1]}")
-        time.sleep(2.0)
-
-        if return_method == "camp_then_exit_button":
-            # 🚨 [2026-09-07 반환 의미 정정] 이 분기는 하켄을 안 거치고 걸어서 던전을 빠져나가는 던전용이라,
-            # 나가기 버튼을 눌렀다는 것만으로는 아직 탈출이 끝난 게 아니다(예전 코드는 여기서 곧바로 True를
-            # 반환해, 아직 던전 안인데 호출부가 "던전 클리어 후 허브 복귀"로 오판하게 만들었음).
-            # 일반 TRIGGER_EXIT의 성공 조건과 동일하게 "필드 화면이 완전히 사라짐"을 직접 확인한다.
-            walk_deadline = time.time() + 90.0
-            while time.time() < walk_deadline:
-                raw = device.screencap()
-                if raw:
-                    img_np = np.array(Image.open(io.BytesIO(raw)))
-                    if not check_field_anchor_present(img_np, t_field, 0.62):
-                        print("🎉 [필드맵 귀환] 필드 화면 소멸 확인 - 도보 탈출 완료.")
-                        return True
-                time.sleep(2.0)
-            print("⚠️ [필드맵 귀환] 나가기 버튼 이후 90초 내 필드를 벗어나지 못했습니다.")
-            return False
-
-    # 7. 하켄 메뉴 처리 - "camp_then_harken"의 정상 경로이자, "harken_only"가 위 도착 대기에서 하켄 메뉴를
-    # 못 잡고 타임아웃했을 때의 폴백이기도 하다(trigger_harken_escape가 자체 재시도/나가기 재탭을 갖고 있음).
-    return trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing, t_combat_in, t_combat_slow, t_yeolda)
+    # 7. 하켄 메뉴 처리 - "harken_only"가 위 도착 대기에서 하켄 메뉴를 못 잡고 타임아웃했을 때의 폴백
+    # (trigger_harken_escape가 자체 재시도/나가기 재탭을 갖고 있음).
+    return "returned" if trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing, t_combat_in, t_combat_slow, t_yeolda) else "failed"
 
 def fire_target_monster_body(device, img_np, t_next, t_arrow):
     target_coords = find_and_get_coords(img_np, t_next, 0.65)
@@ -1638,6 +1859,17 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     t_seller_let_me_see = load_template("templates/Dungeon_dialogue/Dun_seller_let_me_see.png")
     t_seller_hammer = load_template("templates/Dungeon_dialogue/Dun_seller_hammer.png")
     t_dialogue_arrow_common = load_template("templates/inn_sleep/arrow_clean.png")
+    # 🚨 [2026-09-08 실전 확인] 캠핑 선택창("쉰다"/"아무것도 안 한다")은 필드 앵커도 전투 앵커도 없어서,
+    # 귀환 루틴 밖에서 이 화면을 만나면 공용 전처리 블록이 "화면 과도기"로 오판하고 30초 뒤 비상
+    # 뒤로가기를 주입해 캠핑을 취소해버렸다(실전 로그 23:30). 루틴이 전투로 메인 루프에 제어를 넘긴 사이
+    # 캐릭터가 캠프에 도착하면 반드시 이 상황이 되므로, 공용 블록에서도 캠핑을 처리해야 한다.
+    t_camp_rest1_common = load_template("templates/Dungeon_dialogue/Dun_camping_rest.png")
+    t_camp_rest2_common = load_template("templates/Dungeon_dialogue/Dun_camping_rest2.png")
+    t_camp_dry_common = load_template("templates/Dungeon_dialogue/Dun_camping_dry.png")
+    # 눈보라 판별(미니맵 확장 여부)용
+    t_field_expanded_common = load_grayscale_template("templates/Field/Fieldmap_exit_icon.png")
+    t_fieldmap_close_common = load_grayscale_template("templates/Field/FieldMap_Anchor.png")
+    reset_camping_done()  # 이번 던전 진입 기준으로 캠핑 완료 플래그 초기화(중복 캠핑 방지)
     t_cursor_up = load_grayscale_template("templates/Field/cursor_up.png")
     t_cursor_down = load_grayscale_template("templates/Field/cursor_down.png")
     t_cursor_left = load_grayscale_template("templates/Field/cursor_left.png")
@@ -1744,6 +1976,16 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     checkpoint_pressed_count = 0
     is_initial_start = True
     blizzard_exit_tapped = False  # 🆕 [2026-09-08 대설지대] 눈보라 서브구역에서 나가기를 이미 눌렀는지
+    # 🚨 [2026-09-09] "커서 미검출"이 눈보라인지, 아이콘에 가려진 것인지의 판정 상태.
+    # "unknown"=아직 안 봄 / "yes"=눈보라 확정(필드맵 확장 실패) / "no"=눈보라 아님(확장 성공).
+    # 커서가 다시 보이면 "unknown"으로 되돌린다. 판별은 미니맵을 눌러 확장되는지로 한다(사용자 확인:
+    # 눈보라 구간은 필드맵 확장 자체가 안 된다).
+    blizzard_state = "unknown"
+    # 🆕 [2026-09-08] 필드맵 귀환 "retry"(자동이동 정지 → 재개/상자 사다리도 소득 없음 → 필드맵 재확장)
+    # 예산. 이 경로는 TRIGGER_EXIT의 기존 탈출 워치독(exit_first_start_time)을 타지 않아서 자체 상한이
+    # 없으면 무한히 재확장만 반복할 수 있다.
+    fieldmap_return_retry_count = 0
+    FIELDMAP_RETURN_RETRY_LIMIT = 5
     prev_cursor_dir = None  # 🆕 [2026-09-08 대설지대] 커서 기반 이동감지용 직전 방향
     need_pickaxe_refill = False  # 💡 [광석파밍 전용] 곡괭이 소진으로 탈출한 경우에만 True. 사령탑이 이 플래그로만 마을 회군 여부를 판단합니다.
 
@@ -2045,6 +2287,18 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                 # 등 엉뚱한 선택지가 골라질 수 있음). 현재 이 공용 블록엔 화살표 핸들러가 없어 순서 문제는
                 # 없지만, 나중에 추가할 때도 이 규칙을 지킬 것.
                 if dungeon_name == "대설지대":
+                    # 🏕️ 캠핑 선택창은 중립몹/행상인보다 먼저 본다 - 이 화면엔 다른 선택지 도장이 없어
+                    # 순서 충돌이 없고, 방치하면 위 주석대로 비상 뒤로가기로 캠핑이 취소된다.
+                    if (return_method in ("camp_then_exit_button", "camp_then_harken")
+                            and (find_and_get_coords(img_np, t_camp_rest1_common, 0.70)
+                                 or check_template_present(img_np, t_camp_dry_common, 0.70))):
+                        print("🏕️ [캠핑 감지] 캠핑 화면 확인 - 휴식 시퀀스를 진행합니다.")
+                        if perform_camping_rest(device, t_camp_rest1_common, t_camp_rest2_common, t_dialogue_arrow_common, t_field, t_camp_dry=t_camp_dry_common):
+                            print("✅ [캠핑 완료] 이번 탈출의 캠핑을 마쳤습니다 - 이후 귀환은 하켄으로 진행합니다.")
+                        transition_delay_count = 0
+                        last_state_changed_time = time.time()
+                        continue
+
                     fight_coords = find_and_get_coords(img_np, t_dilog_fight, 0.70)
                     if fight_coords:
                         print(f"⚔️ [중립몹 조우] '싸운다' 선택지 발견 - 고정 선택 탭: {fight_coords}")
@@ -2122,7 +2376,15 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                 )
                                 last_click_time = 0.0  # 🚀 [2026-08-30] FIELD_WAIT 상자탭 4초 쿨타임 파쇄
                             state = "FIELD_WAIT"
-                            time.sleep(2.0)  # 전투 종료 안착 연출 마진
+                            # 🚀 [2026-09-08 체감 지연 단축] 예전엔 여기서 무조건 2초를 더 쉬었다("전투 종료
+                            # 안착 연출 마진"). 그런데 상자파밍 경로는 이 지점에 오기까지 이미 (1) 필드 앵커로
+                            # 안착을 확인했고(그래서 이 분기가 실행됨), (2) 바로 위 resume_or_confirm_chest()가
+                            # 재개 탭 후 약 1.9초(0.5초 + 2회 폴링)를 더 소비했다 - 연출은 이미 끝난 뒤라
+                            # 이 2초는 순수 낭비다. 실전 로그(2026-09-08 23:26): 재개 탭 후 '열다' 반응까지
+                            # 7초가 걸려 사용자가 답답함을 지적. 재개 경로를 타지 않는 광석파밍은 그 1.9초가
+                            # 없으므로 기존 2초 마진을 그대로 유지한다.
+                            if farming_method != "상자파밍":
+                                time.sleep(2.0)  # 전투 종료 안착 연출 마진
                             continue
                         elif state in ["BRANCH_CHECK", "PLAY_MINIGAME", "CLEAR_CHECK"]:
                             print("✨ [상자깡 완료 감지] 상자 처리 후 필드 안착 확인! (came_from_chest = True)")
@@ -2457,15 +2719,45 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                         continue
 
                     # 🆕 [2026-09-08 대설지대 눈보라 서브구역] 배경(눈보라 파티클)이 계속 흔들려 미니맵
-                    # 자체가 안 뜨는 구간 - 압축 미니맵 커서 4방향이 전부 미검출인데 필드 앵커는 정상이면
-                    # 이 서브구역으로 판정한다. 상자 버튼 자체가 비활성이라(사용자 확인) 기존
-                    # resume_or_confirm_chest()의 "상자로 재확인" 단계를 쓸 수 없어 별도 분기로 처리:
-                    # 재개 반복 -> "없습니다" 뜨면 나가기 1회(자력 탈출 수단이 이것뿐) -> 커서가 다시
-                    # 감지되면(=일반 구간 복귀) 이 분기 자체를 안 타게 되어 아래 기존 상자 시퀀스가
-                    # 자동으로 이어받는다 -> 그때도 "없습니다"면 비로소 진짜 상자 없음으로 확정.
+                    # 자체가 안 뜨는 구간. 상자 버튼도 비활성이라 기존 resume_or_confirm_chest()의
+                    # "상자로 재확인" 단계를 쓸 수 없어 별도 분기로 처리한다:
+                    # 재개 반복 -> "없습니다" 뜨면 나가기 1회(자력 탈출 수단이 이것뿐).
+                    #
+                    # 🚨 [2026-09-09 판별 방식 교체 - 사용자 확인] 예전엔 "필드 앵커는 있는데 커서 미검출"만으로
+                    # 눈보라라고 단정했는데, 캠핑을 마친 자리에서 앱이 재시작되면 커서가 캠프 아이콘과 겹쳐
+                    # 가려져서 똑같은 조건이 된다. 그 상태에선 이동 명령 이력이 없어 재개 버튼이 비활성이라
+                    # 눌러도 무반응이고, 재개만 무한 반복하며 영영 멈췄다(실전 로그 00:00).
+                    # 확실한 구분법: 미니맵을 눌러본다 - 눈보라 구간은 필드맵 확장 자체가 안 되고,
+                    # 아이콘에 가려진 경우는 정상적으로 확장된다(사용자 확인).
                     if dungeon_name == "대설지대" and check_field_anchor_present(img_np, t_field, 0.65):
                         cursor_dir = get_minimap_cursor_direction(img_np, t_cursor_up, t_cursor_down, t_cursor_left, t_cursor_right)
-                        if cursor_dir is None:
+                        if cursor_dir is not None:
+                            # 커서가 보임 = 일반 구간 - 판정을 초기화하고 아래 기존 상자 시퀀스로 넘긴다.
+                            blizzard_state = "unknown"
+                            blizzard_exit_tapped = False
+                        elif blizzard_state == "unknown":
+                            ex_bz, ey_bz = FIELDMAP_EXPAND_TAP_COORDS
+                            print("🔎 [눈보라 판별] 커서 미검출 - 미니맵을 눌러 필드맵 확장 여부로 눈보라인지 확인합니다.")
+                            safe_device_shell(device, f"input tap {ex_bz} {ey_bz}")
+                            time.sleep(1.5)
+                            expanded_bz = False
+                            raw_bz_chk = device.screencap()
+                            if raw_bz_chk:
+                                img_bz_chk = np.array(Image.open(io.BytesIO(raw_bz_chk)))
+                                expanded_bz = _check_fieldmap_expanded(img_bz_chk, t_field_expanded_common, t_fieldmap_close_common)
+                            if expanded_bz:
+                                print("🗺️ [눈보라 판별] 필드맵이 정상 확장됨 - 눈보라가 아니라 커서가 아이콘에 가려진 상태입니다. 맵을 닫고 일반 절차로 진행합니다.")
+                                cx_bz, cy_bz = FIELDMAP_CLOSE_TAP_COORDS
+                                safe_device_shell(device, f"input tap {cx_bz} {cy_bz}")
+                                time.sleep(1.0)
+                                blizzard_state = "no"
+                            else:
+                                print("❄️ [눈보라 판별] 필드맵 확장이 되지 않음 - 눈보라 구간으로 확정합니다.")
+                                blizzard_state = "yes"
+                            transition_delay_count = 0
+                            last_state_changed_time = time.time()
+                            continue
+                        elif blizzard_state == "yes":
                             if not blizzard_exit_tapped:
                                 resume_coords = find_checkpoint_btn_coords(img_np, t_move_resume_act, t_move_resume_deact, 0.70)
                                 if resume_coords:
@@ -2488,9 +2780,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                             last_state_changed_time = time.time()
                             time.sleep(1.0)
                             continue
-                        else:
-                            # 커서가 다시 보임 = 눈보라를 벗어남 - 다음 상자 확인부터는 정상 플래그로.
-                            blizzard_exit_tapped = False
+                        # blizzard_state == "no" 이면 아무것도 하지 않고 아래 일반 상자 시퀀스로 흘려보낸다.
 
                     # 이하 기존 상자 파밍 시퀀스
                     if check_field_anchor_present(img_np, t_field, 0.65):
@@ -2630,8 +2920,39 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
             # 않는다(return_to_town_via_fieldmap_icon()이 자체 타임아웃/재시도를 갖고 있음).
             if dungeon_name == "대설지대" and return_method != "exit_button":
                 print(f"🚪 [TRIGGER_EXIT] 필드맵 아이콘 경유 귀환 루틴 진입 (return_method={return_method})")
-                if return_to_town_via_fieldmap_icon(device, return_method, t_combat_in, t_combat_slow):
+                # 🚨 캠핑을 이미 마쳤는지는 루틴이 내부에서 is_camping_done()으로 직접 판단해 "나가기 버튼
+                # → 하켄" 꼬리부터 이어간다(return_method를 바꿔치우면 안 된다 - 상세는 _return_after_camping 주석).
+                fieldmap_return_result = return_to_town_via_fieldmap_icon(device, return_method, t_combat_in, t_combat_slow)
+                if fieldmap_return_result == "returned":
                     return True, skill_mission_success_this_combat, need_pickaxe_refill
+                if fieldmap_return_result == "combat":
+                    # 🚨 [2026-09-08 실전 확인] 귀환 루틴은 전투를 스스로 기다리지 않고 여기로 돌려보낸다.
+                    # 전투 처리(자동전투 재활성화/스킬/힐링/사망 감지)는 전부 IN_COMBAT 상태 기계에 있으므로,
+                    # 예전처럼 루틴 안에서 "자동전투가 끝나길 기다리기"만 하면 자동전투가 한 번 깨졌을 때
+                    # 아무도 전투를 몰지 않아 그대로 멈춘다. 전투가 끝나면 FIELD_WAIT로 복귀하고, 상자 없음
+                    # 판정이 다시 나면 이 귀환 루틴을 처음부터 다시 탄다.
+                    print("⚔️ [TRIGGER_EXIT] 필드맵 귀환 중 전투 조우 - 전투 모드로 전환합니다.")
+                    exit_first_start_time = None
+                    state = "IN_COMBAT"
+                    yuzuna_done = False
+                    milana_done = False
+                    guksu_done = False
+                    auto_combat_paused_for_skill = False
+                    combat_entry_start_time = time.time()
+                    last_empty_shortcut_detected_time = 0
+                    last_state_changed_time = time.time()
+                    transition_delay_count = 0
+                    continue
+                if fieldmap_return_result == "retry":
+                    # 자동이동이 멈췄고 재개/상자 사다리도 "없습니다"로 끝난 경우 - state를 TRIGGER_EXIT로
+                    # 그대로 두면 다음 틱에 이 루틴을 처음부터(=필드맵 재확장부터) 다시 탄다.
+                    fieldmap_return_retry_count += 1
+                    if fieldmap_return_retry_count > FIELDMAP_RETURN_RETRY_LIMIT:
+                        raise RuntimeError(f"필드맵 경유 귀환 재시도 {FIELDMAP_RETURN_RETRY_LIMIT}회 초과 - 프로세스 강제 재시작으로 복구를 시도합니다.")
+                    print(f"🔁 [TRIGGER_EXIT] 필드맵 귀환 재시도 {fieldmap_return_retry_count}/{FIELDMAP_RETURN_RETRY_LIMIT} - 다음 틱에 필드맵을 다시 열어 명령을 새로 내립니다.")
+                    transition_delay_count = 0
+                    time.sleep(1.0)
+                    continue
                 raise RuntimeError("필드맵 아이콘 경유 귀환 루틴 실패 - 프로세스 강제 재시작으로 복구를 시도합니다.")
 
             # 🚨 [v1.14.0-hotfix4] 독립형 절대 Watchdog 가드 이식:

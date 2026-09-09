@@ -38,5 +38,15 @@
       "y2": 2336
     },
     "roi_name": null
+  },
+  "FieldMap_Anchor": {
+    "source_image": "fieldmap_camping.png",
+    "roi": {
+      "x1": 583,
+      "y1": 2425,
+      "x2": 772,
+      "y2": 2478
+    },
+    "roi_name": "Fieldmap_anchor"
   }
 }
