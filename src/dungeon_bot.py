@@ -20,9 +20,27 @@ came_from_chest = False
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.21.2
+# - 현재 버전: 1.21.3
 # - 최근 수정일: 2026-09-09
 # - 수정 기록:
+#   1.21.3: 🚨 우물(캠프) 아이콘이 화면 상단 타이틀바에 너무 가까우면 자동이동 버블이 가려 안 보이던
+#     결함 + 그 실패가 곧장 앱 전체 재시작으로 이어지던 과잉 대응 완치.
+#     실전 로그(2026-09-09 19:05, 경로6 -호반(남)-): 우물 탭 (1059,373) 후 "자동이동 버튼 미검출"이
+#     3회 연속돼 자동이동 버튼을 끝내 못 찾고 "failed"→RuntimeError→ADB 서버 리셋(앱 강제 재시작)
+#     으로 이어졌다. 사용자가 스크린샷으로 우물이 상단 던전명 타이틀바("경로6 -호반(남)-")에 바짝
+#     붙어 있음을 직접 확인 - 탭 지점 근처에 뜨는 자동이동 버블이 그 타이틀바에 가려진 것으로 추정.
+#     사용자 지적: "우물을 검색하는 Y축의 범위를 저 위치보다 200픽셀은 더 아래로 한정지어야지 자동
+#     이동 버튼이 보일듯" - `_find_first_icon()`에 `min_y` 옵션을 추가해 캠프 분기에서만
+#     `FIELDMAP_CAMP_ICON_MIN_Y = 573`(실패 지점 y=373 + 200) 미만의 매칭은 미검출로 간주하도록
+#     완치. 상단 근접 매칭이 걸러지면 기존 스와이프 탐색(1차 아이콘 탐색)/작은 안쪽 넛지 스와이프
+#     (자동이동 버튼 재탐색 루프)가 그대로 이어받아 더 아래쪽 위치에서 다시 찾는다 - 새 스와이프
+#     로직을 추측으로 추가하지 않고 이미 검증된 기존 재시도 경로에 필터만 얹은 것.
+#     추가 완치(같은 세션, 사용자 지적): "지금 모든 앵커들이 활성화 잘되어서 붙어있는데 adb를
+#     재시작해버리는 것도 문제" - 연결/화면인식 자체는 멀쩡한데 위와 같이 일시적/회복 가능한 상황도
+#     곧장 앱 전체 재시작이라는 비싼 복구로 처리되고 있었다. 자동이동 버튼을 끝내 못 찾았을 때의
+#     반환값을 "failed"(즉시 RuntimeError)에서 "retry"로 바꿔, 이미 있던 재시도 경로
+#     (TRIGGER_EXIT의 fieldmap_return_retry_count, 최대 5회 - 필드맵을 처음부터 다시 열어 재시도)를
+#     먼저 거치고, 그마저 5회를 넘겨야만 진짜 앱 재시작으로 넘어가도록 완화.
 #   1.21.2: 🚨 return_to_town_via_fieldmap_icon()의 미니맵 확장 전 커서 체크 루프에 캠핑 화면
 #     ("쉰다") 감지가 아예 없던 결함 완치. 사용자가 "캠핑하러 와서 쉰다가 나왔는데 필드커서
 #     미검출이 뜬다"고 보고해 발견 - 캐릭터가 상자를 찾아 이동하다 마침 캠프 지점(우물) 위에
@@ -1506,13 +1524,23 @@ def is_field_button_active(img_np, coords, template):
     return float(np.mean(gray > BUTTON_ACTIVE_BRIGHTNESS)) > BUTTON_ACTIVE_BRIGHT_PIXEL_RATIO
 
 
-def _find_first_icon(img_np, templates):
-    """후보 도장들을 순서대로 시도해 처음 잡히는 좌표를 반환(하켄 대/소처럼 같은 목적의 여러 도장용)."""
+# 🚨 [2026-09-09 실전 확인] 캠프(우물) 아이콘이 화면 상단에 너무 가까우면(실전 로그: y=373 지점 탭),
+# 탭 후 뜨는 "자동 이동" 버블이 상단 던전명 타이틀바("경로6 -호반(남)-" 등)에 가려지거나 화면 밖으로
+# 밀려 안 보인다 - 자동이동 버튼 재탐색 3회를 전부 소진하고 앱이 강제 재시작됐다(사용자가 스크린샷으로
+# 우물 위치와 상단 타이틀바 근접을 직접 확인). 사용자 지적대로 그 지점(y=373)보다 200px 아래(573)부터만
+# 유효한 매칭으로 인정 - 그 위쪽은 미검출로 간주해 기존 스와이프 탐색/자리 재탐색이 계속 화면을 조정해
+# 더 아래쪽에서 다시 찾도록 넘긴다.
+FIELDMAP_CAMP_ICON_MIN_Y = 573
+
+def _find_first_icon(img_np, templates, min_y=None):
+    """후보 도장들을 순서대로 시도해 처음 잡히는 좌표를 반환(하켄 대/소처럼 같은 목적의 여러 도장용).
+    min_y를 주면 그보다 위쪽(화면 상단)에서 잡힌 매칭은 미검출로 간주한다 - FIELDMAP_CAMP_ICON_MIN_Y
+    주석 참고(자동이동 버블이 상단 타이틀바에 가려지는 문제 회피용)."""
     for tmpl in templates:
         if tmpl is None:
             continue
         coords = find_gray_coords_specific(img_np, tmpl, FIELDMAP_ICON_THRESHOLD)
-        if coords:
+        if coords and (min_y is None or coords[1] >= min_y):
             return coords
     return None
 
@@ -1829,7 +1857,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
             if raw:
                 img_np = decode_screen_bytes(raw)
             continue
-        icon_coords = _find_first_icon(img_np, target_icons)
+        icon_coords = _find_first_icon(img_np, target_icons, min_y=FIELDMAP_CAMP_ICON_MIN_Y if is_camp_branch else None)
         if icon_coords:
             break
         wp = swipe_waypoints[attempt % len(swipe_waypoints)]
@@ -1880,7 +1908,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
             break
         retry += 1
         print(f"⚠️ [필드맵 귀환] 자동이동 버튼 미검출(가장자리 탭 추정) - 재탐색 {retry}/3")
-        icon_coords = _find_first_icon(img_np, target_icons)
+        icon_coords = _find_first_icon(img_np, target_icons, min_y=FIELDMAP_CAMP_ICON_MIN_Y if is_camp_branch else None)
         if icon_coords:
             tap_x, tap_y = icon_coords
         else:
@@ -1888,8 +1916,15 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
             time.sleep(1.0)
 
     if not automove_coords:
-        print("⚠️ [필드맵 귀환] 자동이동 버튼을 끝내 찾지 못했습니다.")
-        return "failed"
+        # 🚨 [2026-09-09 사용자 지적] 이전엔 여기서 곧장 "failed"를 반환해 TRIGGER_EXIT가 즉시
+        # RuntimeError → 프로세스 강제 재시작(ADB 서버 리셋)으로 이어졌다. 사용자 지적: "지금 모든
+        # 앵커들이 활성화 잘되어서 붙어있는데" - 즉 연결/화면인식 자체는 멀쩡한데, 아이콘이 상단에
+        # 가까워 자동이동 버블이 안 보이는(위 FIELDMAP_CAMP_ICON_MIN_Y로 완치 시도) 것처럼 일시적/
+        # 회복 가능한 상황조차 앱 전체 재시작이라는 비싼 복구로 이어지고 있었다. 이미 있는 "retry"
+        # 경로(TRIGGER_EXIT의 fieldmap_return_retry_count, 최대 5회)로 돌려보내면 필드맵을 처음부터
+        # 다시 열어 재시도하고, 그마저 5회를 넘길 때만 진짜 앱 재시작으로 넘어간다.
+        print("⚠️ [필드맵 귀환] 자동이동 버튼을 끝내 찾지 못했습니다 - 필드맵을 다시 열어 재시도합니다.")
+        return "retry"
 
     # 5. 자동이동 탭 → 도착 대기
     safe_device_shell(device, f"input tap {automove_coords[0]} {automove_coords[1]}")
