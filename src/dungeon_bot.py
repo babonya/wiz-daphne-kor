@@ -20,9 +20,35 @@ came_from_chest = False
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.21.1
+# - 현재 버전: 1.21.2
 # - 최근 수정일: 2026-09-09
 # - 수정 기록:
+#   1.21.2: 🚨 return_to_town_via_fieldmap_icon()의 미니맵 확장 전 커서 체크 루프에 캠핑 화면
+#     ("쉰다") 감지가 아예 없던 결함 완치. 사용자가 "캠핑하러 와서 쉰다가 나왔는데 필드커서
+#     미검출이 뜬다"고 보고해 발견 - 캐릭터가 상자를 찾아 이동하다 마침 캠프 지점(우물) 위에
+#     서면, 맵을 열지 않아도 게임이 자동으로 캠핑 선택창을 띄운다. 이 화면엔 압축 미니맵 커서가
+#     없으니 "전투 아님/확장도 아님"으로만 판정돼 미니맵 확장 좌표(1217,219)만 계속 눌러대며
+#     정체했다(그 좌표는 캠핑 화면에서 아무 의미가 없는 자리라 탭이 헛돎). 커서 미검출 분기에서
+#     전투/확장 체크와 같은 순서로 캠핑 화면부터 먼저 확인하도록 추가 - 감지되면 맵 확장을 건너뛰고
+#     곧장 perform_camping_rest()로 넘어간다.
+#     같은 자리에서 실제 스크린샷(자동 저장분)으로 "쉰다" 화면이 정체 도중 떠 있었음을 확인, 실전
+#     로그와 정확히 일치함을 검증(사용자 재현 로그로 재확인).
+#   추가 완치(같은 세션, 실측 확정): 자동이동 대기 루프에서는 도착 판정(쉰다/우물말랐다)이
+#     _handle_dungeon_interrupt() "뒤"에 있어서, "생명의 우물이 말라버렸다" 화면이 화살표 도장과
+#     0.985로 매칭돼(임계값 0.82 초과) 화살표 폴백이 먼저 대화를 넘겨버리는 바람에 도착 체크가 그
+#     프레임에서 아예 실행되지 못했다. 캐릭터는 이미 도착해 있으니 재개 버튼이 같은 자리를 다시
+#     트리거해 "우물말랐다"가 또 뜨고, 화살표→재개 사이클이 무한 반복됐다(실전 로그: 8회 연속).
+#     도착 판정을 인터럽트 처리보다 먼저 체크하도록 순서를 바꿔 완치 - "도착했는가"가 "화살표니까
+#     넘긴다"보다 우선순위가 높아야 한다는 원칙.
+#     추가 완치(같은 세션, 사용자 지적 - 비대칭 완치): return_to_town_via_fieldmap_icon()이 스와이프
+#     탐색 끝까지 목표 아이콘을 못 찾았을 때, 캠핑 분기(is_camp_branch)는 이미 나가기 버튼 폴백
+#     (_return_after_camping)이 있는데 하켄 분기(harken_only)만 그냥 "failed"만 반환했다. 사용자
+#     지적: "교회구역 외에 다른 구역에 캐릭을 두고 매크로를 실행하면 하켄 없는 맵에서는 나갈 수가
+#     없다." 신규 헬퍼 _exit_via_walkout_or_harken()을 추가해 하켄 분기도 아이콘 미검출 시 나가기
+#     버튼을 누르고 도보 탈출/하켄 귀환 중 먼저 뜨는 쪽을 그대로 따라가도록 완치(진짜 하켄이 있는
+#     구역이면 하켄 귀환으로, 하켄이 없는 구역이면 도보 탈출로 자연히 갈린다). field_anchor 소멸만
+#     으로 도보 탈출을 판정하면 하켄 귀환목록/가호 팝업도 전체화면이라 오판할 수 있어(캠핑 화면과
+#     동일 유형 함정), 하켄 메뉴가 아닐 때만 그 판정을 신뢰하도록 순서를 맞췄다.
 #   1.21.1: 🚨 정체 타이머(last_state_changed_time) 리셋 누락 2건 완치(CLAUDE.md에 이미 기록된 재발
 #     패턴과 같은 유형). v1.21.0을 실전 운용하던 사용자가 "힐링 시퀀스 도중 정체로 빠지고, 그 직후
 #     뜬 상자를 못 잡는다"고 보고해 발견. (1) 힐링 성공 분기(party_manager.run_party_healing_sequence
@@ -1537,6 +1563,67 @@ def _return_after_camping(device, return_method, t_move_exit, t_field, t_harken_
     return "returned" if trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessing_donothing, t_combat_in, t_combat_slow, t_yeolda) else "failed"
 
 
+def _exit_via_walkout_or_harken(device, t_move_exit, t_field, t_harken_return, t_harken_blessing_donothing, t_yeolda, max_wait=60.0):
+    """목표 아이콘(하켄)을 못 찾았을 때의 탈출 폴백 - 나가기 버튼을 누른 뒤 도보 탈출과 하켄 귀환 중
+    먼저 뜨는 쪽을 그대로 따라간다.
+
+    🚨 [2026-09-09 사용자 지적 - 비대칭 완치] harken_only 분기(교회구역 전용)는 스와이프 탐색 끝까지
+    목표 하켄 아이콘을 못 찾으면 그냥 "failed"만 반환했다 - 캠핑 분기는 아이콘 미검출 시 나가기 버튼
+    폴백(_return_after_camping)이 있는데 하켄 분기만 없어서, 사용자가 교회구역이 아닌 다른 구역에
+    이 return_method로 매크로를 잘못 태우면(또는 그 구역에 하켄이 아예 없으면) 탈출 수단이 전혀 없이
+    막혔다("하켄 없는 맵에서는 나갈 수가 없다"). 이 함수가 그 대칭짝이다 - 나가기 버튼을 눌러 도보
+    탈출과 하켄 귀환목록 중 어느 쪽이 뜨든 따라간다(교회구역처럼 진짜 하켄이 있으면 하켄 귀환으로,
+    하켄이 없는 구역이면 도보 탈출로 자연스럽게 갈린다).
+
+    ⚠️ field_anchor 소멸만으로 "도보 탈출 완료"를 판정하면 안 된다 - 하켄 귀환목록/가호 팝업도 캠핑
+    화면과 마찬가지로 전체화면 다이얼로그라 field_anchor를 가린다(실측: perform_camping_rest 주석의
+    캠핑 3화면 0.09~0.21 사례와 동일 유형). 그래서 "하켄 메뉴가 뜬 게 아니면서 field_anchor도 없다"는
+    조건일 때만 도보 탈출로 인정한다 - 하켄 메뉴는 먼저 확인해 처리하고, 메뉴가 없는데 field_anchor도
+    없는 경우에만 도보 탈출로 판정한다.
+    """
+    exit_coords = None
+    for _try in range(5):
+        raw = capture_screen_bytes(device)
+        if raw:
+            img_np = decode_screen_bytes(raw)
+            exit_coords = find_and_get_field_btn_coords(img_np, t_move_exit, 0.70)
+            if exit_coords:
+                break
+        time.sleep(1.0)
+    if not exit_coords:
+        print("⚠️ [필드맵 귀환] 하켄 미검출 폴백 - 일반 나가기 버튼조차 찾지 못했습니다.")
+        return "failed"
+    print(f"🚪 [필드맵 귀환] 하켄 미검출 폴백 - 나가기 버튼 탭(도보 탈출/하켄 귀환 중 먼저 뜨는 쪽을 따라갑니다): {exit_coords}")
+    safe_device_shell(device, f"input tap {exit_coords[0]} {exit_coords[1]}")
+    time.sleep(2.0)
+
+    deadline = time.time() + max_wait
+    while time.time() < deadline:
+        raw = capture_screen_bytes(device)
+        if not raw:
+            time.sleep(1.0)
+            continue
+        img_np = decode_screen_bytes(raw)
+
+        menu_state = check_and_handle_harken_menu(device, t_harken_blessing_donothing, t_harken_return, img_np=img_np, t_yeolda=t_yeolda)
+        if menu_state == "returned":
+            print("✅ [필드맵 귀환] 하켄 미검출 폴백 - 하켄 '귀환' 클릭 완료.")
+            return "returned"
+        if menu_state == "blessing":
+            print("🎁 [필드맵 귀환] 하켄 미검출 폴백 - 가호 팝업 처리 완료, 귀환 목록을 계속 기다립니다.")
+            time.sleep(1.0)
+            continue
+
+        if not check_field_anchor_present(img_np, t_field, 0.62):
+            print("🎉 [필드맵 귀환] 하켄 미검출 폴백 - 필드 화면 소멸 확인, 도보 탈출 완료.")
+            return "returned"
+
+        time.sleep(1.5)
+
+    print(f"⚠️ [필드맵 귀환] 하켄 미검출 폴백이 {max_wait:.0f}초 내 끝나지 않았습니다.")
+    return "failed"
+
+
 def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_combat_slow=None, max_swipe_attempts=8):
     """
     필드맵을 확장해 캠프/대하켄 아이콘을 찾아 자동이동으로 복귀하는 범용 귀환 루틴.
@@ -1640,6 +1727,18 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
         img_np = decode_screen_bytes(raw)
         if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=t_doghole):
             continue
+        # 🚨 [2026-09-09 실전 확인] 이 함수엔 캠핑 화면("쉰다") 감지가 아예 없었다 - 상자를 찾아 이동하던
+        # 캐릭터가 마침 캠프 지점(우물) 위에 서 있으면, 맵을 열지 않아도 게임이 자동으로 캠핑 선택창을
+        # 띄우는데, 그 화면엔 압축 미니맵 커서가 없으니 "커서 미검출"로만 잡혀 미니맵 확장 좌표만 계속
+        # 눌러대며 정체했다(실전 로그: TRIGGER_EXIT 진입 직후부터 "쉰다"가 떠 있었는데도 탭 1/3, 2/3을
+        # 헛되이 반복). 커서가 없는 원인을 확인하는 다른 것들(전투/확장)과 같은 순서로, 여기서도 먼저
+        # 캠핑 화면인지부터 본다.
+        if is_camp_branch and (find_and_get_coords(img_np, t_camp_rest1, 0.70) or check_template_present(img_np, t_camp_dry, 0.70)):
+            print("🏕️ [필드맵 귀환] 미니맵 확장 전에 캠핑 화면이 이미 떠 있습니다 - 맵 확장 없이 곧장 캠핑을 진행합니다.")
+            if perform_camping_rest(device, t_camp_rest1, t_camp_rest2, t_dialogue_arrow, t_field, t_camp_dry=t_camp_dry):
+                return _return_after_camping(device, return_method, t_move_exit, t_field, t_harken_return,
+                                             t_harken_blessing_donothing, t_combat_in, t_combat_slow, t_yeolda)
+            return "failed"
         # 🚨 [2026-09-08 실전 확인] 예전엔 "전투 도장이 안 보이면 탭"이라는 음성 조건이었는데, 전투 중
         # 단 한 프레임만 매칭이 흔들려도 탭이 나가 자동전투가 깨지고 그대로 멈추는 사고가 났다(실기:
         # 전투 감지 로그가 연달아 찍히던 와중에 탭이 나갔고, 사용자가 수동으로 자동전투를 다시 켜줬더니
@@ -1752,7 +1851,11 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
             print("🏕️ [필드맵 귀환] 캠프 아이콘 미검출 - 이미 그 자리에 서 있는 경우로 보고 나가기 버튼으로 진행합니다.")
             return _return_after_camping(device, return_method, t_move_exit, t_field, t_harken_return,
                                          t_harken_blessing_donothing, t_combat_in, t_combat_slow, t_yeolda)
-        return "failed"
+        # 🆕 [2026-09-09 사용자 지적 - 비대칭 완치] 하켄 분기도 대칭적으로 나가기 버튼 폴백을 탄다.
+        # 상세 사유는 _exit_via_walkout_or_harken() 주석 참고.
+        print("🚪 [필드맵 귀환] 하켄 아이콘 미검출 - 나가기 버튼으로 도보 탈출/하켄 귀환을 시도합니다(하켄이 없는 구역 대비).")
+        return _exit_via_walkout_or_harken(device, t_move_exit, t_field, t_harken_return,
+                                           t_harken_blessing_donothing, t_yeolda)
 
     # 4. 아이콘 탭 → 자동이동 버튼 확인(전체검색). 가장자리를 탭하면 버튼이 아예 안 뜨므로 재탐색한다.
     tap_x, tap_y = icon_coords
@@ -1817,6 +1920,19 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
             print("⚔️ [필드맵 귀환] 자동이동 중 전투 조우 - 메인 루프의 전투 처리로 넘깁니다(전투 종료 후 귀환 재시도).")
             return "combat"
 
+        # 🚨 [2026-09-09 실측 확정 - 화살표가 도착 판정을 가로채는 결함 완치] 이 체크를 예전엔
+        # _handle_dungeon_interrupt() 뒤(아래)에 뒀는데, "생명의 우물이 말라버렸다" 화면은 화살표
+        # 도장과 0.985로 매칭돼(임계값 0.82 초과) _handle_dungeon_interrupt의 화살표 폴백이 먼저
+        # 대화를 넘겨버리고 continue - 그러면 이 도착 체크가 그 프레임에서 아예 실행되지 못했다.
+        # 캐릭터는 이미 도착해 있으니 다음 틱에 눌리는 재개 버튼이 같은 자리를 다시 트리거해
+        # "우물이 말라버렸다"가 또 뜨고, 이 사이클이 무한 반복됐다(실전 로그 2026-09-09 17:56 -
+        # "화살표 감지"와 "인터럽트 종료 - 재개 버튼" 쌍이 8회 연속). "도착했는가"는 "그냥 화살표니까
+        # 넘긴다"보다 우선순위가 높아야 하므로, 인터럽트 처리보다 먼저 체크한다.
+        if is_camp_branch and (find_and_get_coords(img_np, t_camp_rest1, 0.70)
+                                or check_template_present(img_np, t_camp_dry, 0.70)):
+            arrived = True
+            break
+
         if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=t_doghole):
             interrupted = True  # 조우 처리 후에도 자동이동이 끊겼을 수 있으니 재개 버튼 대상으로 취급
             last_cursor_change_time = time.time()  # 조우 처리에 쓴 시간은 정지 시간으로 치지 않는다
@@ -1837,15 +1953,9 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
                 last_cursor_change_time = time.time()  # 사다리를 태웠으니 정지 시계를 다시 시작
                 continue
 
-        if is_camp_branch:
-            # 🚨 [2026-09-09 실전 확인] "쉰다" 선택창만 도착 신호로 보면, 이 필드에서 이미 캠핑을 한
-            # 경우를 놓친다 - 그때는 선택창 대신 "생명의 우물이 말라버렸다."가 뜬다. 실전 로그(00:21)에서
-            # 이미 캠핑한 캠프사이트 앞에서 매크로를 켜자 60초를 그냥 흘려보내고 앱을 재시작했다.
-            if (find_and_get_coords(img_np, t_camp_rest1, 0.70)
-                    or check_template_present(img_np, t_camp_dry, 0.70)):
-                arrived = True
-                break
-        else:
+        if not is_camp_branch:
+            # 🚨 캠핑 분기의 도착 판정은 위(전투 체크 직후)로 옮겼다 - 화살표 폴백에 가로채이지 않도록.
+            # 여기서는 하켄 분기(교회구역)만 처리한다.
             menu_state = check_and_handle_harken_menu(device, t_harken_blessing_donothing, t_harken_return, img_np=img_np, t_yeolda=t_yeolda)
             if menu_state == "returned":
                 print("✅ [필드맵 귀환] 하켄 '귀환' 클릭 완료.")
