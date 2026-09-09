@@ -4,7 +4,7 @@ import datetime
 import time
 import json
 
-CURRENT_VERSION = "1.20.0" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
+CURRENT_VERSION = "1.21.0" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
 
 # ==============================================================================
 # ⚙️ [Daphne 마스터 글로벌 제어 세팅 변수 구역 - 진짜 최상단 제어판]
@@ -122,9 +122,24 @@ else:
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.20.0
+# - 현재 버전: 1.21.0
 # - 최근 수정일: 2026-09-09
 # - 수정 기록:
+#   1.21.0: 🚀 ADB 화면 캡처를 원시(raw) 방식으로 전환 - 캡처 1회 평균 1.60초→0.63초(약 2.5배).
+#     기존 screencap -p(PNG 인코딩) + PIL 디코드 대신, 원시 screencap(비압축) + 헤더 파싱 +
+#     numpy reshape을 쓴다(에뮬레이터가 PNG로 압축하는 CPU 비용이 전송량 증가보다 훨씬 컸음 -
+#     같은 게임의 다른 매크로 WVD도 이 방식을 씀). src/screen_capture.py 신설
+#     (capture_screen_bytes/decode_screen_bytes/capture_screen) - 원시 실패 시 자동으로 기존 PNG
+#     방식 폴백, 반환 shape/dtype은 기존과 완전히 동일(H,W,4 uint8 RGBA)해 호출부 코드는 안 바꿔도
+#     된다. 매 루프 틱·모든 폴링 단계마다 캡처하므로 전 구간 체감 지연이 줄어든다(사용자 지적:
+#     "열다 반응이 8초쯤 걸려 답답하다"). 호출부 6개 파일 46곳 전수 치환(dungeon_bot 29, main 7,
+#     combat_manager 4, party_manager 4, chest_opener 1, inn_manager 1) - take_screencap_backup()
+#     (로그용 실제 PNG 파일 저장)만 원본 방식 유지. chest_opener.py는 유일하게 3채널 RGB를
+#     cv2.imdecode+BGR2RGB로 직접 만들던 특수 경로였는데, 합성 이미지로 채널 순서 일치를 결정적
+#     테스트로 확인 후 decode_screen_bytes()의 4채널 결과에서 [:,:,:3]으로 안전하게 대체했다.
+#     검증: 알파 채널 값 차이(PNG 항상 255 vs 원시 0/255 혼재)가 COLOR_RGB2GRAY 변환에 전혀 영향
+#     없음을 결정적 테스트로 확인, 라이브 캡처로 shape/dtype 동일 확인, 153개 함수 AST 미정의 참조
+#     전수검사(오탐 1건 - 중첩 클로저, 실결함 없음) + 전체 컴파일/임포트 확인.
 #   1.20.0 (2026-09-09 후속): 🚨 대설지대 실전 완주 검증 중 발견된 결함 4건 완치. (1) [30초 정체
 #     함정 완치] 아웃게임 화면 분류의 30초 정체 분기 중 heal_close/exit_mag/고정좌표 폴백 탭 경로만
 #     유일하게 last_action_time을 갱신하지 않아, 마을/세계지도/던전선택/여관 어디에도 안 걸리는 화면을
@@ -741,6 +756,7 @@ from mumu_display_check import check_display_configuration
 import dungeon_bot
 import inn_manager
 import chest_opener
+from screen_capture import capture_screen_bytes, decode_screen_bytes
 
 def handle_exception(exc_type, exc_value, exc_traceback):
     if issubclass(exc_type, KeyboardInterrupt):
@@ -1052,10 +1068,10 @@ def recover_app_startup(device):
     STARTUP_CAP_FAIL_LIMIT = 20  # 0.5초 간격 × 20회 = 약 10초 유예 (240초 워치독보다 24배 빠름)
     while counter < max_try:
         try:
-            raw_cap = device.screencap()
+            raw_cap = capture_screen_bytes(device)
             if raw_cap is None:
                 raise RuntimeError("Screencap returned None")
-            img_np = np.array(Image.open(io.BytesIO(raw_cap)))
+            img_np = decode_screen_bytes(raw_cap)
             if startup_cap_fail_counter:
                 print(f"✅ [기동 복구 캡처 회복] {startup_cap_fail_counter}회 실패 후 화면 캡처가 정상화되었습니다.")
             startup_cap_fail_counter = 0
@@ -1880,11 +1896,10 @@ def start_grand_orchestrator():
     while True:
         update_heartbeat()
         try:
-            raw_cap = device.screencap()
+            raw_cap = capture_screen_bytes(device)
             if raw_cap is None:
                 raise RuntimeError("Screencap returned None")
-            cap_img = Image.open(io.BytesIO(raw_cap))
-            img_np = np.array(cap_img)
+            img_np = decode_screen_bytes(raw_cap)
             cap_fail_counter = 0
         except Exception as cap_err:
             cap_fail_counter += 1
@@ -2347,9 +2362,9 @@ def start_grand_orchestrator():
                     while time.time() - poll_start < 10.0:
                         time.sleep(0.8)
                         try:
-                            raw_poll = device.screencap()
+                            raw_poll = capture_screen_bytes(device)
                             if raw_poll:
-                                img_np_poll = np.array(Image.open(io.BytesIO(raw_poll)))
+                                img_np_poll = decode_screen_bytes(raw_poll)
                                 if check_field_anchor_present(img_np_poll, t_field, 0.65):
                                     print(f"      ✅ [던전 진입 확인] 필드 안착 확인 (대기 {time.time()-poll_start:.1f}초)")
                                     entered = True
@@ -2501,9 +2516,9 @@ def start_grand_orchestrator():
                 while time.time() - poll_start < 10.0:
                     time.sleep(0.8)
                     try:
-                        raw_poll = device.screencap()
+                        raw_poll = capture_screen_bytes(device)
                         if raw_poll:
-                            img_np_poll = np.array(Image.open(io.BytesIO(raw_poll)))
+                            img_np_poll = decode_screen_bytes(raw_poll)
                             if check_field_anchor_present(img_np_poll, t_field, 0.65):
                                 print(f"      ✅ [던전 진입 확인] 필드 안착 확인 (대기 {time.time()-poll_start:.1f}초)")
                                 entered = True
@@ -2620,9 +2635,9 @@ def start_grand_orchestrator():
                 
                 time.sleep(1.5)
                 try:
-                    raw_cap_w = device.screencap()
+                    raw_cap_w = capture_screen_bytes(device)
                     if raw_cap_w:
-                        img_np = np.array(Image.open(io.BytesIO(raw_cap_w)))
+                        img_np = decode_screen_bytes(raw_cap_w)
                 except: pass
             
             # 🚨 [2026-09-09 실전 확인] 이 should_go_town 이분법은 "세계지도에 던전 직행 아이콘이 있는"

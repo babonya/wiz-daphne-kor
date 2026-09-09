@@ -12,6 +12,7 @@ import io
 import cv2
 import numpy as np
 from PIL import Image
+from screen_capture import capture_screen_bytes, decode_screen_bytes
 
 # 1440x2560 기준 정밀 카드 ROI 영역 (좌상X, 좌상Y, 우하X, 우하Y)
 SLOT_ROIS = {
@@ -193,9 +194,12 @@ def open_and_disarm_chest(device, img_np, thresh_yeolda, chest_opener_slot=6, ma
             pass
 
         try:
-            raw_cap = device.screencap()
-            img_np_current = cv2.imdecode(np.frombuffer(raw_cap, np.uint8), cv2.IMREAD_COLOR)
-            img_np_current = cv2.cvtColor(img_np_current, cv2.COLOR_BGR2RGB)
+            # 🚨 [2026-09-09] 이 자리만 다른 파일과 달리 cv2.imdecode(IMREAD_COLOR)+BGR2RGB로 3채널을
+            # 직접 만들던 특수 경로였다(다른 곳은 전부 4채널 RGBA). decode_screen_bytes()가 주는 4채널
+            # 배열에서 알파를 잘라내면 완전히 동일한 3채널 RGB가 된다(합성 이미지 R/G/B 단색으로 두 경로의
+            # 채널 순서가 정확히 일치함을 결정적 테스트로 확인 - screen_capture.py 상단 주석 참고).
+            raw_cap = capture_screen_bytes(device)
+            img_np_current = decode_screen_bytes(raw_cap)[:, :, :3]
         except Exception as cap_err:
             print(f"⚠️ [chest_opener] Screencap 버퍼 렉 감지: {cap_err}")
             time.sleep(0.1)

@@ -13,6 +13,7 @@ import random
 import cv2
 import numpy as np
 from PIL import Image
+from screen_capture import capture_screen_bytes, decode_screen_bytes
 
 # 🖥️ 1440x2560 해상도 기반 매크로 고정 좌표계 및 관심구역 (ROI)
 COORDS_SKILL_SLOTS = {
@@ -337,8 +338,8 @@ def execute_char_turn(device, img_np, active_char_filename):
         time.sleep(1.0)
         
         try:
-            curr_cap = device.screencap()
-            curr_np = np.array(Image.open(io.BytesIO(curr_cap)))
+            curr_cap = capture_screen_bytes(device)
+            curr_np = decode_screen_bytes(curr_cap)
             curr_gray = cv2.cvtColor(curr_np, cv2.COLOR_RGB2GRAY)
         except:
             continue
@@ -382,8 +383,8 @@ def execute_char_turn(device, img_np, active_char_filename):
     # 4. 아군 타겟팅 여부 감지 및 타겟팅
     time.sleep(0.5)
     try:
-        curr_cap = device.screencap()
-        curr_np = np.array(Image.open(io.BytesIO(curr_cap)))
+        curr_cap = capture_screen_bytes(device)
+        curr_np = decode_screen_bytes(curr_cap)
         curr_gray = cv2.cvtColor(curr_np, cv2.COLOR_RGB2GRAY)
     except:
         pass
@@ -401,8 +402,8 @@ def execute_char_turn(device, img_np, active_char_filename):
 
     # 5. 최종 확인 (OK / Next / 적 랜덤 타격)
     try:
-        curr_cap = device.screencap()
-        curr_np = np.array(Image.open(io.BytesIO(curr_cap)))
+        curr_cap = capture_screen_bytes(device)
+        curr_np = decode_screen_bytes(curr_cap)
         curr_gray = cv2.cvtColor(curr_np, cv2.COLOR_RGB2GRAY)
     except:
         pass
@@ -427,8 +428,8 @@ def execute_char_turn(device, img_np, active_char_filename):
     # 6. 마나/SP 부족 팝업 체크 복구 가드
     time.sleep(1.0)
     try:
-        curr_cap = device.screencap()
-        curr_np = np.array(Image.open(io.BytesIO(curr_cap)))
+        curr_cap = capture_screen_bytes(device)
+        curr_np = decode_screen_bytes(curr_cap)
         curr_gray = cv2.cvtColor(curr_np, cv2.COLOR_RGB2GRAY)
     except:
         return True

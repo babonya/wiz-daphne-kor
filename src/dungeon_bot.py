@@ -11,6 +11,7 @@ import datetime
 
 import chest_opener
 import party_manager
+from screen_capture import capture_screen, capture_screen_bytes, decode_screen_bytes
 
 # 💡 [v1.13.18 신설] 통합 힐링 필요 플래그 및 상자 복귀 감시 전역 변수
 # 💡 [v1.17.0] FFXI 콜라보 던전("북쪽의 유령선") 지원, 3채널 BGR 컬러 매칭 수렴 루프 하켄 스턱 완치, 체크포인트 1회 제한 + Redo 연동, 최초 기동 던전 직진입 안전 탈출
@@ -19,9 +20,26 @@ came_from_chest = False
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.20.0
+# - 현재 버전: 1.21.0
 # - 최근 수정일: 2026-09-09
 # - 수정 기록:
+#   1.21.0: 🚀 ADB 화면 캡처를 원시(raw) 방식으로 전환(상세는 main.py 참고, src/screen_capture.py
+#     신설). 이 파일이 호출부 46곳 중 가장 많은 29곳을 차지한다 - device.screencap() 직접 호출을
+#     capture_screen_bytes(device)로, np.array(Image.open(io.BytesIO(x)))를 decode_screen_bytes(x)로
+#     전수 치환(캡처+디코드 한줄짜리 6곳은 capture_screen(device)로 통합). 반환 shape/dtype이
+#     기존과 완전히 동일해 호출부의 다른 로직(if raw: / try-except 등)은 손대지 않았다.
+#   1.21.0 이전부터 있던 결함이지만 오늘 발견/완치: return_to_town_via_fieldmap_icon()의 스와이프
+#     탐색/아이콘 탭 재시도 두 루프가 "for x in range(n):" + 인터럽트 시 continue 패턴이었는데, for
+#     루프는 continue해도 range의 다음 값으로 그냥 넘어가서 인터럽트 처리 한 번마다 실제 스와이프 없이
+#     예산이 1씩 줄었다(실전 로그: 화살표 감지 4연속 후 "스와이프 1/8"이 바로 "6/8"로 건너뜀). while +
+#     실제 진행했을 때만 증가하는 카운터로 완치, 절대시간 워치독도 추가. 겸사겸사 확장된 필드맵 화면에
+#     화살표 도장과 0.76~0.81로 근접 매칭되는 UI 요소(접기/펼치기 삼각형으로 추정)를 실측으로 발견해,
+#     맵이 열려 있는 3개 호출부(탭 직후 폴링/스와이프 탐색/아이콘 탭 재시도)의 화살표 폴백을 억제했다
+#     (구체적 선택지 처리는 그대로 유지 - 오탐 위험은 화살표 단독 폴백에만 있었음).
+#   커서 미검출 무한 대기 완치(실전 확인, 2026-09-09): 미니맵 확장 탭 전 커서 체크 루프가 "커서
+#     미검출 + 전투 아님 + 확장도 아님"이 겹치면 탭을 시도할 방법이 아예 없어 1.5초씩 무한 대기만
+#     했다(실전 로그: 61초간 진행 없이 사용자가 수동 개입). 연속 5회(약 7.5초) 넘게 커서가 안 보이면
+#     대기를 포기하고 탭을 시도하는 폴백을 추가했다.
 #   1.20.0: 뮤뮤 안드15 전용화 대응은 main.py 참고(이 파일은 화면 캡처 방식 변경 없음). 이 버전에서
 #     이 파일은 대설지대 6층 실전 완주 검증 과정에서 발견된 결함들을 완치했다:
 #     (1) [전투를 메인 루프에 인계] return_to_town_via_fieldmap_icon()이 전투를 만나면 예전엔
@@ -467,11 +485,11 @@ def perform_camping_rest(device, t_camp_rest1, t_camp_rest2, t_dialogue_arrow, t
     start_time = time.time()
     rest_taps = 0
     while time.time() - start_time < max_wait:
-        raw = device.screencap()
+        raw = capture_screen_bytes(device)
         if not raw:
             time.sleep(0.5)
             continue
-        img_np = np.array(Image.open(io.BytesIO(raw)))
+        img_np = decode_screen_bytes(raw)
 
         # 0) 🆕 [2026-09-09 사용자 확인] "생명의 우물이 말라버렸다." = 이 필드에서 이미 캠핑을 했다는 뜻.
         # 캠핑은 필드 진입당 1회뿐이라 더 시도해도 소용없다 - 대화를 넘기고 "캠핑 완료"로 친 뒤,
@@ -521,11 +539,11 @@ def perform_camping_rest(device, t_camp_rest1, t_camp_rest2, t_dialogue_arrow, t
 def handle_merchant_encounter(device, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, max_wait=60.0):
     start_time = time.time()
     while time.time() - start_time < max_wait:
-        raw = device.screencap()
+        raw = capture_screen_bytes(device)
         if not raw:
             time.sleep(0.5)
             continue
-        img_np = np.array(Image.open(io.BytesIO(raw)))
+        img_np = decode_screen_bytes(raw)
 
         if check_field_anchor_present(img_np, t_field, 0.65):
             print("🛒 [행상인] 필드 복귀 확인 - 조우 종료.")
@@ -808,9 +826,9 @@ def try_resume_move(device, img_np, t_move_resume_act, t_move_resume_deact, t_no
     scale_x, scale_y = w / 1440.0, h / 2560.0
     for _step in range(2):
         try:
-            raw = device.screencap()
+            raw = capture_screen_bytes(device)
             if raw is None: continue
-            img_np_sub = np.array(Image.open(io.BytesIO(raw)))
+            img_np_sub = decode_screen_bytes(raw)
             last_img = img_np_sub
         except Exception:
             continue
@@ -850,8 +868,8 @@ def resume_or_confirm_chest(device, img_np, t_move_resume_act, t_move_resume_dea
     safe_device_shell(device, f"input tap {cx} {cy}")
     time.sleep(0.5)
     try:
-        raw2 = device.screencap()
-        img_check2 = np.array(Image.open(io.BytesIO(raw2))) if raw2 else img_check
+        raw2 = capture_screen_bytes(device)
+        img_check2 = decode_screen_bytes(raw2) if raw2 else img_check
     except Exception:
         img_check2 = img_check
     if check_template_present(img_check2, t_no_chest, 0.55):
@@ -892,9 +910,9 @@ def check_minimap_movement(device, duration=1.5, interval=0.5):
         if step > 0:
             time.sleep(interval)
         try:
-            raw = device.screencap()
+            raw = capture_screen_bytes(device)
             if raw is None: continue
-            img = np.array(Image.open(io.BytesIO(raw)))
+            img = decode_screen_bytes(raw)
             h, w = img.shape[:2]
             
             # 해상도 스케일링 대응 (1440x2560 기준 Y: 115~315, X: 1117~1317)
@@ -1122,10 +1140,10 @@ def check_and_handle_harken_menu(device, t_harken_blessing_donothing, t_harken_r
         return "not_present"
     try:
         if img_np is None:
-            raw = device.screencap()
+            raw = capture_screen_bytes(device)
             if not raw:
                 return "not_present"
-            img_np = np.array(Image.open(io.BytesIO(raw)))
+            img_np = decode_screen_bytes(raw)
         if not check_template_present(img_np, t_harken_blessing_donothing, 0.70):
             return "not_present"
 
@@ -1182,9 +1200,9 @@ def trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessin
     for h_wait in range(10):  # 3.75초 간격 * 10회 = 약 37.5초
         time.sleep(3.75)
         try:
-            raw_h = device.screencap()
+            raw_h = capture_screen_bytes(device)
             if raw_h:
-                img_np_h = np.array(Image.open(io.BytesIO(raw_h)))
+                img_np_h = decode_screen_bytes(raw_h)
 
                 # ⚔️ [2026-08-12 정체오판 방지] 전투 조우는 그 자체로 "먹통이 아니다"라는 증거이므로(사용자 지적),
                 # 정체 카운트/워치독을 리셋만 하고 이번 회차는 하켄 메뉴 체크 없이 넘어간다 - 전투를 대신 치러주진
@@ -1276,9 +1294,9 @@ def trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessin
         # 🚨 [재검증] 폴백 좌표가 실제로 맞았는지 확인 없이 무조건 성공 처리하던 결함 완치.
         # 폴백 탭 이후에도 여전히 귀환 화면이 잔류하면, 이번엔 실제 매칭 좌표로 한 번 더 정밀 재클릭한다.
         try:
-            raw_verify = device.screencap()
+            raw_verify = capture_screen_bytes(device)
             if raw_verify:
-                img_np_v = np.array(Image.open(io.BytesIO(raw_verify)))
+                img_np_v = decode_screen_bytes(raw_verify)
                 if check_color_template_present(img_np_v, t_harken_return, 0.75):
                     print("⚠️ [하켄귀환] 폴백 좌표 이후에도 귀환 목록 화면 잔류 감지! 실제 매칭 좌표로 정밀 재클릭을 시도합니다.")
                     find_and_click_color_template_in_bot(device, img_np_v, t_harken_return, 0.75)
@@ -1478,9 +1496,9 @@ def _return_after_camping(device, return_method, t_move_exit, t_field, t_harken_
     """
     exit_coords = None
     for _try in range(5):
-        raw = device.screencap()
+        raw = capture_screen_bytes(device)
         if raw:
-            img_np = np.array(Image.open(io.BytesIO(raw)))
+            img_np = decode_screen_bytes(raw)
             exit_coords = find_and_get_field_btn_coords(img_np, t_move_exit, 0.70)
             if exit_coords:
                 break
@@ -1497,9 +1515,9 @@ def _return_after_camping(device, return_method, t_move_exit, t_field, t_harken_
         # 나가기 버튼을 눌렀다는 것만으로는 아직 탈출이 끝난 게 아니다. "필드 화면이 완전히 사라짐"을 확인한다.
         walk_deadline = time.time() + 90.0
         while time.time() < walk_deadline:
-            raw = device.screencap()
+            raw = capture_screen_bytes(device)
             if raw:
-                img_np = np.array(Image.open(io.BytesIO(raw)))
+                img_np = decode_screen_bytes(raw)
                 if not check_field_anchor_present(img_np, t_field, 0.62):
                     print("🎉 [필드맵 귀환] 필드 화면 소멸 확인 - 도보 탈출 완료.")
                     return "returned"
@@ -1596,13 +1614,21 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
     expanded = False
     expand_attempts_used = 0
     combat_wait_deadline = time.time() + 180.0  # 절대 워치독 - 전투가 끝없이 이어지는 이상 상황 대비
+    # 🚨 [2026-09-09 실전 확인] "커서 미검출 + 전투 아님 + 확장도 아님"이 겹치면 이 루프가 탭을 시도할
+    # 방법이 아예 없어 1.5초씩 수동 개입 전까지 계속 헛돌았다(실전 로그 17:36:27~17:37:26, 61초간
+    # 아무 진행 없이 "필드 커서 미검출" 반복 - 180초 워치독까지는 살아있었지만 그 이후엔 앱 전체 재시작
+    # 이라는 비싼 실패로 이어짐). 커서가 안 보이는 진짜 원인(전투/확장)이 둘 다 아니라면, 이후에도 계속
+    # 없을 걸 기다리는 것보다 그냥 탭을 시도하는 편이 낫다 - 연속 실패 카운터를 두고 한계를 넘으면
+    # 대기를 포기하고 탭으로 넘어간다.
+    cursor_wait_miss_count = 0
+    CURSOR_WAIT_MISS_LIMIT = 5
     while expand_attempts_used < 3 and time.time() < combat_wait_deadline:
         # 탭 전 전투/중립몹/행상인 조우 여부 확인 - 조우 중이면 탭 자체를 보류(재시도 횟수 소모 안 함)
-        raw = device.screencap()
+        raw = capture_screen_bytes(device)
         if not raw:
             time.sleep(1.0)
             continue
-        img_np = np.array(Image.open(io.BytesIO(raw)))
+        img_np = decode_screen_bytes(raw)
         if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=t_doghole):
             continue
         # 🚨 [2026-09-08 실전 확인] 예전엔 "전투 도장이 안 보이면 탭"이라는 음성 조건이었는데, 전투 중
@@ -1621,9 +1647,13 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
                 print("🗺️ [필드맵 귀환] 커서 미검출이지만 확장 상태 확인됨 - 확장 완료로 판정합니다.")
                 expanded = True
                 break
-            print("⏳ [필드맵 귀환] 필드 커서 미검출(전투 아님) - 화면이 안정될 때까지 탭을 보류합니다.")
-            time.sleep(1.5)
-            continue
+            cursor_wait_miss_count += 1
+            if cursor_wait_miss_count < CURSOR_WAIT_MISS_LIMIT:
+                print(f"⏳ [필드맵 귀환] 필드 커서 미검출(전투 아님) - 화면이 안정될 때까지 탭을 보류합니다. ({cursor_wait_miss_count}/{CURSOR_WAIT_MISS_LIMIT})")
+                time.sleep(1.5)
+                continue
+            print(f"⚠️ [필드맵 귀환] 커서 미검출이 {CURSOR_WAIT_MISS_LIMIT}회 연속돼 대기를 포기하고 탭을 시도합니다.")
+            cursor_wait_miss_count = 0
 
         expand_attempts_used += 1
         print(f"🗺️ [필드맵 귀환] 미니맵 확장 탭 {expand_attempts_used}/3: ({ex},{ey})")
@@ -1632,11 +1662,17 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
         combat_interrupted = False
         for _poll in range(3):
             time.sleep(1.0)
-            raw = device.screencap()
+            raw = capture_screen_bytes(device)
             if not raw:
                 continue
-            img_np = np.array(Image.open(io.BytesIO(raw)))
-            if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=t_doghole):
+            img_np = decode_screen_bytes(raw)
+            # 🚨 [2026-09-09 실측 확정] 여기부터는 화살표 폴백을 끈다(t_dialogue_arrow 대신 None 전달) -
+            # 맵이 열리는 중이라 확장 화면 UI(예: 하단 접기/펼치기 삼각형)가 화살표 도장과 0.76~0.81로
+            # 매우 근접해 매칭된다(실측: 4개 확장 화면 스크린샷 전수 검증, 임계값 0.82 바로 아래). 실전
+            # 캡처 노이즈로 이 근접치가 0.82를 넘어 오탐이 실제로 발생함을 확인(2026-09-09 17:16 로그 -
+            # 화살표 감지가 4회 연속 찍히며 스와이프 예산을 대신 소모). 구체적 선택지(싸운다/행상인/
+            # 빠져나간다)는 그대로 처리한다 - 오탐 위험은 오직 "화살표만 있고 아무 선택지도 안 걸리는" 폴백 경로에만 있다.
+            if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, None, t_field, t_doghole=t_doghole):
                 print("⚠️ [필드맵 귀환] 탭 직후 중립몹/행상인 조우 처리 - 이번 시도는 재시도 횟수에서 제외합니다.")
                 combat_interrupted = True
                 expand_attempts_used -= 1  # 조우로 무산된 시도는 예산에서 다시 돌려준다
@@ -1669,11 +1705,21 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
     # 사용자 실기 확인 결과 조건이 붙는다 - (1) 캐릭터가 움직이는 중이 아니어야 하고, (2) 확장 후 1~2초
     # 안에 전투 조우가 없어야 한다. 둘 중 하나라도 어긋나면 확장 상태에서도 전투가 열린다. 그래서 이
     # 이후 단계에도 조우/전투 체크를 계속 유지한다(값싼 방어가 아니라 실제로 필요한 방어다).
-    for attempt in range(max_swipe_attempts):
-        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=t_doghole):
-            raw = device.screencap()
+    # 🚨 [2026-09-09 실전 확인 - 카운터 소모 버그 완치] 예전엔 "for attempt in range(max_swipe_attempts):"
+    # 였는데, 인터럽트 처리 후 continue를 해도 for 루프는 range의 다음 값으로 그냥 넘어간다 - 즉
+    # 인터럽트 한 번 처리할 때마다 실제로 스와이프를 안 했는데도 예산이 1씩 줄어들었다(실전 로그: 화살표
+    # 감지가 4번 연속 찍히자 "스와이프 탐색 1/8" 다음이 바로 "6/8"로 건너뜀 - 2~5회차가 전부 인터럽트
+    # 처리에 조용히 소모됨). while 루프 + 실제로 스와이프했을 때만 증가하는 카운터로 분리해 완치.
+    # 화살표 폴백도 억제한다(사유는 위 탭 직후 폴링과 동일 - 확장 화면 UI 삼각형이 0.76~0.81로 근접 매칭).
+    attempt = 0
+    # 🚨 인터럽트 처리는 이제 attempt를 안 까먹으므로 이론상 무한정 반복될 수 있다(실제 진행 없이
+    # 인터럽트만 계속 뜨는 이상 상황 대비) - 절대시간 워치독을 추가한다(다른 루프들과 동일 패턴).
+    swipe_search_deadline = time.time() + 120.0
+    while attempt < max_swipe_attempts and time.time() < swipe_search_deadline:
+        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, None, t_field, t_doghole=t_doghole):
+            raw = capture_screen_bytes(device)
             if raw:
-                img_np = np.array(Image.open(io.BytesIO(raw)))
+                img_np = decode_screen_bytes(raw)
             continue
         icon_coords = _find_first_icon(img_np, target_icons)
         if icon_coords:
@@ -1682,10 +1728,11 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
         print(f"🔍 [필드맵 귀환] 목표 아이콘 미검출 - 스와이프 탐색 {attempt + 1}/{max_swipe_attempts}")
         safe_device_shell(device, f"input swipe {wp[0]} {wp[1]} {wp[2]} {wp[3]} 400")
         time.sleep(1.0)
-        raw = device.screencap()
+        attempt += 1
+        raw = capture_screen_bytes(device)
         if not raw:
             continue
-        img_np = np.array(Image.open(io.BytesIO(raw)))
+        img_np = decode_screen_bytes(raw)
 
     if not icon_coords:
         print("⚠️ [필드맵 귀환] 스와이프 탐색 끝까지 목표 아이콘을 찾지 못했습니다.")
@@ -1701,20 +1748,26 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
     # 4. 아이콘 탭 → 자동이동 버튼 확인(전체검색). 가장자리를 탭하면 버튼이 아예 안 뜨므로 재탐색한다.
     tap_x, tap_y = icon_coords
     automove_coords = None
-    for retry in range(3):
+    # 🚨 [2026-09-09] 여기도 스와이프 탐색 루프와 동일한 종류의 결함이 있었다(for range + continue가
+    # 인터럽트 처리만으로 예산을 까먹음) - while + 실제 탭했을 때만 증가하는 카운터로 통일. 화살표
+    # 폴백도 같은 이유로 억제한다(맵이 아직 열려 있는 상태 - 확장 화면 UI 삼각형 오탐 위험).
+    retry = 0
+    icon_tap_deadline = time.time() + 60.0
+    while retry < 3 and time.time() < icon_tap_deadline:
         print(f"📍 [필드맵 귀환] 목표 아이콘 탭: ({tap_x},{tap_y})")
         safe_device_shell(device, f"input tap {tap_x} {tap_y}")
         time.sleep(0.8)
-        raw = device.screencap()
+        raw = capture_screen_bytes(device)
         if not raw:
             continue
-        img_np = np.array(Image.open(io.BytesIO(raw)))
-        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=t_doghole):
+        img_np = decode_screen_bytes(raw)
+        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, None, t_field, t_doghole=t_doghole):
             continue
         automove_coords = _find_automove_button(img_np, automove_primary, automove_fallback)
         if automove_coords:
             break
-        print(f"⚠️ [필드맵 귀환] 자동이동 버튼 미검출(가장자리 탭 추정) - 재탐색 {retry + 1}/3")
+        retry += 1
+        print(f"⚠️ [필드맵 귀환] 자동이동 버튼 미검출(가장자리 탭 추정) - 재탐색 {retry}/3")
         icon_coords = _find_first_icon(img_np, target_icons)
         if icon_coords:
             tap_x, tap_y = icon_coords
@@ -1744,11 +1797,11 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
     last_cursor_change_time = time.time()
     AUTOMOVE_STALL_SECONDS = 15.0
     while time.time() < arrival_deadline:
-        raw = device.screencap()
+        raw = capture_screen_bytes(device)
         if not raw:
             time.sleep(1.0)
             continue
-        img_np = np.array(Image.open(io.BytesIO(raw)))
+        img_np = decode_screen_bytes(raw)
 
         if check_combat_template_present(img_np, t_combat_in, 0.80) or check_combat_template_present(img_np, t_combat_slow, 0.80):
             # 🚨 여기서도 기다리지 않는다 - 메인 루프의 IN_COMBAT이 전투를 몰아야 자동전투가 깨져도 복구된다.
@@ -2040,9 +2093,9 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
             pass
 
         try:
-            raw_cap = device.screencap()
+            raw_cap = capture_screen_bytes(device)
             if raw_cap is None: raise RuntimeError("Screencap returned None")
-            img_np = np.array(Image.open(io.BytesIO(raw_cap)))
+            img_np = decode_screen_bytes(raw_cap)
             cap_fail_counter = 0
         except Exception as cap_err:
             cap_fail_counter += 1
@@ -2501,7 +2554,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                         
                         # 화면 갱신 후 상자 버튼 활성화 확인
                         try:
-                            raw_cap = device.screencap()
+                            raw_cap = capture_screen_bytes(device)
                             img_np_check = cv2.imdecode(np.frombuffer(raw_cap, np.uint8), cv2.IMREAD_COLOR)
                             img_np_check = cv2.cvtColor(img_np_check, cv2.COLOR_BGR2RGB)
                         except:
@@ -2682,9 +2735,9 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                         if moved:
                             # 2) 도착 화면 재캡처 및 상태 분석
                             try:
-                                raw = device.screencap()
+                                raw = capture_screen_bytes(device)
                                 if raw:
-                                    img_np = np.array(Image.open(io.BytesIO(raw)))
+                                    img_np = decode_screen_bytes(raw)
                             except: pass
                             
                             # 🚨 [이동 안착 지점 2차 상자 포착 가드]
@@ -2711,9 +2764,9 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                     
                                     # 재스캔 및 예외 검증
                                     try:
-                                        raw_mine = device.screencap()
+                                        raw_mine = capture_screen_bytes(device)
                                         if raw_mine is None: continue
-                                        img_np_mine = np.array(Image.open(io.BytesIO(raw_mine)))
+                                        img_np_mine = decode_screen_bytes(raw_mine)
                                     except:
                                         continue
                                         
@@ -2795,9 +2848,9 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                             safe_device_shell(device, f"input tap {ex_bz} {ey_bz}")
                             time.sleep(1.5)
                             expanded_bz = False
-                            raw_bz_chk = device.screencap()
+                            raw_bz_chk = capture_screen_bytes(device)
                             if raw_bz_chk:
-                                img_bz_chk = np.array(Image.open(io.BytesIO(raw_bz_chk)))
+                                img_bz_chk = decode_screen_bytes(raw_bz_chk)
                                 expanded_bz = _check_fieldmap_expanded(img_bz_chk, t_field_expanded_common, t_fieldmap_close_common)
                             if expanded_bz:
                                 print("🗺️ [눈보라 판별] 필드맵이 정상 확장됨 - 눈보라가 아니라 커서가 아이콘에 가려진 상태입니다. 맵을 닫고 일반 절차로 진행합니다.")
@@ -2818,9 +2871,9 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                     print(f"❄️ [눈보라구간] 재개 버튼 탭: {resume_coords}")
                                     safe_device_shell(device, f"input tap {resume_coords[0]} {resume_coords[1]}")
                                     time.sleep(1.2)
-                                    raw_bz = device.screencap()
+                                    raw_bz = capture_screen_bytes(device)
                                     if raw_bz:
-                                        img_np_bz = np.array(Image.open(io.BytesIO(raw_bz)))
+                                        img_np_bz = decode_screen_bytes(raw_bz)
                                         if check_template_present(img_np_bz, t_no_chest, 0.55):
                                             exit_coords = find_and_get_field_btn_coords(img_np_bz, t_move_exit, 0.70)
                                             if exit_coords:
@@ -2867,9 +2920,9 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                             
                             for step in range(3):
                                 try:
-                                    raw = device.screencap()
+                                    raw = capture_screen_bytes(device)
                                     if raw is None: continue
-                                    img_np_sub = np.array(Image.open(io.BytesIO(raw)))
+                                    img_np_sub = decode_screen_bytes(raw)
                                 except:
                                     continue
                                 
@@ -2955,7 +3008,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     toast_detected = True
                     break
                 time.sleep(0.3)
-                try: img_np = np.array(Image.open(io.BytesIO(device.screencap())))
+                try: img_np = capture_screen(device)
                 except: continue
 
             if toast_detected or state == "TRIGGER_EXIT":
@@ -3355,7 +3408,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     safe_device_shell(device, f"input tap {yuzu_sc_coords[0]} {yuzu_sc_coords[1]}")
                     time.sleep(0.7) 
                     
-                    try: img_np_pop = np.array(Image.open(io.BytesIO(device.screencap())))
+                    try: img_np_pop = capture_screen(device)
                     except: continue
                     lvl1_gray_coords = find_and_get_coords(img_np_pop, t_btn_lvl1, 0.68)
                     lvl1_atv_coords = find_and_get_coords(img_np_pop, t_btn_lvl1_atv, 0.68)
@@ -3367,7 +3420,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                         safe_device_shell(device, f"input tap {target_lvl1_coords[0]} {target_lvl1_coords[1]}")
                         time.sleep(0.4) 
                         
-                        try: img_np_confirm = np.array(Image.open(io.BytesIO(device.screencap())))
+                        try: img_np_confirm = capture_screen(device)
                         except: continue
                         ok_coords = find_and_get_coords(img_np_confirm, t_btn_lvl_ok, 0.68)
                         if ok_coords:
@@ -3384,7 +3437,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     print("🎯 [명함 포착] '정밀 공격' 단축바 식별 ➔ 밀라나 턴 확정!!")
                     safe_device_shell(device, f"input tap {milana_sc_coords[0]} {milana_sc_coords[1]}")
                     time.sleep(0.7) 
-                    try: img_np_tgt = np.array(Image.open(io.BytesIO(device.screencap())))
+                    try: img_np_tgt = capture_screen(device)
                     except: continue
                     fire_target_monster_body(device, img_np_tgt, t_next, t_arrow)
                     print("      ✅ [주입 대성공] 밀라나 '정밀 사격' 몸통 조준 사격 완료!")
@@ -3398,7 +3451,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     print("⚔️ [명함 포착] '땅 가르기 일격' 단축바 식별 ➔ 격수 형제 ➔ 전격 통과!")
                     safe_device_shell(device, f"input tap {guksu_sc_coords[0]} {guksu_sc_coords[1]}")
                     time.sleep(0.7) 
-                    try: img_np_tgt = np.array(Image.open(io.BytesIO(device.screencap())))
+                    try: img_np_tgt = capture_screen(device)
                     except: continue
                     fire_target_monster_body(device, img_np_tgt, t_next, t_arrow)
                     print("      ✅ [주입 대성공] 격수군단 '땅 가르기 일격' 몸통 파쇄 완료!")
@@ -3451,7 +3504,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
 
         elif state == "PLAY_MINIGAME":
             chest_opener.solve_trap_game(device, img_np)
-            try: img_np_post = np.array(Image.open(io.BytesIO(device.screencap())))
+            try: img_np_post = capture_screen(device)
             except: continue
             if chest_opener.is_minigame_screen(img_np_post, height, width): state = "PLAY_MINIGAME"
             else: state = "CLEAR_CHECK"

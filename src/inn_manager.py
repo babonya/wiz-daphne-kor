@@ -1,3 +1,4 @@
+from screen_capture import capture_screen_bytes, decode_screen_bytes
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
 # - 현재 버전: 1.17.0-hotfix1
@@ -169,8 +170,8 @@ def run_inn_sleep_sequence(device):
             pass
 
         try:
-            raw_cap = device.screencap()
-            img_np = np.array(Image.open(io.BytesIO(raw_cap)))
+            raw_cap = capture_screen_bytes(device)
+            img_np = decode_screen_bytes(raw_cap)
         except:
             time.sleep(0.3)
             continue

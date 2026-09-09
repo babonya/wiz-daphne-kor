@@ -1,3 +1,4 @@
+from screen_capture import capture_screen
 # -*- coding: utf-8 -*-
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
@@ -223,7 +224,7 @@ def run_party_healing_sequence(device, t_auto_btn, t_close_btn, healer_slot=5, m
     enter_success = False
     
     for idx, slot_idx in enumerate(slot_sequence, 1):
-        try: img_np = np.array(Image.open(io.BytesIO(device.screencap())))
+        try: img_np = capture_screen(device)
         except:
             time.sleep(0.3)
             continue
@@ -275,7 +276,7 @@ def run_party_healing_sequence(device, t_auto_btn, t_close_btn, healer_slot=5, m
         return False
 
     # [단계] 자동힐 터치
-    try: img_np = np.array(Image.open(io.BytesIO(device.screencap())))
+    try: img_np = capture_screen(device)
     except: return False
 
     auto_coords = find_gray_coords(img_np, G_AUTO_BTN, 0.75) 
@@ -290,7 +291,7 @@ def run_party_healing_sequence(device, t_auto_btn, t_close_btn, healer_slot=5, m
         time.sleep(0.7)
 
     # [단계] 일괄회복 최종 승인 터치
-    try: img_np = np.array(Image.open(io.BytesIO(device.screencap())))
+    try: img_np = capture_screen(device)
     except: return False
 
     h, w = img_np.shape[:2]
@@ -309,7 +310,7 @@ def run_party_healing_sequence(device, t_auto_btn, t_close_btn, healer_slot=5, m
         time.sleep(6.0)
 
     # [단계] 캐릭터 창 "닫기" 필드 복귀
-    try: img_np = np.array(Image.open(io.BytesIO(device.screencap())))
+    try: img_np = capture_screen(device)
     except: return True
 
     close_coords = find_gray_coords(img_np, G_CLOSE_BTN, 0.75)
