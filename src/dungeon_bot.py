@@ -20,9 +20,20 @@ came_from_chest = False
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.21.4
-# - 최근 수정일: 2026-09-09
+# - 현재 버전: 1.21.5
+# - 최근 수정일: 2026-09-10
 # - 수정 기록:
+#   1.21.5: 🚨 대설지대 상자파밍 중 터치가 완전히 죽어도 300초 워치독이 발동 조건에 못 미쳐 3시간
+#     넘게 재시작이 안 걸리던 결함 완치. `prev_cursor_dir`(대설지대 전용 커서방향 이동감지 기준값)이
+#     매크로 기동 시 딱 한 번만 초기화되고 그 뒤로 갱신되지 않는 구조라, 캐릭터가 실제로는 전혀 못
+#     움직였는데도 "지금 방향"이 몇 시간 전의 낡은 기준값과 우연히만 다르면 첫 프레임에서 곧장
+#     "이동함"으로 오판되고, 그 오판이 정체 타이머(last_state_changed_time)까지 매번 리셋해 절대
+#     워치독(300초) 발동에 필요한 30초 정체 누적 자체가 안 됐다(실전 로그 2026-09-10 03:22~06:44,
+#     "상자 자동 이동"→"이동 시작 확인"만 무한 반복. 사용자가 MuMu 관리자 화면에서 해당 인스턴스가
+#     "실행이 중지됨" 상태였고 ADB 연결/캡처는 살아있는데 터치만 죽어 있었음을 직접 확인). "상자 자동
+#     이동" 탭 직전 화면에서 방향을 다시 찍어 매번 새 기준값을 세우도록 완치 - 비교 대상이 항상
+#     "방금 전"이 되도록 해서, 진짜로 안 움직였다면 정체 타이머가 정상 누적돼 기존 300초 워치독이
+#     제대로 작동한다. 상세는 main.py 참고.
 #   1.21.4: (이 파일 자체는 변경 없음, 버전 동기화용) recover_app_startup()이 대설지대 "마을외곽"
 #     화면을 프리셋에 따라 반쪽만 인식하던 결함 완전 완치. 상세는 main.py 참고.
 #   1.21.3: 🚨 우물(캠프) 아이콘이 화면 상단 타이틀바에 너무 가까우면 자동이동 버블이 가려 안 보이던
@@ -3064,6 +3075,23 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                         coords = find_chest_btn_coords(img_np, t_move_chest_act, t_move_chest_deact, 0.70)
                     if coords:
                         cx, cy = coords
+                        # 🚨 [2026-09-10 실전 확인 - 터치 먹통 3시간 정체 완치] prev_cursor_dir가
+                        # start_main_macro 진입 시 딱 한 번만 초기화되고, 이 아래 이동감지 루프의
+                        # moved=True 분기는 break로 곧장 빠져나가느라 그 값을 갱신하지 않는다 - 그래서
+                        # 이 비교는 "방금 탭하기 전"이 아니라 훨씬 이전(심하면 몇 시간 전) 시점의 낡은
+                        # 방향과 계속 비교되고 있었다. 실전 로그(2026-09-10 03:22~06:44, 3시간 넘게
+                        # "이동 시작 확인"만 반복): MuMu 인스턴스의 터치 입력만 죽고 ADB 연결/화면 캡처는
+                        # 멀쩡했던 상황(사용자가 MuMu 관리자 화면의 "실행이 중지됨" 표시로 직접 확인)에서,
+                        # 캐릭터는 실제로 전혀 움직이지 못했는데도 "지금 방향"이 그 낡은 기준값과 우연히만
+                        # 다르면 이동감지 루프 첫 프레임에서 곧장 moved=True로 오판됐다. 이 오판이
+                        # last_state_changed_time까지 매번 리셋해버려, 진짜 정체를 잡아야 할 절대 워치독
+                        # 조차 한 번도 발동하지 못했다(3시간 동안 재시작 0회). 탭 직전 화면(img_np, 아직
+                        # 반응 전)에서 방향을 다시 찍어 "이번 탭 기준"으로 새로 세운다 - 비교 대상은 항상
+                        # "방금 전"이어야지 임의의 과거 시점이면 안 된다.
+                        if dungeon_name == "대설지대":
+                            fresh_cursor_dir = get_minimap_cursor_direction(img_np, t_cursor_up, t_cursor_down, t_cursor_left, t_cursor_right)
+                            if fresh_cursor_dir is not None:
+                                prev_cursor_dir = fresh_cursor_dir
                         # 🚨 [2026-08-28 상자 이동 대기시간 단축] 미니맵 이동 여부와 무관하게 항상 2연타부터
                         # 찍던 걸 1회 탭으로 변경 - 던전 필드에서 멈춰서 확인하는 시간 자체가 가장 위험한
                         # 구간(기습 위험)이라는 사용자 판단에 따라, 1차 탭으로 충분한 대부분의 경우 탭 간격
@@ -3114,6 +3142,11 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                     if prev_cursor_dir is not None and cursor_dir is not None and cursor_dir != prev_cursor_dir:
                                         moved = True
                                         img_np = img_np_sub
+                                        # 🚨 [2026-09-10] break 전에 기준값을 갱신 - 예전엔 여기서 그냥
+                                        # break해 prev_cursor_dir이 이번에 감지한 새 방향으로 안 바뀌고
+                                        # 계속 낡은 채로 남아있었다(위 탭 직전 갱신과 별개로, 다음 상자
+                                        # 이동 시도에서도 계속 낡은 기준과 비교되지 않도록 이중 안전).
+                                        prev_cursor_dir = cursor_dir
                                         break
                                     if cursor_dir is not None:
                                         prev_cursor_dir = cursor_dir
