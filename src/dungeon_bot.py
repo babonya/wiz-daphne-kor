@@ -20,9 +20,18 @@ came_from_chest = False
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.21.0
+# - 현재 버전: 1.21.1
 # - 최근 수정일: 2026-09-09
 # - 수정 기록:
+#   1.21.1: 🚨 정체 타이머(last_state_changed_time) 리셋 누락 2건 완치(CLAUDE.md에 이미 기록된 재발
+#     패턴과 같은 유형). v1.21.0을 실전 운용하던 사용자가 "힐링 시퀀스 도중 정체로 빠지고, 그 직후
+#     뜬 상자를 못 잡는다"고 보고해 발견. (1) 힐링 성공 분기(party_manager.run_party_healing_sequence
+#     완료 → 재개 탭) 전체에 리셋이 없었다 - 이 호출이 실전 27초 걸리는 블로킹 함수인데, 그동안(과
+#     그 이후에도) 타이머가 힐링 시작 시점에 멈춰 있어 힐링+재개를 마친 직후 곧바로 "31초 정체"로
+#     오판됐다(실전 로그 2026-09-09 17:55:56~17:56:27). (2) FIELD_WAIT의 "📦 [메인] '열다' 감지!"
+#     경로(가장 빈번하게 도는 상자 진입점 - 사용자가 처음 보고한 정체 사고 직전 로그 줄과 정확히 일치)
+#     와 재개-이동 재시도 결과 처리(opened/toast_detected/moved 세 갈래, 전부 진짜 화면 진행)에도
+#     리셋이 없었다 - 최종 else(진짜 정체 - 상자없음 판정)는 의도대로 리셋 대상에서 제외했다.
 #   1.21.0: 🚀 ADB 화면 캡처를 원시(raw) 방식으로 전환(상세는 main.py 참고, src/screen_capture.py
 #     신설). 이 파일이 호출부 46곳 중 가장 많은 29곳을 차지한다 - device.screencap() 직접 호출을
 #     capture_screen_bytes(device)로, np.array(Image.open(io.BytesIO(x)))를 decode_screen_bytes(x)로
@@ -2580,6 +2589,11 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                 print("📦 [메인] '열다' 감지! 상자 해제 시퀀스로 진입.")
                 if chest_opener.open_and_disarm_chest(device, img_np, t_yeolda, chest_opener_slot=chest_opener_slot, masked_adventurer_slot=masked_adventurer_slot):
                     state = "BRANCH_CHECK"
+                # 🚨 [2026-09-09 실전 확인 - 정체 타이머 리셋 누락 완치] CLAUDE.md에 이미 기록된 재발 패턴과
+                # 같은 유형 - 상자 해제라는 명백한 화면 진행인데도 리셋이 없었다. 이 경로는 사용자가 최초로
+                # 보고한 정체 사고의 직전 로그 줄("📦 [메인] '열다' 감지!")과 정확히 일치하는, 아주 빈번하게
+                # 도는 자리라 영향이 크다.
+                last_state_changed_time = time.time()
                 continue
 
         if state in ["FIELD_WAIT", "AUTO_MOVING"]:
@@ -2651,6 +2665,15 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                         print("💊 [통합 힐링 기동] 안전 필드 안착 확인. 정비 시퀀스를 시작합니다.")
                         heal_success = party_manager.run_party_healing_sequence(device, t_heal_auto, t_heal_close, healer_slot=healer_slot, masked_adventurer_slot=masked_adventurer_slot)
                         if heal_success:
+                            # 🚨 [2026-09-09 실전 확인] 이 분기 전체(힐링 성공 → 재개 탭 → continue)에
+                            # last_state_changed_time 리셋이 빠져 있었다 - CLAUDE.md에 이미 기록된 재발
+                            # 패턴("화면 진행 감지 시 정체 카운터 리셋 누락")과 정확히 같은 유형. 힐링
+                            # 시퀀스(party_manager.run_party_healing_sequence)는 블록킹 호출로 실전 27초가
+                            # 걸렸는데, 그동안 타이머가 힐링 시작 시점에 멈춰 있어 힐링+재개 탭까지 마친
+                            # 직후 정체 감지가 "31초 정체"로 즉시 오판해 비상 뒤로가기를 주입했다(실전 로그
+                            # 2026-09-09 17:55:56~17:56:27 - 그 뒤로가기가 마침 새로 뜬 상자 화면을 건드려
+                            # 정상 스캔 기회를 날림). 힐링 완료는 명백한 화면 진행이므로 여기서 리셋한다.
+                            last_state_changed_time = time.time()
                             low_threshold_active_until = 0.0
                             event_counter = 0
                             need_heal = False
@@ -2964,6 +2987,11 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                 time.sleep(0.4)
                             
                             if opened or toast_detected or moved:
+                                # 🚨 [2026-09-09 실전 확인 - 정체 타이머 리셋 누락 완치] opened/toast_detected/
+                                # moved 셋 다 진짜 화면 진행인데 last_state_changed_time 리셋이 하나도 없었다
+                                # (같은 유형 재발 - CLAUDE.md 참고). 아래 최종 else(진짜 정체 - 상자없음 판정)는
+                                # 이 조건에 안 걸리므로 리셋되지 않는다(의도한 대로).
+                                last_state_changed_time = time.time()
                                 action_success = True
                                 break
                         
