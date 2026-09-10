@@ -4,7 +4,7 @@ import datetime
 import time
 import json
 
-CURRENT_VERSION = "1.21.5" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
+CURRENT_VERSION = "1.21.6" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
 
 # ==============================================================================
 # ⚙️ [Daphne 마스터 글로벌 제어 세팅 변수 구역 - 진짜 최상단 제어판]
@@ -12,8 +12,16 @@ CURRENT_VERSION = "1.21.5" # 📋 [시스템 버전 변수] 업데이트 시 이
 #    이 구역은 "어떤 프리셋을 쓰든 공통으로 적용되는" 설정값만 모아둔 곳입니다.
 # ==============================================================================
 
-LIMIT_DUNGEON_LOOPS = 5             # 🔄 [마을 회군 기준] 던전을 몇 바퀴 돌고 마을(여관)로 복귀할지 설정
+LIMIT_DUNGEON_LOOPS = 0              # 🔄 [마을 회군 기준] 던전을 몇 바퀴 돌고 마을(여관)로 복귀할지 설정
                                     #    0으로 설정 시 상자파밍은 회군 없이 무한 주회합니다. (광석파밍은 이 값과 무관하게 곡괭이가 소진될 때까지 항상 무한 재진입하므로, 광석파밍 프리셋에서는 이 값이 아무 영향도 없습니다.)
+                                    # 🚨 [2026-09-10 실전 확인 - 완치] 대설지대는 이 한도에 도달해도 "마을외곽"보다 안쪽인 진짜
+                                    # "마을"로 들어가는 경로를 타지 않고 그냥 재진입만 거부하고 있었다 - 마을외곽 화면 핸들러가
+                                    # 한도를 모른 채 무조건 재클릭해 "재진입 거부(뒤로가기)"와 "무조건 재클릭"이 서로를 끝없이
+                                    # 되받아쳤다(실전 로그: 5회 도달 직후 약 2시간 동안 "마을외곽↔6층 경로목록"만 반복, 뮤뮤/
+                                    # 터치는 멀쩡했던 순수 로직 버그). mark_heavysnow_resupply_pending()이 이 한도 도달도 여관
+                                    # 강제 조건에 포함하도록 완치했다(상세는 그 함수 주석 참고) - 이 값을 0이 아닌 값으로 바꾸면
+                                    # 그 완치가 실제로 작동해 N주회마다 여관을 들르고 재개한다. 사용자 확정: "지금은 여관 갈
+                                    # 필요가 없다" - 당장은 0(무한 주회)으로 유지, 필요해지면 이 값만 바꿔서 쓸 것.
 START_RUN_COUNT_OFFSET = 1          # 🚀 [초기 부팅 주회 카운트] 매크로 시작 시 초기 주회 offset 수치 (초기값=던전루프와 같은 수치, 던전에서 시작하면 해당 주회 후 복귀, 마을이면 숙박 후 주회 시작)
 ENABLE_FIRST_COMBAT_SKILL = 0       # ⚔️ [초기 전투 스킬 제어] (⚠️ 현재 미구현으로 추후 구현 예정이니 무조건 0으로 고정해 주세요) (0: Off, 1: On)
 ENABLE_HEAL_AFTER_CHEST = 0         # 📦 [상자 개방 후 힐링] 상자 해제/개방 성공 후 긴급 파티 치료(정비)를 작동할지 설정 (0: Off, 1: On)
@@ -122,9 +130,32 @@ else:
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.21.5
+# - 현재 버전: 1.21.6
 # - 최근 수정일: 2026-09-10
 # - 수정 기록:
+#   1.21.6: 🚨 대설지대 주회 한도 도달 시 "마을외곽 ↔ 경로목록" 무한 왕복 완치(근본 완치).
+#     `LIMIT_DUNGEON_LOOPS=5`로 6층을 돌리다 주회 한도 도달 직후 약 2시간 동안 무한루프에 빠짐 -
+#     마을외곽 화면 핸들러가 주회 한도를 전혀 모른 채 무조건 "대설 지대"를 재클릭하고, 경로목록
+#     화면은 한도 체크 후 뒤로가기로 돌려보내는 두 핸들러가 서로를 끝없이 되받아침(실전 로그: 3초
+#     간격으로 계속 다른 화면을 정확히 인식하며 전환 - 뮤뮤 정지가 아니라 순수 로직 버그였음). 근본
+#     원인은 대설지대가 한도 도달 시 "마을외곽"보다 안쪽인 진짜 "마을"로 들어가는 경로를 전혀 타지
+#     않고 있었다는 것. 사용자 확정 방향: "5회 루프에 맞았으면 여관에 돌아가게 해야함 - 진짜 나가서
+#     주회5회 마다 여관에 갔어야 맞음". `mark_heavysnow_resupply_pending()`이 이미 갖고 있던
+#     inn_visit_loop_interval 기반 "여관 강제" 조건에 주회 한도 도달도 함께 포함시켜, 한도 도달 시
+#     RESUPPLY_MODE와 무관하게 이미 있던 "마을로 돌아가기 → 여관 취침"(inn_manager) 실제 경로를
+#     타도록 완치 - 새 내비게이션을 만들지 않고 기존에 검증된 경로(교회구역이 이미 매 주회 쓰던
+#     경로)를 재사용했다. 여관 취침 완료 후 dungeon_run_count를 0으로 리셋하는 것도 함께 추가(다른
+#     던전은 이미 하고 있었는데 대설지대 이 분기만 빠져 있었음) - 이게 없으면 여관을 다녀와도 재진입
+#     거부가 안 풀려 같은 무한루프가 재발한다. 마을외곽 핸들러에도 한도 도달 시 "대설 지대" 대신
+#     "마을로 돌아가기"를 누르도록 이중 안전장치를 추가(후처리가 25회 시도 내에 못 끝나 포기하는
+#     예외 상황 대비). 주회 설정을 프리셋/배치파일 단위로 분리하는 더 큰 리팩터링은
+#     dev/ROADMAP.md 항목 12에 별도로 남겨둠(사용자 확정 장기 과제, 이번 완치와는 별개).
+#     `LIMIT_DUNGEON_LOOPS` 자체는 사용자 확정으로 0(무한 주회) 유지 - "지금은 여관 갈 필요가 없다",
+#     필요해지면 이 값만 바꿔서 쓰면 위 완치가 그대로 작동한다.
+#     추가 완치(같은 세션, 사용자 지적 - 재발 방지 지침): "새 던전을 추가할 때 dungeon_run_count=0
+#     리셋처럼 기존 던전이 이미 하던 부수효과를 빠뜨리는 실수가 또 나올 수 있는가?"라는 질문에서
+#     CLAUDE.md에 신규 섹션 추가 - "새 던전을 코드에 통합할 때 - 기존 던전의 복귀 후 처리 부수효과를
+#     전부 대조"(정체 카운터 리셋 누락과 본질적으로 같은 유형의 결함이라는 점을 명시).
 #   1.21.5: 🚨 대설지대 상자파밍 중 "터치가 완전히 죽은" 상황에서도 3시간 넘게 재시작이 안 걸리던
 #     결함 완치(dungeon_bot.py 상세 참고). 실전 로그(2026-09-10 03:22~06:44): "상자 자동 이동" 탭
 #     → "미니맵이 움직이기 시작했습니다" → AUTO_MOVING → 4초 뒤 FIELD_WAIT 복귀 → 다시 탭... 이
@@ -1915,6 +1946,16 @@ def start_grand_orchestrator():
         인벤정리를 통째로 건너뛰고 곧장 재진입했다. 게다가 하켄 탈출처럼 exit_by_user가 False로 끝나는
         경로도 마을외곽에 도착하므로, 반환값과 무관하게 "던전 1회차가 끝났으면 무조건 예약"으로 바꾼다
         (후처리 블록 자체가 화면이 안 맞으면 조용히 흘려보내고 25회 상한도 있어 과예약은 무해하다).
+
+        🚨 [2026-09-10 실전 확인 - 완치] LIMIT_DUNGEON_LOOPS(마을 회군 기준) 도달은 예전엔 여기서 전혀
+        고려되지 않았다 - "주회 한도 도달"은 대설지대 경로선택 화면의 재진입 거부로만 처리되고, 그
+        거부가 여관 방문으로 이어지는 연결이 없어서 마을외곽 화면과 무한 왕복하는 사고가 났다(실전 로그
+        2026-09-10, 5회 도달 후 약 2시간 왕복 - 사용자 지적: "5회 루프에 맞았으면 여관에 돌아가게 해야함
+        - 진짜 나가서 주회5회 마다 여관에 갔어야 맞음"). inn_visit_loop_interval 조건과 동일하게, 주회
+        한도 도달도 여관 강제 조건에 포함시킨다 - 이러면 RESUPPLY_MODE와 무관하게 "마을로 돌아가기 →
+        여관" 실제 경로(아래 후처리 블록의 inn 분기)를 타게 되고, 그 분기가 여관 취침 후
+        dungeon_run_count를 0으로 리셋해주므로(다른 던전과 동일한 패턴) 재진입 거부 상태에서 영원히
+        못 빠져나오는 문제도 함께 해소된다.
         """
         nonlocal heavysnow_resupply_pending, heavysnow_resupply_attempts, heavysnow_force_inn_this_cycle
         if DUNGEON_NAME != "대설지대":
@@ -1922,11 +1963,16 @@ def start_grand_orchestrator():
         heavysnow_resupply_pending = True
         heavysnow_resupply_attempts = 0
         # 캠핑은 HP/MP만 회복하고 레벨업은 여관 취침으로만 적용되므로, N주회마다 한 번은
-        # resupply_mode와 무관하게 여관을 강제로 들르게 한다(0=비활성).
+        # resupply_mode와 무관하게 여관을 강제로 들르게 한다(0=비활성). 주회 한도(LIMIT_DUNGEON_LOOPS)
+        # 도달도 같은 방식으로 여관을 강제한다(0=무한 주회, 이 조건 자체가 비활성).
+        loop_limit_reached = LIMIT_DUNGEON_LOOPS > 0 and dungeon_run_count >= LIMIT_DUNGEON_LOOPS
         heavysnow_force_inn_this_cycle = (
-            INN_VISIT_LOOP_INTERVAL > 0 and dungeon_run_count % INN_VISIT_LOOP_INTERVAL == 0
+            (INN_VISIT_LOOP_INTERVAL > 0 and dungeon_run_count % INN_VISIT_LOOP_INTERVAL == 0)
+            or loop_limit_reached
         )
-        if heavysnow_force_inn_this_cycle:
+        if loop_limit_reached:
+            print(f"🏠 [주회 카운터] {dungeon_run_count}주회로 한도({LIMIT_DUNGEON_LOOPS})에 도달 - 여관을 경유해 회군합니다.")
+        elif heavysnow_force_inn_this_cycle:
             print(f"🏠 [주회 카운터] {dungeon_run_count}주회 도달 - inn_visit_loop_interval={INN_VISIT_LOOP_INTERVAL} 조건으로 이번엔 여관을 경유합니다.")
 
     force_first_analysis = True
@@ -2505,6 +2551,14 @@ def start_grand_orchestrator():
                     heavysnow_resupply_pending = False
                     heavysnow_resupply_attempts = 0
                     heavysnow_force_inn_this_cycle = False
+                    # 🚨 [2026-09-10 실전 확인 - 완치] 다른 던전(백아/유령성)의 여관 경유 지점은 취침 직후
+                    # dungeon_run_count를 0으로 리셋하는데, 대설지대의 이 분기만 그 리셋이 빠져 있었다.
+                    # 그 결과 LIMIT_DUNGEON_LOOPS 도달로 여관을 다녀와도 카운트가 그대로 남아 재진입
+                    # 거부가 풀리지 않고, 마을외곽 화면과 무한 왕복하는 사고로 이어졌다(위
+                    # mark_heavysnow_resupply_pending() 주석 참고). 여관을 실제로 다녀왔으면 무조건
+                    # 리셋 - RESUPPLY_MODE=="inn"(교회구역, 매 주회 여관 경유)도 동일하게 적용되므로
+                    # 그쪽의 잠재적인 동일 버그도 함께 해소된다.
+                    dungeon_run_count = 0
                 elif find_and_click_template(device, img_np, t_back_to_village, 0.70):
                     print("🏠 [마을외곽 후처리] '마을로 돌아가기' 터치 성공.")
                     time.sleep(2.0)
@@ -2545,6 +2599,24 @@ def start_grand_orchestrator():
                 last_action_time = time.time()
                 last_logged_status = "VILLAGE_OUTSKIRTS"
                 print("🌲 [마을외곽 도달] 대설지대 진입 목록 화면 확인.")
+
+            # 🚨 [2026-09-10 실전 확인 - 이중 안전장치] 이 핸들러는 원래 주회 한도를 전혀 모른 채 화면만
+            # 보이면 무조건 "대설 지대"를 재클릭했다 - 아래 경로선택 화면은 한도 도달 시 재진입을 거부하고
+            # 뒤로가기로 여기로 돌려보내는데, 여기가 다시 무조건 재클릭하면서 두 화면이 서로를 끝없이
+            # 되받아쳤다(실전 로그: 약 2시간 왕복). 정상 경로는 mark_heavysnow_resupply_pending()이
+            # 한도 도달을 감지해 여관 강제 후처리로 먼저 빠지므로 이 핸들러까지 도달하지 않지만, 후처리가
+            # 25회 시도 내에 못 끝나 포기하는 예외 상황 등 대비로 여기서도 한 번 더 확인한다 - 한도
+            # 도달 상태면 재진입 대신 "마을로 돌아가기"를 눌러 여관행을 다시 시도한다.
+            should_reenter = (LIMIT_DUNGEON_LOOPS == 0) or (dungeon_run_count < LIMIT_DUNGEON_LOOPS)
+            if not should_reenter:
+                if find_and_click_template(device, img_np, t_back_to_village, 0.70):
+                    print("🏠 [마을외곽] 주회 한도 도달 상태 - 재진입 대신 '마을로 돌아가기' 터치.")
+                    last_action_time = time.time()
+                    time.sleep(2.0)
+                else:
+                    print("⚠️ [마을외곽] 주회 한도 도달 상태인데 '마을로 돌아가기' 버튼 미검출. 재스캔 대기...")
+                    time.sleep(1.0)
+                continue
 
             if find_and_click_template(device, img_np, t_dungeon_heavysnow, 0.80):
                 print("👉 [마을외곽] '대설 지대' 목록 터치 성공.")
