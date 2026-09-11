@@ -118,5 +118,25 @@
       "y2": 1622
     },
     "roi_name": null
+  },
+  "Dun_dilog_bone": {
+    "source_image": "대설지대-뼈상인.png",
+    "roi": {
+      "x1": 402,
+      "y1": 1382,
+      "x2": 1024,
+      "y2": 1466
+    },
+    "roi_name": null
+  },
+  "Dun_dilog_oil": {
+    "source_image": "대설지대-뼈상인.png",
+    "roi": {
+      "x1": 671,
+      "y1": 1223,
+      "x2": 792,
+      "y2": 1304
+    },
+    "roi_name": null
   }
 }

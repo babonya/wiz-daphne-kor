@@ -20,9 +20,38 @@ came_from_chest = False
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.21.6
-# - 최근 수정일: 2026-09-10
+# - 현재 버전: 1.21.8
+# - 최근 수정일: 2026-09-11
 # - 수정 기록:
+#   1.21.8: 🆕 [화면 과도기 감지] 예상 밖 상태 팝업으로 인한 정체를 능동적으로 해소하는 안전장치
+#     추가. 사용자가 관전 중 실전 버그를 목격 - 상자가 미니게임 없이 즉시 열리고 곧장 다음 전투가
+#     시작되면서, chest_opener.py의 캐릭터 선택창 진입 판정("열다" 버튼 소멸만으로 판정)이 흔들려
+#     고정 좌표 슬롯 탭이 전투 UI의 캐릭터 상태 아이콘 자리에 떨어짐 - 아베니우스의 "눈보라/동상"
+#     상태 팝업이 뜬 채로 필드/전투 앵커가 둘 다 가려져 "화면 과도기 감지"가 7초간 돌았다(사용자가
+#     수동으로 닫아서 풀림, 자동 복구 수단은 없었음).
+#     실측 과정에서 두 번 정정: (1) 기존 범용 "X 닫기" 도장(close_panel.png, 레벨업/여권 팝업용)을
+#     재사용하려 했으나 실제 정체 스크린샷 대조 결과 0.586으로 임계값(0.70) 미달 - 그 도장은 "X" 위에
+#     "닫기"가 세로로 쌓인 레이아웃인데 이 상태 팝업은 가로로 나란한 다른 레이아웃이라 새 도장
+#     (close_panel_inline.png)을 크롭해야 했음(같은 스크린샷에서 1.000 확인). (2) 그 새 도장을 저장소
+#     스크린샷 전수 대조하니 상자 "누가 열 거야?" 캐릭터 선택 화면의 'X 닫기'와도 0.92~0.93으로
+#     오탐돼, 전체화면 검색 시 진행 중인 상자 개방을 잘못 취소시킬 뻔했음 - 실측으로 두 화면 버튼의
+#     Y좌표가 확실히 분리됨을 확인(상태팝업 58.8% vs 캐릭터선택 94.5%, 약 900px 차이)하고 그 차이로
+#     구역(STATUS_POPUP_CLOSE_ZONE)을 좁혀 완전히 분리 - 구역 제한 후 전체 스크린샷 321장 재대조,
+#     최고 오탐 0.436으로 임계값(0.70)과 충분한 여유 확보. "필드/전투 앵커가 둘 다 없음"으로 판정되는
+#     `else` 분기는 `if not combat_active:`로 이미 감싸여 있어 정상 전투 중에는 도달 자체가 없다(이
+#     도장이 정상 전투 화면에도 0.96으로 걸리지만 안전한 이유).
+#   1.21.7: 🆕 대설지대 "뼈상인"(뼈 줍는 고블린) 조우 처리 신규 추가. 사용자가 실전에서 드디어
+#     조우 - 4지선다(유해를 부르는 기름(10,000골드)/모험가의 뼈(1,000골드)/비약(100골드)/아무것도
+#     안 산다) 중 사용자 확정 우선순위대로 모험가의 뼈를 1순위로 고정 선택하고, 없으면(오탐/화면
+#     변형 등) 유해를 부르는 기름을 2순위로 선택한다. 사용자가 미리 크롭해둔 두 도장
+#     (`Dun_dilog_bone.png` = "모험가의 뼈(1,000골드)" 전체 줄, `Dun_dilog_oil.png` = "기름" 2글자만)
+#     을 다른 대설지대 선택지(싸운다/빠져나간다)와 동일한 "직접 검색+클릭" 방식으로 연결 -
+#     `_handle_dungeon_interrupt()`(필드맵 귀환 루틴용, 하위 5개 호출부 전부 배선)와
+#     `start_main_macro()`의 공용 전처리 블록(필드 이동 전체에 걸쳐 상시 감시) 양쪽에 동일하게
+#     추가해, 필드맵 귀환 중이든 평소 이동 중이든 어디서 만나도 처리된다. 실측 검증(뼈상인 조우
+#     스샷 + 대설지대 기존 스샷 전수 대조): 정탐 둘 다 1.000, "기름" 도장은 2글자뿐이라 다른 화면과
+#     근접 오탐 위험이 있어(음성 최고 0.650, combat_dialogue.png) 임계값을 다른 대설지대 선택지들의
+#     관례(0.70)보다 높은 0.80으로 설정(뼈는 음성 최고 0.568로 그보다 여유로움, 동일하게 0.80 적용).
 #   1.21.6: (이 파일 자체는 변경 없음, 버전 동기화용) 대설지대 주회 한도 도달 시 "마을외곽 ↔
 #     경로목록" 무한 왕복 완치 - 한도 도달 시 실제로 여관을 경유하도록 근본 완치. 상세는 main.py 참고.
 #   1.21.5: 🚨 대설지대 상자파밍 중 터치가 완전히 죽어도 300초 워치독이 발동 조건에 못 미쳐 3시간
@@ -1404,6 +1433,13 @@ FIELDMAP_CLOSE_ANCHOR_ZONE = (2395, 2508, 553, 802)  # 도장 ROI (583,2425)-(77
 FIELDMAP_CLOSE_ANCHOR_THRESHOLD = 0.80
 FIELDMAP_CLOSE_TAP_COORDS = (677, 2451)  # 위 존의 중앙 - 확장된 필드맵을 닫을 때 탭한다
 
+# 🚨 [2026-09-11 실전 확인] "X 닫기"(가로 배치, close_panel_inline.png)는 캐릭터 상태/버프 팝업뿐
+# 아니라 상자 "누가 열 거야?" 캐릭터 선택 화면에도 똑같이 있어서(오탐 0.92~0.93), 전체화면 검색하면
+# 진행 중인 상자 개방을 잘못 취소시킬 위험이 있다. 실측으로 확인한 두 화면의 버튼 Y중심(상태팝업
+# 1505=58.8%, 캐릭터선택 2418=94.5%, 약 900px 차이)을 근거로 상태팝업 쪽만 좁게 잡은 검색 구역 -
+# 이 구역 밖에서는 절대 안 찾으므로 캐릭터선택 화면과는 원천적으로 섞이지 않는다.
+STATUS_POPUP_CLOSE_ZONE = (1350, 1650, 500, 1050)  # (y1, y2, x1, x2)
+
 def _match_gray_in_zone(img_np, template, zone):
     """지정 크롭 영역 안에서 그레이스케일 매칭 최고점을 반환. 매칭 불가 상황이면 None."""
     if template is None or img_np is None:
@@ -1466,7 +1502,7 @@ def _find_automove_button(img_np, t_automove_primary, t_automove_fallback, thres
 # "전투 시작 전" 대사/선택지 화면이라 t_combat_in/slow 도장에 안 걸린다. 이 헬퍼를 각 폴링 루프 안에서
 # 호출해 감지되면 처리하고 True를 반환한다 - 호출부는 재시도 예산을 소모하지 않고 다시 스크린샷부터
 # 진행해야 한다(전투 감지와 동일한 방침).
-def _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=None):
+def _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=None, t_dilog_bone=None, t_dilog_oil=None):
     if img_np is None:
         return False
     if t_dilog_fight is not None:
@@ -1483,6 +1519,26 @@ def _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_s
         if doghole_coords:
             print(f"🕳️ [필드맵 귀환 - 울타리 구멍] '빠져나간다' 선택지 발견 - 고정 선택 탭: {doghole_coords}")
             safe_device_shell(device, f"input tap {doghole_coords[0]} {doghole_coords[1]}")
+            time.sleep(1.0)
+            return True
+    # 🆕 [2026-09-10 대설지대] "뼈 줍는 고블린"(뼈상인) 조우 - 4지선다(유해를 부르는 기름(10,000골드)/
+    # 모험가의 뼈(1,000골드)/비약(100골드)/아무것도 안 산다) 중 사용자 확정 우선순위: 모험가의 뼈를
+    # 1순위로 먼저 찾고, 없으면(오탐/화면 변형 등) 유해를 부르는 기름을 2순위로 고른다.
+    # 🚨 실측(뼈상인 조우 스샷 + 대설지대 기존 스샷 전수 대조): 두 도장 다 정탐 1.000. "기름"은 텍스트가
+    # 2글자뿐이라 다른 화면과 근접 오탐 위험이 있음(음성 최고 0.650, combat_dialogue.png) - 임계값을
+    # 관례(0.70)보다 높은 0.80으로 잡아 여유 확보(뼈는 음성 최고 0.568로 그보다 여유로움).
+    if t_dilog_bone is not None:
+        bone_coords = find_and_get_coords(img_np, t_dilog_bone, 0.80)
+        if bone_coords:
+            print(f"🦴 [필드맵 귀환 - 뼈상인 조우] '모험가의 뼈' 선택지 발견 - 고정 선택 탭: {bone_coords}")
+            safe_device_shell(device, f"input tap {bone_coords[0]} {bone_coords[1]}")
+            time.sleep(1.0)
+            return True
+    if t_dilog_oil is not None:
+        oil_coords = find_and_get_coords(img_np, t_dilog_oil, 0.80)
+        if oil_coords:
+            print(f"🛢️ [필드맵 귀환 - 뼈상인 조우] '모험가의 뼈' 미검출 - 2순위 '유해를 부르는 기름' 선택 탭: {oil_coords}")
+            safe_device_shell(device, f"input tap {oil_coords[0]} {oil_coords[1]}")
             time.sleep(1.0)
             return True
     if t_seller_label is not None and check_template_present(img_np, t_seller_label, 0.80):
@@ -1720,6 +1776,8 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
     t_seller_let_me_see = load_template("templates/Dungeon_dialogue/Dun_seller_let_me_see.png")
     t_seller_hammer = load_template("templates/Dungeon_dialogue/Dun_seller_hammer.png")
     t_doghole = load_template("templates/Dungeon_dialogue/Dun_HS6_doghole.png")  # "울타리 구멍으로 빠져나간다"
+    t_dilog_bone = load_template("templates/Dungeon_dialogue/Dun_dilog_bone.png")  # "뼈상인" 1순위: "모험가의 뼈"
+    t_dilog_oil = load_template("templates/Dungeon_dialogue/Dun_dilog_oil.png")  # "뼈상인" 2순위: "기름"("유해를 부르는 기름")
 
     # 🎯 캠핑 분기는 캠프 아이콘/캠핑용 자동이동만, 하켄 분기(교회구역)는 대하켄/대하켄용 자동이동만
     # 참조한다 - 처음부터 완전히 분리된 갈래라 서로의 탭 좌표/도장을 참조하지 않는다(사용자가 걱정한
@@ -1768,7 +1826,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
             time.sleep(1.0)
             continue
         img_np = decode_screen_bytes(raw)
-        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=t_doghole):
+        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=t_doghole, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil):
             continue
         # 🚨 [2026-09-09 실전 확인] 이 함수엔 캠핑 화면("쉰다") 감지가 아예 없었다 - 상자를 찾아 이동하던
         # 캐릭터가 마침 캠프 지점(우물) 위에 서 있으면, 맵을 열지 않아도 게임이 자동으로 캠핑 선택창을
@@ -1823,7 +1881,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
             # 캡처 노이즈로 이 근접치가 0.82를 넘어 오탐이 실제로 발생함을 확인(2026-09-09 17:16 로그 -
             # 화살표 감지가 4회 연속 찍히며 스와이프 예산을 대신 소모). 구체적 선택지(싸운다/행상인/
             # 빠져나간다)는 그대로 처리한다 - 오탐 위험은 오직 "화살표만 있고 아무 선택지도 안 걸리는" 폴백 경로에만 있다.
-            if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, None, t_field, t_doghole=t_doghole):
+            if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, None, t_field, t_doghole=t_doghole, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil):
                 print("⚠️ [필드맵 귀환] 탭 직후 중립몹/행상인 조우 처리 - 이번 시도는 재시도 횟수에서 제외합니다.")
                 combat_interrupted = True
                 expand_attempts_used -= 1  # 조우로 무산된 시도는 예산에서 다시 돌려준다
@@ -1867,7 +1925,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
     # 인터럽트만 계속 뜨는 이상 상황 대비) - 절대시간 워치독을 추가한다(다른 루프들과 동일 패턴).
     swipe_search_deadline = time.time() + 120.0
     while attempt < max_swipe_attempts and time.time() < swipe_search_deadline:
-        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, None, t_field, t_doghole=t_doghole):
+        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, None, t_field, t_doghole=t_doghole, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil):
             raw = capture_screen_bytes(device)
             if raw:
                 img_np = decode_screen_bytes(raw)
@@ -1916,7 +1974,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
         if not raw:
             continue
         img_np = decode_screen_bytes(raw)
-        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, None, t_field, t_doghole=t_doghole):
+        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, None, t_field, t_doghole=t_doghole, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil):
             continue
         automove_coords = _find_automove_button(img_np, automove_primary, automove_fallback)
         if automove_coords:
@@ -1983,7 +2041,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
             arrived = True
             break
 
-        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=t_doghole):
+        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=t_doghole, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil):
             interrupted = True  # 조우 처리 후에도 자동이동이 끊겼을 수 있으니 재개 버튼 대상으로 취급
             last_cursor_change_time = time.time()  # 조우 처리에 쓴 시간은 정지 시간으로 치지 않는다
             continue
@@ -2110,6 +2168,8 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     t_seller_let_me_see = load_template("templates/Dungeon_dialogue/Dun_seller_let_me_see.png")
     t_seller_hammer = load_template("templates/Dungeon_dialogue/Dun_seller_hammer.png")
     t_doghole_common = load_template("templates/Dungeon_dialogue/Dun_HS6_doghole.png")  # "울타리 구멍으로 빠져나간다"
+    t_dilog_bone_common = load_template("templates/Dungeon_dialogue/Dun_dilog_bone.png")  # "뼈상인" 1순위: "모험가의 뼈"
+    t_dilog_oil_common = load_template("templates/Dungeon_dialogue/Dun_dilog_oil.png")  # "뼈상인" 2순위: "기름"
     t_dialogue_arrow_common = load_template("templates/inn_sleep/arrow_clean.png")
     # 🚨 [2026-09-08 실전 확인] 캠핑 선택창("쉰다"/"아무것도 안 한다")은 필드 앵커도 전투 앵커도 없어서,
     # 귀환 루틴 밖에서 이 화면을 만나면 공용 전처리 블록이 "화면 과도기"로 오판하고 30초 뒤 비상
@@ -2130,6 +2190,11 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     t_heal_auto = load_template("templates/healer_auto_btn.png")
     t_heal_confirm = load_template("templates/confirm_recover.png")
     t_heal_close = load_template("templates/close_panel.png")
+    # 🆕 [2026-09-11] close_panel.png는 "X" 위에 "닫기"가 세로로 쌓인 레이아웃인데, 캐릭터 상태/버프
+    # 팝업(전투 중 인물 아이콘 탭 시 뜨는 것)은 "X 닫기"가 가로로 나란한 다른 레이아웃을 쓴다(실측:
+    # 실전 정체 스크린샷에서 close_panel.png 점수 0.586로 임계값 0.70 미달 - 조용히 놓쳤을 것). 실제
+    # 스크린샷에서 새로 크롭해 별도 도장으로 분리, 같은 스크린샷에서 1.000으로 확인.
+    t_close_inline = load_template("templates/close_panel_inline.png")
 
     t_combat_in = load_grayscale_template("templates/combat_in.png")   
     t_combat_slow = load_grayscale_template("templates/combat_slow.png") 
@@ -2571,6 +2636,29 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                         time.sleep(1.0)
                         continue
 
+                    # 🆕 [2026-09-10 대설지대] "뼈 줍는 고블린"(뼈상인) 조우 - 4지선다(유해를 부르는
+                    # 기름(10,000골드)/모험가의 뼈(1,000골드)/비약(100골드)/아무것도 안 산다) 중 사용자
+                    # 확정 우선순위: 모험가의 뼈를 1순위로 먼저 찾고, 없으면 유해를 부르는 기름을
+                    # 2순위로 고른다. 임계값 0.80 근거는 _handle_dungeon_interrupt()의 동일 주석 참고
+                    # (기름 도장은 2글자뿐이라 다른 화면과 근접 오탐 위험 - 음성 최고 0.650).
+                    bone_coords = find_and_get_coords(img_np, t_dilog_bone_common, 0.80)
+                    if bone_coords:
+                        print(f"🦴 [뼈상인 조우] '모험가의 뼈' 선택지 발견 - 고정 선택 탭: {bone_coords}")
+                        safe_device_shell(device, f"input tap {bone_coords[0]} {bone_coords[1]}")
+                        transition_delay_count = 0
+                        last_state_changed_time = time.time()
+                        time.sleep(1.0)
+                        continue
+
+                    oil_coords = find_and_get_coords(img_np, t_dilog_oil_common, 0.80)
+                    if oil_coords:
+                        print(f"🛢️ [뼈상인 조우] '모험가의 뼈' 미검출 - 2순위 '유해를 부르는 기름' 선택 탭: {oil_coords}")
+                        safe_device_shell(device, f"input tap {oil_coords[0]} {oil_coords[1]}")
+                        transition_delay_count = 0
+                        last_state_changed_time = time.time()
+                        time.sleep(1.0)
+                        continue
+
                     if check_template_present(img_np, t_seller_label, 0.80):
                         print("🛒 [행상인 조우] '수상한 행상인' 대사 화면 감지 - 조우 처리 루틴 진입.")
                         handle_merchant_encounter(device, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow_common, t_field)
@@ -2677,6 +2765,51 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                             continue
                         state = "FIELD_WAIT"
                 else:
+                    # 🆕 [2026-09-11 실전 확인] 필드/전투 앵커가 둘 다 안 보이는 이유가 항상 로딩
+                    # 연출(진짜 과도기)인 것만은 아니다 - 예상 밖의 순간(미니게임 없이 상자가 즉시
+                    # 열리고 곧장 다음 조우로 이어지는 등)에 뜨는 캐릭터 상태/레벨업 등 팝업도 두
+                    # 앵커를 전부 가려서 똑같이 "과도기"로 오인된다(실전 로그: 상자 개방 직후 새 전투가
+                    # 거의 동시에 시작돼, chest_opener.py의 캐릭터 선택창 진입 판정("열다" 버튼 소멸만
+                    # 으로 판정, 화면 자체를 확인하지 않음)이 흔들려 고정 좌표 슬롯 탭이 전투 UI의
+                    # 캐릭터 상태 아이콘 자리에 떨어짐 - 아베니우스의 "눈보라/동상" 상태 팝업이 뜬 채로
+                    # 7초간 정체됐다가 사용자가 수동으로 닫아서야 풀림, 자동 복구 수단은 없었음).
+                    # 🚨 실측 정정(1차): 처음엔 기존 범용 "X 닫기" 도장(close_panel.png, 레벨업/여권
+                    # 팝업용)을 재사용하려 했으나, 실제 정체 스크린샷으로 검증하니 0.586으로 임계값
+                    # (0.70) 미달이었다 - 그 도장은 "X" 위에 "닫기"가 세로로 쌓인 레이아웃인데, 이 상태
+                    # 팝업은 "X 닫기"가 가로로 나란한 다른 레이아웃이었다(같은 "닫기" 버튼도 팝업 종류에
+                    # 따라 배치가 다름). 같은 스크린샷에서 새로 크롭한 close_panel_inline.png는 1.000.
+                    # 🚨 실측 정정(2차, 더 중요함): 그런데 이 새 도장을 저장소 스크린샷 전수 대조해보니
+                    # 상자 "누가 열 거야?" 캐릭터 선택 화면의 'X 닫기'와도 0.92~0.93으로 강하게 오탐됨 -
+                    # 그 화면에서 이 버튼을 누르면 진행 중이던 상자 개방을 통째로 취소해버리는 훨씬 나쁜
+                    # 결과로 이어진다. 다행히 두 화면의 버튼 Y좌표가 확실히 분리된다(실측: 상태팝업
+                    # Y중심 1505=화면의 58.8%, 캐릭터선택 Y중심 2418=94.5% - 약 900px/35% 차이). 그래서
+                    # 전체화면 검색 대신 상태팝업 쪽 Y대역(1350~1650)으로 제한된 구역에서만 찾는다 -
+                    # 이 구역 안에서는 캐릭터선택 화면의 버튼이 절대 안 걸린다(900px 이상 떨어져 있음).
+                    # 정체 카운터는 증가시키지 않는다 - 수동적으로 기다리는 게 아니라 능동적으로 해소한
+                    # 것이므로.
+                    # ⚠️ 이 else 분기는 위 `if not combat_active:`(약 2555행)로 이미 감싸여 있어, 전투가
+                    # 정상 인식되는 틱에는 아예 도달하지 않는다 - close_panel_inline.png가 정상 전투
+                    # 화면(예: 톤베리전투 스샷)에서도 높은 점수(0.96)로 걸리는 게 확인됐지만, 그 화면들은
+                    # combat_active=True로 먼저 걸러지므로 실제로는 도달할 일이 없다.
+                    close_coords_transition = None
+                    if t_close_inline is not None:
+                        y1, y2, x1, x2 = STATUS_POPUP_CLOSE_ZONE
+                        if img_np.shape[0] >= y2 and img_np.shape[1] >= x2:
+                            zone_crop = img_np[y1:y2, x1:x2]
+                            zone_gray = cv2.cvtColor(zone_crop, cv2.COLOR_RGB2GRAY)
+                            _, zone_bin = cv2.threshold(zone_gray, 160, 255, cv2.THRESH_BINARY)
+                            if zone_bin.shape[0] >= t_close_inline.shape[0] and zone_bin.shape[1] >= t_close_inline.shape[1]:
+                                zres = cv2.matchTemplate(zone_bin, t_close_inline, cv2.TM_CCOEFF_NORMED)
+                                _, zmv, _, zloc = cv2.minMaxLoc(zres)
+                                if zmv > 0.70:
+                                    zh, zw = t_close_inline.shape[:2]
+                                    close_coords_transition = (x1 + zloc[0] + zw // 2, y1 + zloc[1] + zh // 2)
+                    if close_coords_transition:
+                        print(f"🚪 [화면 과도기 감지] 예상 밖 상태 팝업의 'X 닫기' 버튼 발견 - 탭으로 치웁니다: {close_coords_transition}")
+                        safe_device_shell(device, f"input tap {close_coords_transition[0]} {close_coords_transition[1]}")
+                        time.sleep(1.0)
+                        continue
+
                     if transition_delay_count < 10:
                         transition_delay_count += 1
                         print(f"⏳ [화면 과도기 감지] 필드/전투 앵커 일시 소실. 화면 안착 대기 중... ({transition_delay_count}/10)")
