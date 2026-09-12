@@ -48,5 +48,15 @@
       "y2": 2478
     },
     "roi_name": "Fieldmap_anchor"
+  },
+  "dead_stat": {
+    "source_image": "사망-필드.png",
+    "roi": {
+      "x1": 357,
+      "y1": 2268,
+      "x2": 406,
+      "y2": 2311
+    },
+    "roi_name": null
   }
 }

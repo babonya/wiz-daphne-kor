@@ -20,9 +20,41 @@ came_from_chest = False
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.21.8
-# - 최근 수정일: 2026-09-11
+# - 현재 버전: 1.21.9
+# - 최근 수정일: 2026-09-12
 # - 수정 기록:
+#   1.21.9: 🆕 "빈사"(HP 낮음, 힐로 회복)와 "사망"(HP 0, 힐로 절대 안 풀림)을 구분하지 못해 정비를
+#     무한 재격발하던 결함 완치. 사용자가 실전 12시간(!)을 이걸로 날린 뒤 보고 - 빈사 픽셀 카운터
+#     (count_danger_hp_pixels)는 두 상태를 구분하지 않아, 죽은 캐릭터가 있으면 힐을 아무리 넣어도
+#     위험색이 안 사라져 "빈사 감지→정비→빈사 감지"가 6~7초 간격으로 계속 반복되다가 게임 세션이
+#     시간초과로 끊겼다(사용자 확인: "예전엔 캐릭 죽었어도 그냥 주회는 돌았거든" - 이 빈사 감지
+#     기능 자체가 이번 세션에 새로 생기면서 만든 회귀 버그).
+#     사망(해골) 아이콘 도장으로 "진짜 사망"을 먼저 확인하고, 사망이 확인되면 (1) 이후 같은 파티
+#     상태에서는 빈사 감지 자체를 억제하고(예전처럼 사망자를 달고 주회 계속), (2) 상자 소진 시와
+#     동일한 TRIGGER_EXIT 절차를 그대로 재사용해 마을 회군을 시도한다(사용자 확정: "마을복귀하면
+#     확률적으로 부활하기도 함") - 던전별로 다른 귀환 방식을 다시 판단할 필요 없이 기존 검증된
+#     로직을 그대로 탄다.
+#     ⚠️ 실측 중 결함 3연속 발견 및 완치(전부 §일반 원칙 "실측 필수, 추측 금지"가 지켜낸 사례):
+#     (1) 사용자가 처음 준 크롭(stat_dead.png, 세션종료 화면에서 딴 것)은 그레이스케일 밝기가
+#     30~147로 낮아, 이 저장소 관례인 이진화(160) 매칭을 쓰면 "아무 화면의 아무 어두운 영역과도
+#     무조건 1.000으로 매칭"되는 상태였다(스크린샷 309장 전수 대조로 확인) - 그대로 썼으면 빈사
+#     감지 첫 발동 즉시 무조건 "사망"으로 오판해 매번 마을로 도망가는, 원래 버그보다 더 나쁜
+#     회귀가 됐을 것. 이진화 대신 원본 그레이스케일 매칭으로 전환.
+#     (2) 그레이스케일로 바꾼 뒤 실제 사망 화면 원본(dev/ROI_check/사망.png, 크롭 도구의
+#     _crop_metadata.json으로 채팅 첨부 이미지 없이 찾아낸 원본 - 사용자 지적으로 CLAUDE.md/
+#     AGENTS.md에 이 방법 자체를 지침으로 남김)으로 재검증하니 정탐/오탐이 아예 역전됐다. 원인은
+#     이 스크린샷 자체가 "세션 종료" 오버레이로 파티창 영역 전체가 어둡게 깔린 상태였기 때문(사용자가
+#     처음부터 경고한 문제) - 임계값/색상 방식을 바꾸는 미봉책이 아니라 원본 데이터 자체가 못 쓴다는
+#     결론까지 내리고 사용자에게 정상 조명 화면에서 재크롭을 요청.
+#     (3) 사용자가 정상 조명(필드/전투/상자) 3종을 새로 크롭해줌(dead_inField/dead_inCombat/
+#     dead_chest.png) - 이걸로도 처음엔 여전히 정탐이 생존 슬롯보다 낮게 나와 당황했으나, 실제
+#     원인은 도장이 아니라 **슬롯 좌표**였다: `chest_opener.SLOT_ROIS`는 "상자 열 캐릭터를 고르는
+#     모달 팝업" 전용 좌표인데, 이걸 필드 하단에 상시 떠 있는 파티 HUD에 그대로 재사용해 카드 하나를
+#     반토막 내고 옆 카드 내용까지 섞어 읽고 있었다(두 화면은 육안으로는 비슷해 보이지만 실제 픽셀
+#     위치가 다름). 실측으로 필드 HUD 전용 좌표(FIELD_PARTY_SLOT_ROIS)를 새로 잡고 dead_inField.png
+#     와 짝을 맞추니 정탐 0.999~1.000 vs 오탐 최고 0.585(필드 앵커 통과 스크린샷 38장 전수 대조)로
+#     깨끗하게 분리됨을 확인 - "빈사(생존)" 샘플(딸피_필드.png)도 전 슬롯 0.48~0.52로 안전하게
+#     걸러짐(빈사와 사망을 확실히 구분). 임계값 0.85로 확정, 정식 검증 완료.
 #   1.21.8: 🆕 [화면 과도기 감지] 예상 밖 상태 팝업으로 인한 정체를 능동적으로 해소하는 안전장치
 #     추가. 사용자가 관전 중 실전 버그를 목격 - 상자가 미니게임 없이 즉시 열리고 곧장 다음 전투가
 #     시작되면서, chest_opener.py의 캐릭터 선택창 진입 판정("열다" 버튼 소멸만으로 판정)이 흔들려
@@ -459,6 +491,48 @@ def count_danger_hp_pixels(img_np):
         return int(mask.sum())
     except Exception:
         return 0
+
+# 🆕 [2026-09-12 실전 확인] "빈사"(HP 낮음, 힐로 회복)와 "사망"(HP 0, 힐로 절대 안 풀림)은 둘 다
+# 파티창 위험색 판정에 걸리는데, 힐로 되돌릴 수 있는 건 빈사뿐이라 사망한 캐릭터는 힐을 아무리 넣어도
+# 그대로라 빈사 감지가 무한 재격발된다(실전 로그: 12시간).
+# 🚨 [2026-09-12 실측 확정 - 1차] 사용자가 처음 제공한 크롭(templates/Field/stat_dead.png, 세션종료
+# 화면에서 딴 것)은 그레이스케일 밝기가 30~147로 낮아, 이 저장소 관례인 이진화(160) 매칭을 쓰면
+# "어떤 화면의 어떤 어두운 영역과도 무조건 1.000으로 매칭"되는 상태였다(저장소 스크린샷 309장 전수
+# 대조로 확인) - 이진화를 포기하고 원본 그레이스케일 매칭으로 전환.
+# 🚨 [2026-09-12 실측 확정 - 2차, 결정적 원인] 그레이스케일로 바꾼 뒤에도 실제 사망 화면 원본
+# (`dev/ROI_check/사망.png`, 크롭 도구의 `_crop_metadata.json`으로 찾음)으로 재검증하니 정탐/오탐이
+# 아예 역전됐다 - **원인은 슬롯 좌표였다.** `chest_opener.SLOT_ROIS`는 "상자 열 캐릭터를 고르는
+# 모달 팝업" 화면 전용 좌표인데, 이걸 그대로 재사용했더니 필드 하단에 항상 떠 있는 파티 HUD와는
+# 위치가 안 맞아(모달 팝업이 HUD보다 위쪽에 뜬다) 카드 하나를 반토막으로 자르고 옆 카드 내용까지
+# 섞어서 읽고 있었다. 사용자가 정상 조명에서 새로 크롭해준 3종(dead_inField/dead_inCombat/
+# dead_chest.png) 중 dead_inField.png와 아래 FIELD_PARTY_SLOT_ROIS(실측으로 새로 잡은 필드 HUD
+# 전용 좌표)를 맞춰 재검증하니 정탐 0.999~1.000 vs 오탐 최고 0.585(필드 앵커 통과 스크린샷 38장
+# 전수 대조 기준)로 깨끗하게 분리됨을 확인 - "빈사(HP낮음, 생존)" 샘플(`딸피_필드.png`)도 전
+# 슬롯 0.48~0.52로 안전하게 걸러짐(빈사와 사망을 확실히 구분). 임계값 0.85로 확정.
+FIELD_PARTY_SLOT_ROIS = {
+    1: (0, 1900, 480, 2230), 2: (480, 1900, 960, 2230), 3: (960, 1900, 1440, 2230),
+    4: (0, 2230, 480, 2560), 5: (480, 2230, 960, 2560), 6: (960, 2230, 1440, 2560),
+}
+
+def find_dead_slots(img_np, template, threshold=0.85):
+    """죽은(해골 아이콘) 캐릭터가 있는 슬롯 번호 목록을 반환한다. 없으면 빈 리스트.
+
+    ⚠️ chest_opener.SLOT_ROIS(상자 캐릭터 선택 모달 전용 좌표)와 절대 혼동하지 말 것 - 여기는
+    필드 하단 상시 파티 HUD 전용 좌표(FIELD_PARTY_SLOT_ROIS)를 쓴다. 위 주석의 실측 정정 참고."""
+    if img_np is None or template is None:
+        return []
+    dead_slots = []
+    for slot, (x1, y1, x2, y2) in FIELD_PARTY_SLOT_ROIS.items():
+        if img_np.shape[0] < y2 or img_np.shape[1] < x2:
+            continue
+        crop = img_np[y1:y2, x1:x2]
+        gray = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY)
+        if gray.shape[0] < template.shape[0] or gray.shape[1] < template.shape[1]:
+            continue
+        _, max_val, _, _ = cv2.minMaxLoc(cv2.matchTemplate(gray, template, cv2.TM_CCOEFF_NORMED))
+        if max_val > threshold:
+            dead_slots.append(slot)
+    return dead_slots
 
 def check_dialogue_indicator_present(img_np, template, threshold=0.75):
     if img_np is None or template is None:
@@ -2196,7 +2270,19 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     # 스크린샷에서 새로 크롭해 별도 도장으로 분리, 같은 스크린샷에서 1.000으로 확인.
     t_close_inline = load_template("templates/close_panel_inline.png")
 
-    t_combat_in = load_grayscale_template("templates/combat_in.png")   
+    # 🆕 [2026-09-12 실전 확인, 재크롭 후 검증 완료] 파티창의 사망(해골) 아이콘 - "빈사"(HP 낮음,
+    # 힐로 해결)와 "사망"(HP 0, 힐로 절대 안 풀림)을 구분하려고 추가. 사용자가 처음 준 크롭
+    # (stat_dead.png, 세션종료 화면이라 흐릿함 + 슬롯 좌표도 잘못돼 있었음)은 폐기하고, 정상 조명의
+    # 필드 화면에서 새로 크롭한 도장(당시 파일명 dead_inField.png)으로 교체해
+    # FIELD_PARTY_SLOT_ROIS(올바른 필드 HUD 좌표)와 짝을 맞춰 재검증하니 정탐 0.999~1.000 vs 오탐
+    # 최고 0.585로 깨끗하게 분리됨(상세는 find_dead_slots() 주석). 이후 전투 화면(사망-컴뱃.png)에도
+    # 같은 도장+같은 좌표로 0.9785(1번 슬롯)로 잘 걸림을 추가 확인 - 상자 캐릭선택 화면 전용
+    # dead_chest.png(그 화면만 아이콘이 더 작게 렌더링돼 크기가 다름, 35x39 vs 43x49)는 지금 사망
+    # 판정을 아예 안 하는 화면이라 불필요 판단, 사용자 확인 후 dead_inCombat.png와 함께 삭제하고
+    # 이 도장 하나만 `dead_stat.png`로 정식 명명해 남겼다(필드/전투 공용으로 검증 완료).
+    t_stat_dead = load_grayscale_template("templates/Field/dead_stat.png")
+
+    t_combat_in = load_grayscale_template("templates/combat_in.png")
     t_combat_slow = load_grayscale_template("templates/combat_slow.png") 
     t_auto_off = load_grayscale_template("templates/auto_off.png")     
     t_auto_on = load_grayscale_template("templates/auto_on.png")       
@@ -2255,6 +2341,12 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     came_from_chest = False
     low_threshold_active_until = 0.0
     low_threshold_reset_count = 0
+    # 🆕 [2026-09-12 실전 확인] 빈사(딸피) 픽셀 카운터가 "사망"과 "빈사"를 구분 못 해, 실제로 죽은
+    # 캐릭터가 있으면 힐을 아무리 넣어도 위험색이 안 사라져 정비를 무한 재격발하던 결함(실전 로그:
+    # 12시간 동안 힐-재감지만 반복하다 게임 세션이 시간초과로 끊김) 완치용 플래그. 사망을 한 번
+    # 확인하고 나면, 그 뒤로는 같은 빈사 신호를 다시 힐 트리거로 쓰지 않는다(예전처럼 사망자를 달고
+    # 그냥 주회를 계속한다) - 상세는 "2-1. 빈사 감지" 분기 주석 참고.
+    death_confirmed_and_handled = False
     
     # 💡 [반응형 이동 및 즉시 복귀 상태 변수]
     last_target_coords = None
@@ -2944,11 +3036,42 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                 # 무용지물이고, 붉은 색조 역시 황금 상자 화면(+6.7~14.7)이 실제 안개 화면(+5.0)보다 오히려 더 붉어
                 # 구분이 안 됨. 그래서 안개(결과) 대신 원인인 "빈사 상태"를 직접 본다 - 빈사 캐릭터는 파티창의
                 # 이름/HP가 주황빛으로 바뀌므로(실측 RGB 약 (140,53,16)), 파티창 구역에서 그 색 픽셀을 센다.
-                if not need_heal:
+                # 🚨 [2026-09-12 실전 확인 - 완치] 위 판정은 "빈사"(힐로 회복)와 "사망"(힐로 절대 안
+                # 풀림)을 구분하지 못했다 - 사망한 캐릭터는 파티창 위험색이 영구히 안 사라지므로, 힐을
+                # 넣어도 다음 틱에 또 danger_px가 기준을 넘어 정비를 무한 재격발했다(실전 로그: 6~7초
+                # 간격으로 "빈사 감지→정비→빈사 감지"가 12시간 반복되다 게임 세션이 시간초과로 끊김 -
+                # 사용자가 직접 목격/보고: "예전엔 캐릭 죽었어도 그냥 주회는 돌았거든"). 사망이 한 번
+                # 확인되면(death_confirmed_and_handled), 그 뒤로는 이 빈사 신호를 아예 재평가하지
+                # 않는다 - 사망자를 그대로 달고 예전처럼 주회를 계속한다(힐 시도 자체를 반복하지 않음).
+                if not need_heal and not death_confirmed_and_handled:
                     danger_px = count_danger_hp_pixels(img_np)
                     if danger_px >= DANGER_HP_PIXEL_LIMIT:
-                        print(f"🩸 [빈사 감지] 파티창 빈사색 픽셀 {danger_px}개 (기준 {DANGER_HP_PIXEL_LIMIT}) - 피장막 유발 상태로 판단해 정비를 격발합니다.")
-                        need_heal = True
+                        dead_slots = find_dead_slots(img_np, t_stat_dead)
+                        if dead_slots:
+                            print(f"💀 [사망 확인] {dead_slots}번 슬롯에서 사망(해골) 아이콘 감지 - 힐로는 해결되지 않는 상태입니다. "
+                                  f"이후 이 파티 상태에서는 빈사 감지를 억제하고 주회를 계속합니다.")
+                            death_confirmed_and_handled = True
+                            # 🆕 [2026-09-12 사용자 확정] "사망확인되면 일단 마을 복귀하고 여관 들르는게
+                            # 좋음(마을복귀하면 확률적으로 부활하기도 함)". 새 탈출 경로를 따로 만들지
+                            # 않고, 상자 소진 시와 동일한 TRIGGER_EXIT 진입 절차를 그대로 재사용한다 -
+                            # 이러면 던전마다 다른 귀환 방식(하켄/캠핑/도보 등)을 여기서 다시 판단할
+                            # 필요 없이 기존에 검증된 던전별 귀환 로직이 그대로 처리한다. 마을 도착 후
+                            # 실제로 여관까지 들르는지는 던전/프리셋별 기존 정책을 따른다(예: 대설지대
+                            # 6층 기본값은 여관을 안 들르는 resupply_mode="items_only" - 이 부분까지
+                            # 강제로 바꾸는 건 더 큰 변경이라 이번 완치 범위에서는 제외).
+                            print("🏠 [사망 확인] 마을로 회군을 시도합니다(확률적 부활 기대).")
+                            state = "TRIGGER_EXIT"
+                            exit_start_time = time.time()
+                            exit_clicked_once = False
+                            exit_stuck_count = 0
+                            exit_prev_minimap = None
+                            exit_last_action_was_exit_tap = False
+                            last_click_time = 0.0
+                            last_state_changed_time = time.time()
+                            continue
+                        else:
+                            print(f"🩸 [빈사 감지] 파티창 빈사색 픽셀 {danger_px}개 (기준 {DANGER_HP_PIXEL_LIMIT}) - 피장막 유발 상태로 판단해 정비를 격발합니다.")
+                            need_heal = True
 
                 # 3. 통합 힐링 기동: 안전 필드 안착 및 힐링 플래그 감지 시 작동
                 if need_heal:
