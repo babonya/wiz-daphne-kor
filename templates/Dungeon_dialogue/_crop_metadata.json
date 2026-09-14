@@ -138,5 +138,25 @@
       "y2": 1304
     },
     "roi_name": null
+  },
+  "Dun_dilog_elixir": {
+    "source_image": "대설지대-뼈상인.png",
+    "roi": {
+      "x1": 520,
+      "y1": 1543,
+      "x2": 915,
+      "y2": 1627
+    },
+    "roi_name": null
+  },
+  "Dun_dilog_bonegoblin_name": {
+    "source_image": "대설지대-뼈상인.png",
+    "roi": {
+      "x1": 111,
+      "y1": 1918,
+      "x2": 515,
+      "y2": 1982
+    },
+    "roi_name": null
   }
 }

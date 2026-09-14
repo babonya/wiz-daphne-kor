@@ -20,9 +20,31 @@ came_from_chest = False
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.21.9
-# - 최근 수정일: 2026-09-12
+# - 현재 버전: 1.21.10
+# - 최근 수정일: 2026-09-15
 # - 수정 기록:
+#   1.21.10: 🆕 전투 시작 직후 자동전투가 영원히 안 켜진 채 정체하던 결함 + 대설지대 눈보라구간
+#     재개버튼 무한 반복 결함, 2건 완치.
+#     (1) 자동전투 토글 버튼 도장(auto_off.png/auto_on.png)이 전투패턴 번호 배지가 아이콘에 붙기
+#     전(로드맵 4번, 2026-08-30) 구형 모양이라, 배지가 붙은 지금 화면에선 실측 매칭 점수가 0.57
+#     까지 떨어져(임계값 0.65 미달) 좌표탐색이 실패했다 - 색상판정(is_auto_combat_yellow)은 정확히
+#     "꺼짐"으로 판정하는데 탭할 좌표를 못 찾아 아무 것도 안 하고 넘어가버려, 전투 내내 자동전투가
+#     계속 꺼진 채 방치되는 실전 사고가 있었다(사용자 제보 2026-09-13/14, 배속은 정상 주황인데
+#     자동전투만 안 켜짐 - 실측 스크린샷으로 원인 확정). 이 버튼의 화면 위치 자체는 배지 숫자와
+#     무관하게 고정(1380,1720, 1440x2560 기준, 2026-08-30 실기 확인 완료)이므로, 도장 매칭 실패 시
+#     이 고정좌표로 바로 탭하는 폴백을 3개 호출부 전부에 추가(기존에 한 곳에만 있던 폴백을 나머지
+#     두 곳에도 동일 적용).
+#     (2) 대설지대 눈보라 서브구역에서 재개 버튼이 실제로는 비활성 상태인데 활성/비활성 구분이 안
+#     돼 계속 눌리기만 하고 게임 쪽 반응(토스트조차)이 전혀 없어, "없습니다" 토스트 감지에만 의존
+#     하던 기존 나가기 트리거가 단 한 번도 안 걸린 채 13분+ 무한 반복한 실전 사고(2026-09-14
+#     22:30~22:43+, 이 도중 MuMu 자체가 그래픽 서브디바이스 오류로 크래시해 재개도 못한 채 방치됨)
+#     완치. 토스트 없이도 재개 30초 무반응이면 강제로 나가기 전환(전투로 이 분기를 벗어났다 돌아오면
+#     30초를 새로 잼 - 전투만으로도 30초를 넘길 수 있어 억울한 판정을 막기 위함), 나가기 후 커서
+#     재확인되면 안전지대(700,150) 선제 터치로 잔여 이동을 멈춘 뒤(관성으로 상자 대신 던전 출구를
+#     먼저 밟는 사고 방지 - 캠핑 이동 시 이미 쓰던 것과 동일한 방어 패턴) 기존 상자 절차로 복귀.
+#     이 분기 안에서 last_state_changed_time을 매 틱 무조건 리셋하던 부분도 제거해, 위 새 안전장치가
+#     전부 실패해도 공용 300초 강제재시작 하드리밋이 최후 안전망으로 다시 작동하도록 함(예전엔 이
+#     리셋 때문에 300초가 이 분기에서 영원히 안 걸렸음).
 #   1.21.9: 🆕 "빈사"(HP 낮음, 힐로 회복)와 "사망"(HP 0, 힐로 절대 안 풀림)을 구분하지 못해 정비를
 #     무한 재격발하던 결함 완치. 사용자가 실전 12시간(!)을 이걸로 날린 뒤 보고 - 빈사 픽셀 카운터
 #     (count_danger_hp_pixels)는 두 상태를 구분하지 않아, 죽은 캐릭터가 있으면 힐을 아무리 넣어도
@@ -1576,7 +1598,7 @@ def _find_automove_button(img_np, t_automove_primary, t_automove_fallback, thres
 # "전투 시작 전" 대사/선택지 화면이라 t_combat_in/slow 도장에 안 걸린다. 이 헬퍼를 각 폴링 루프 안에서
 # 호출해 감지되면 처리하고 True를 반환한다 - 호출부는 재시도 예산을 소모하지 않고 다시 스크린샷부터
 # 진행해야 한다(전투 감지와 동일한 방침).
-def _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=None, t_dilog_bone=None, t_dilog_oil=None):
+def _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=None, t_dilog_bone=None, t_dilog_oil=None, t_dilog_elixir=None, t_dilog_bonegoblin_name=None):
     if img_np is None:
         return False
     if t_dilog_fight is not None:
@@ -1615,6 +1637,22 @@ def _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_s
             safe_device_shell(device, f"input tap {oil_coords[0]} {oil_coords[1]}")
             time.sleep(1.0)
             return True
+    # 🆕 [2026-09-14] 뼈/기름을 이미 구매했어도 뼈상인을 다시 조우하는 경우가 있는데, 이때 대화창에
+    # "비약(100골드)"만 뜨는 경우가 실전 확인됨(뼈/기름 재고 소진 등으로 추정) - 3순위로 비약도 사게
+    # 확장. 단, "비약(100골드)" 텍스트만으로 매칭하면 대설지대 일반 "수상한 행상인"의 판매 목록에 있는
+    # "나무 향의 비약(3,000골드)"/"수제 상처약(100골드)"과 실측 0.7978까지 근접 오탐이 난다(임계값
+    # 0.80과 위험할 정도로 가까움 - `templates/Dungeon_dialogue/_crop_metadata.json`의
+    # `Dun_dilog_elixir`/`Dun_dilog_bonegoblin_name` 원본 스샷 대조 참고). 그래서 뼈상인 고유의
+    # 화자명 "뼈 줍는 고블린" 텍스트(전수 스캔 정탐 1.000 vs 오탐 최고 0.2934 - 완전 분리 확인)가
+    # 같은 화면에 함께 있을 때만 비약을 탭하도록 가드한다.
+    if t_dilog_elixir is not None and t_dilog_bonegoblin_name is not None:
+        if check_template_present(img_np, t_dilog_bonegoblin_name, 0.80):
+            elixir_coords = find_and_get_coords(img_np, t_dilog_elixir, 0.80)
+            if elixir_coords:
+                print(f"🧪 [필드맵 귀환 - 뼈상인 조우] '모험가의 뼈'/'유해를 부르는 기름' 미검출 - 3순위 '비약' 선택 탭: {elixir_coords}")
+                safe_device_shell(device, f"input tap {elixir_coords[0]} {elixir_coords[1]}")
+                time.sleep(1.0)
+                return True
     if t_seller_label is not None and check_template_present(img_np, t_seller_label, 0.80):
         print("🛒 [필드맵 귀환 - 행상인 조우] '수상한 행상인' 대사 화면 감지 - 조우 처리 루틴 진입.")
         handle_merchant_encounter(device, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field)
@@ -1852,6 +1890,8 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
     t_doghole = load_template("templates/Dungeon_dialogue/Dun_HS6_doghole.png")  # "울타리 구멍으로 빠져나간다"
     t_dilog_bone = load_template("templates/Dungeon_dialogue/Dun_dilog_bone.png")  # "뼈상인" 1순위: "모험가의 뼈"
     t_dilog_oil = load_template("templates/Dungeon_dialogue/Dun_dilog_oil.png")  # "뼈상인" 2순위: "기름"("유해를 부르는 기름")
+    t_dilog_elixir = load_template("templates/Dungeon_dialogue/Dun_dilog_elixir.png")  # "뼈상인" 3순위: "비약"
+    t_dilog_bonegoblin_name = load_template("templates/Dungeon_dialogue/Dun_dilog_bonegoblin_name.png")  # 비약 오탐 방지용 화자명 가드
 
     # 🎯 캠핑 분기는 캠프 아이콘/캠핑용 자동이동만, 하켄 분기(교회구역)는 대하켄/대하켄용 자동이동만
     # 참조한다 - 처음부터 완전히 분리된 갈래라 서로의 탭 좌표/도장을 참조하지 않는다(사용자가 걱정한
@@ -1900,7 +1940,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
             time.sleep(1.0)
             continue
         img_np = decode_screen_bytes(raw)
-        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=t_doghole, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil):
+        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=t_doghole, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil, t_dilog_elixir=t_dilog_elixir, t_dilog_bonegoblin_name=t_dilog_bonegoblin_name):
             continue
         # 🚨 [2026-09-09 실전 확인] 이 함수엔 캠핑 화면("쉰다") 감지가 아예 없었다 - 상자를 찾아 이동하던
         # 캐릭터가 마침 캠프 지점(우물) 위에 서 있으면, 맵을 열지 않아도 게임이 자동으로 캠핑 선택창을
@@ -1955,7 +1995,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
             # 캡처 노이즈로 이 근접치가 0.82를 넘어 오탐이 실제로 발생함을 확인(2026-09-09 17:16 로그 -
             # 화살표 감지가 4회 연속 찍히며 스와이프 예산을 대신 소모). 구체적 선택지(싸운다/행상인/
             # 빠져나간다)는 그대로 처리한다 - 오탐 위험은 오직 "화살표만 있고 아무 선택지도 안 걸리는" 폴백 경로에만 있다.
-            if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, None, t_field, t_doghole=t_doghole, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil):
+            if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, None, t_field, t_doghole=t_doghole, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil, t_dilog_elixir=t_dilog_elixir, t_dilog_bonegoblin_name=t_dilog_bonegoblin_name):
                 print("⚠️ [필드맵 귀환] 탭 직후 중립몹/행상인 조우 처리 - 이번 시도는 재시도 횟수에서 제외합니다.")
                 combat_interrupted = True
                 expand_attempts_used -= 1  # 조우로 무산된 시도는 예산에서 다시 돌려준다
@@ -1999,7 +2039,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
     # 인터럽트만 계속 뜨는 이상 상황 대비) - 절대시간 워치독을 추가한다(다른 루프들과 동일 패턴).
     swipe_search_deadline = time.time() + 120.0
     while attempt < max_swipe_attempts and time.time() < swipe_search_deadline:
-        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, None, t_field, t_doghole=t_doghole, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil):
+        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, None, t_field, t_doghole=t_doghole, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil, t_dilog_elixir=t_dilog_elixir, t_dilog_bonegoblin_name=t_dilog_bonegoblin_name):
             raw = capture_screen_bytes(device)
             if raw:
                 img_np = decode_screen_bytes(raw)
@@ -2048,7 +2088,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
         if not raw:
             continue
         img_np = decode_screen_bytes(raw)
-        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, None, t_field, t_doghole=t_doghole, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil):
+        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, None, t_field, t_doghole=t_doghole, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil, t_dilog_elixir=t_dilog_elixir, t_dilog_bonegoblin_name=t_dilog_bonegoblin_name):
             continue
         automove_coords = _find_automove_button(img_np, automove_primary, automove_fallback)
         if automove_coords:
@@ -2115,7 +2155,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
             arrived = True
             break
 
-        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=t_doghole, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil):
+        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=t_doghole, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil, t_dilog_elixir=t_dilog_elixir, t_dilog_bonegoblin_name=t_dilog_bonegoblin_name):
             interrupted = True  # 조우 처리 후에도 자동이동이 끊겼을 수 있으니 재개 버튼 대상으로 취급
             last_cursor_change_time = time.time()  # 조우 처리에 쓴 시간은 정지 시간으로 치지 않는다
             continue
@@ -2244,6 +2284,8 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     t_doghole_common = load_template("templates/Dungeon_dialogue/Dun_HS6_doghole.png")  # "울타리 구멍으로 빠져나간다"
     t_dilog_bone_common = load_template("templates/Dungeon_dialogue/Dun_dilog_bone.png")  # "뼈상인" 1순위: "모험가의 뼈"
     t_dilog_oil_common = load_template("templates/Dungeon_dialogue/Dun_dilog_oil.png")  # "뼈상인" 2순위: "기름"
+    t_dilog_elixir_common = load_template("templates/Dungeon_dialogue/Dun_dilog_elixir.png")  # "뼈상인" 3순위: "비약"
+    t_dilog_bonegoblin_name_common = load_template("templates/Dungeon_dialogue/Dun_dilog_bonegoblin_name.png")  # 비약 오탐 방지용 화자명 가드
     t_dialogue_arrow_common = load_template("templates/inn_sleep/arrow_clean.png")
     # 🚨 [2026-09-08 실전 확인] 캠핑 선택창("쉰다"/"아무것도 안 한다")은 필드 앵커도 전투 앵커도 없어서,
     # 귀환 루틴 밖에서 이 화면을 만나면 공용 전처리 블록이 "화면 과도기"로 오판하고 30초 뒤 비상
@@ -2390,6 +2432,15 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     # 커서가 다시 보이면 "unknown"으로 되돌린다. 판별은 미니맵을 눌러 확장되는지로 한다(사용자 확인:
     # 눈보라 구간은 필드맵 확장 자체가 안 된다).
     blizzard_state = "unknown"
+    # 🆕 [2026-09-15] "재개를 눌러도 30초 넘게 안 풀리면 나가기로 전환"용 타이머 2종. 실전 사고
+    # (2026-09-14 22:30~22:43+, 13분+ 재개만 무한 반복)의 원인은 재개 버튼이 실제로는 비활성인데
+    # 활성/비활성 구분이 안 돼 계속 눌리기만 하고 게임 쪽 반응(토스트조차)이 아예 없었던 것으로 추정-
+    # 토스트 감지에만 의존하던 기존 나가기 트리거를 시간 기반으로 보강한다.
+    blizzard_resume_start_time = None  # 이 시각부터 30초 카운트. 전투 등으로 이 분기를 벗어났다 돌아오면
+                                        # (아래 blizzard_last_tick_time과의 간격으로 감지) 새로 잰다 -
+                                        # 전투만으로도 30초를 넘길 수 있어 그 시간을 억울하게 합산하지
+                                        # 않기 위함(사용자 확정).
+    blizzard_last_tick_time = None
     # 🆕 [2026-09-08] 필드맵 귀환 "retry"(자동이동 정지 → 재개/상자 사다리도 소득 없음 → 필드맵 재확장)
     # 예산. 이 경로는 TRIGGER_EXIT의 기존 탈출 워치독(exit_first_start_time)을 타지 않아서 자체 상한이
     # 없으면 무한히 재확장만 반복할 수 있다.
@@ -2750,6 +2801,20 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                         last_state_changed_time = time.time()
                         time.sleep(1.0)
                         continue
+
+                    # 🆕 [2026-09-14] 뼈/기름 재조우 시 "비약(100골드)"만 뜨는 경우 대응(3순위) - 오탐
+                    # 방지 가드 근거는 _handle_dungeon_interrupt()의 동일 주석 참고(일반 행상인 상품
+                    # 목록의 "나무 향의 비약"/"수제 상처약"과 실측 0.7978까지 근접 오탐 확인, 화자명
+                    # "뼈 줍는 고블린" 가드로 완전 분리).
+                    if check_template_present(img_np, t_dilog_bonegoblin_name_common, 0.80):
+                        elixir_coords = find_and_get_coords(img_np, t_dilog_elixir_common, 0.80)
+                        if elixir_coords:
+                            print(f"🧪 [뼈상인 조우] '모험가의 뼈'/'유해를 부르는 기름' 미검출 - 3순위 '비약' 선택 탭: {elixir_coords}")
+                            safe_device_shell(device, f"input tap {elixir_coords[0]} {elixir_coords[1]}")
+                            transition_delay_count = 0
+                            last_state_changed_time = time.time()
+                            time.sleep(1.0)
+                            continue
 
                     if check_template_present(img_np, t_seller_label, 0.80):
                         print("🛒 [행상인 조우] '수상한 행상인' 대사 화면 감지 - 조우 처리 루틴 진입.")
@@ -3278,9 +3343,22 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     if dungeon_name == "대설지대" and check_field_anchor_present(img_np, t_field, 0.65):
                         cursor_dir = get_minimap_cursor_direction(img_np, t_cursor_up, t_cursor_down, t_cursor_left, t_cursor_right)
                         if cursor_dir is not None:
+                            # 🆕 [2026-09-15] 나가기 탭으로 눈보라를 빠져나온 직후라면(blizzard_exit_tapped)
+                            # 아래 상자 시퀀스로 곧장 넘기지 않고 "안전지대"를 먼저 한 번 터치해 캐릭터의
+                            # 잔여 이동 모션을 확실히 멈춘다 - 이동 중에 곧바로 다음 이동 명령(상자 탭 등)을
+                            # 주면, 관성 때문에 의도한 지점(상자)에 닿기도 전에 캐릭터가 계속 걸어가 던전
+                            # 출구(계단)를 먼저 밟고 다음 던전으로 넘어가버릴 수 있다(사용자 확인 - 캠핑
+                            # 이동 시 동일한 문제로 이미 안전지대 선제 터치를 쓰고 있음, party_manager.py:204
+                            # 참고). 좌표는 기존 "길 잃음 복구"에서 쓰는 빈 공터 좌표를 그대로 재사용한다.
+                            if blizzard_exit_tapped:
+                                print("🧊 [눈보라구간] 나가기 이후 잔여 이동 정지를 위해 안전지대(700, 150) 터치.")
+                                safe_device_shell(device, "input tap 700 150")
+                                time.sleep(0.8)
                             # 커서가 보임 = 일반 구간 - 판정을 초기화하고 아래 기존 상자 시퀀스로 넘긴다.
                             blizzard_state = "unknown"
                             blizzard_exit_tapped = False
+                            blizzard_resume_start_time = None
+                            blizzard_last_tick_time = None
                         elif blizzard_state == "unknown":
                             ex_bz, ey_bz = FIELDMAP_EXPAND_TAP_COORDS
                             print("🔎 [눈보라 판별] 커서 미검출 - 미니맵을 눌러 필드맵 확장 여부로 눈보라인지 확인합니다.")
@@ -3304,7 +3382,17 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                             last_state_changed_time = time.time()
                             continue
                         elif blizzard_state == "yes":
+                            now_bz2 = time.time()
+                            # 🆕 [2026-09-15] 이 분기에 마지막으로 들어왔던 시각과 크게 벌어져 있으면(전투
+                            # 등으로 몇 틱 이상 이탈했다 돌아온 것) 30초 타이머를 새로 시작한다 - 전투만
+                            # 으로도 30초를 넘길 수 있는데 그 시간을 "재개가 안 풀린 시간"으로 합산하면
+                            # 억울하게 나가기로 튕길 수 있다(사용자 확정: "전투가 끝나면 타이머를 다시 잰다").
+                            if blizzard_resume_start_time is None or (now_bz2 - blizzard_last_tick_time) > 5.0:
+                                blizzard_resume_start_time = now_bz2
+                            blizzard_last_tick_time = now_bz2
+
                             if not blizzard_exit_tapped:
+                                img_np_bz = img_np  # 재개 탭 실패/미검출 시 30초 판정에서도 쓸 폴백(구 화면)
                                 resume_coords = find_checkpoint_btn_coords(img_np, t_move_resume_act, t_move_resume_deact, 0.70)
                                 if resume_coords:
                                     print(f"❄️ [눈보라구간] 재개 버튼 탭: {resume_coords}")
@@ -3312,18 +3400,39 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                     time.sleep(1.2)
                                     raw_bz = capture_screen_bytes(device)
                                     if raw_bz:
-                                        img_np_bz = decode_screen_bytes(raw_bz)
+                                        img_np_bz = decode_screen_bytes(raw_bz)  # 재개 탭 직후 최신 화면으로 교체
                                         if check_template_present(img_np_bz, t_no_chest, 0.55):
                                             exit_coords = find_and_get_field_btn_coords(img_np_bz, t_move_exit, 0.70)
                                             if exit_coords:
-                                                print(f"❄️ [눈보라구간] '없습니다' 감지 - 나가기 1회 탭: {exit_coords}")
+                                                print(f"❄️ [눈보라구간] '없습니다' 감지 - 즉시 나가기 1회 탭: {exit_coords}")
                                                 safe_device_shell(device, f"input tap {exit_coords[0]} {exit_coords[1]}")
                                                 blizzard_exit_tapped = True
                                             time.sleep(1.5)
                                 else:
                                     print("❄️ [눈보라구간] 재개 버튼 미검출 - 다음 틱 재시도.")
+
+                                # 🆕 [2026-09-15] "없습니다" 토스트 없이도 30초 넘게 안 풀리면(재개 버튼이
+                                # 실제로는 비활성인데 도장이 활성/비활성을 구분 못 해 계속 눌리기만 하고
+                                # 게임 쪽 반응이 아예 없는 경우 - 실전 로그 2026-09-14 22:30~22:43, 13분+
+                                # 무한 반복) 토스트 여부와 무관하게 강제로 나가기를 탭한다. 위에서 재개 탭
+                                # 직후 새로 찍어둔 화면(img_np_bz)을 그대로 써서 판정한다.
+                                if (not blizzard_exit_tapped) and (time.time() - blizzard_resume_start_time >= 30.0):
+                                    exit_coords = find_and_get_field_btn_coords(img_np_bz, t_move_exit, 0.70)
+                                    if exit_coords:
+                                        print(f"❄️ [눈보라구간] 재개 30초 무반응 - 강제 나가기 탭: {exit_coords}")
+                                        safe_device_shell(device, f"input tap {exit_coords[0]} {exit_coords[1]}")
+                                        blizzard_exit_tapped = True
+                                        time.sleep(1.5)
+
+                            # 🚨 [2026-09-15] 여기서 last_state_changed_time을 더 이상 매 틱 무조건 리셋
+                            # 하지 않는다 - 예전엔 여기서 매초 리셋해버려서, 이 분기에 갇힌 채 아무 진전이
+                            # 없어도 300초 하드리밋(강제 재시작 안전장치)이 절대 안 걸리는 결함이 있었다
+                            # (2026-08-21에 이미 "블라인드 포크는 정체 타이머를 건드리지 않는다"는 원칙이
+                            # 확립됐는데 이 분기만 예외로 남아있었음 - 실전 사고: 2026-09-14 22:30~22:43+,
+                            # 재개만 반복하다 결국 MuMu 자체가 죽을 때까지 13분+ 방치됨). 위 30초 자체
+                            # 안전장치로 대부분 해결되지만, 혹시 그마저 실패해도(나가기도 안 먹는 등) 공용
+                            # 300초 하드리밋이 최후 안전망으로 살아있도록 여기서는 건드리지 않는다.
                             transition_delay_count = 0
-                            last_state_changed_time = time.time()
                             time.sleep(1.0)
                             continue
                         # blizzard_state == "no" 이면 아무것도 하지 않고 아래 일반 상자 시퀀스로 흘려보낸다.
@@ -3836,13 +3945,24 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     continue
 
                 if not is_auto_combat_yellow(img_np):
+                    # 🚨 [2026-09-15 실전 확인] `t_auto_off` 도장은 자동전투 아이콘에 전투패턴 번호 배지가
+                    # 붙기 전(로드맵 4번, 2026-08-30) 구형 모양이라, 배지가 붙은 지금 화면과는 실측 0.57
+                    # 까지밖에 안 나와(임계값 0.65 미달) 좌표를 거의 못 찾는다. 그 결과 이 분기가
+                    # "자동전투 꺼짐"까지는 맞게 판정하면서도 탭할 좌표를 못 찾아 아무 것도 안 하고
+                    # 넘어가버려, 전투 시작 직후 자동전투가 영원히 안 켜진 채 정체하는 실전 사고가 있었다
+                    # (2026-09-13/14 로그, 배속은 정상 주황인데 자동전투만 계속 꺼진 채 방치됨). 반면 이
+                    # 버튼의 화면 위치 자체는 배지 숫자와 무관하게 고정(1380,1720, 1440x2560 기준 - 로드맵
+                    # 4번에서 실기 확인됨)이므로, 도장 매칭이 실패해도 이 고정좌표로 바로 탭한다(바로 위
+                    # 3863~3867줄의 기존 폴백과 동일 패턴).
                     auto_off_coords = find_and_get_auto_btn_coords(img_np, t_auto_off, 0.65)
                     if (not run_skill_logic) or (not auto_combat_paused_for_skill):
+                        print("⚔️🛡️ [자동전투 비활성화 감지] 자동전투를 활성화하기 위해 터치합니다.")
                         if auto_off_coords:
-                            print("⚔️🛡️ [자동전투 비활성화 감지] 자동전투를 활성화하기 위해 터치합니다.")
-                            safe_device_shell(device, f"input tap {auto_off_coords[0]} {auto_off_coords[1]}") 
-                            time.sleep(1.0)
-                            continue
+                            safe_device_shell(device, f"input tap {auto_off_coords[0]} {auto_off_coords[1]}")
+                        else:
+                            safe_device_shell(device, "input tap 1380 1720")
+                        time.sleep(1.0)
+                        continue
 
             if run_skill_logic and (not skill_mission_success_this_combat):
                 if time.time() - combat_entry_start_time > 35.0:
@@ -3859,14 +3979,18 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                         auto_combat_paused_for_skill = True
                         continue
                         
+                    # 🚨 [2026-09-15] t_auto_off 폴백과 동일 사유(도장이 배지 붙기 전 구형이라 매칭 실패
+                    # 위험) - 고정좌표(1380,1720)로 폴백한다. 지금은 run_skill_logic이 항상 False라 죽은
+                    # 경로지만, 다시 켜졌을 때 똑같은 함정에 빠지지 않도록 같이 고쳐둔다.
                     auto_on_coords = find_and_get_auto_btn_coords(img_np, t_auto_on, 0.65)
+                    print("⚔️🛡️ [명함 센서 가동] 안전한 주황 배속 환경에서 '자동 전투'를 일시 중단합니다.")
                     if auto_on_coords:
-                        print("⚔️🛡️ [명함 센서 가동] 안전한 주황 배속 환경에서 '자동 전투'를 일시 중단합니다.")
                         safe_device_shell(device, f"input tap {auto_on_coords[0]} {auto_on_coords[1]}")
-                        auto_combat_paused_for_skill = True
-                        time.sleep(0.5)
-                        continue
-                    else: auto_combat_paused_for_skill = True
+                    else:
+                        safe_device_shell(device, "input tap 1380 1720")
+                    auto_combat_paused_for_skill = True
+                    time.sleep(0.5)
+                    continue
 
                 # ① 유즈나미키 턴
                 if yuzu_sc_coords and not yuzuna_done:
