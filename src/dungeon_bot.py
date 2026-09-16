@@ -894,19 +894,36 @@ def is_auto_combat_yellow(img_np):
 # 반경 평균 밝기가 비활성 92 vs 활성 162로 70pt 차이 나며 완전히 분리됨. 이 판정을 재개 탭 "전"에
 # 먼저 해서, 비활성이면 굳이 탭하고 30초 기다릴 것 없이 바로 나가기로 직행할 수 있다.
 def is_resume_button_active(img_np):
+    # 🚨 [2026-09-16 절대밝기 방식 폐기 - 실전 오탐 확인] 고정 절대 밝기 기준(125.0)으로 판정했더니,
+    # 안개/조명이 짙은 실전 스크린샷(logs/2026-09-16-2200-44_reboot1.png)에서 비활성인데도 평균 밝기
+    # 154.9로 "활성" 오판정이 실제로 발생함(전투가 아닌데도 재개만 계속 무의미하게 눌림). 실측해보니
+    # 화면 전체 밝기(안개 농도 등)에 따라 활성/비활성 절대 밝기 자체가 프레임마다 흔들려서 고정 문턱
+    # 하나로는 못 잡는다(사용자 지적).
+    # 같은 미니맵 패널 안에 있는 "나가기"류 버튼(우상단, 항상 활성 상태로 보임 - 좌표 1354,467~1362,474)
+    # 을 "이번 프레임의 활성 밝기 기준점"으로 같이 재고, 재개 버튼(1211,466~1219,471)과 상대 비교하는
+    # 방식으로 교체 - 안개 농도가 바뀌어도 같은 프레임 안의 두 버튼은 같은 조명 조건을 공유하므로 비율은
+    # 안정적이다. 실측(3개 샘플, 나가기 대비 재개 밝기 비율): 비활성 0.527/0.638 vs 활성 0.935로
+    # 절대밝기 방식보다 훨씬 크게 분리됨(절대밝기 방식은 154.9로 활성 오판했던 바로 그 스샷도 이 방식
+    # 으론 비율 0.638로 정확히 비활성 판정됨).
     if img_np is None: return True  # 판정 불가 시 기존 동작(일단 탭 시도) 유지 - 안전 폴백
     h, w = img_np.shape[:2]
     try:
         scale_x, scale_y = w / 1440.0, h / 2560.0
-        cx, cy = int(1217 * scale_x), int(468 * scale_y)
-        cx = max(0, min(cx, w - 1))
-        cy = max(0, min(cy, h - 1))
-        x1, x2 = max(0, cx - 8), min(w, cx + 8)
-        y1, y2 = max(0, cy - 8), min(h, cy + 8)
-        crop = img_np[y1:y2, x1:x2]
-        brightness = float(np.mean(crop))
-        is_active = brightness > 125.0
-        print(f"📊 [재개 버튼 밝기 분석] 평균 밝기 {brightness:.1f} → {'활성' if is_active else '비활성'} (기준 125.0, 실측 비활성92/활성162)")
+        def _patch_mean(cx0, cy0, cx1, cy1):
+            x1, x2 = int(cx0 * scale_x), int(cx1 * scale_x)
+            y1, y2 = int(cy0 * scale_y), int(cy1 * scale_y)
+            x1, x2 = max(0, x1), min(w, x2)
+            y1, y2 = max(0, y1), min(h, y2)
+            if x2 <= x1 or y2 <= y1: return None
+            return float(np.mean(img_np[y1:y2, x1:x2]))
+
+        exit_ref_brightness = _patch_mean(1354, 467, 1362, 474)
+        resume_brightness = _patch_mean(1211, 466, 1219, 471)
+        if exit_ref_brightness is None or resume_brightness is None or exit_ref_brightness < 1.0:
+            return True
+        ratio = resume_brightness / exit_ref_brightness
+        is_active = ratio > 0.80
+        print(f"📊 [재개 버튼 상대밝기 분석] 재개 {resume_brightness:.1f} / 나가기(기준) {exit_ref_brightness:.1f} = 비율 {ratio:.3f} → {'활성' if is_active else '비활성'} (기준 0.80)")
         return is_active
     except Exception as e:
         print(f"⚠️ [재개 버튼 밝기 분석 오류] {e}")
