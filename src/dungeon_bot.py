@@ -1455,7 +1455,7 @@ def trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessin
                 # ⚔️ [2026-08-12 정체오판 방지] 전투 조우는 그 자체로 "먹통이 아니다"라는 증거이므로(사용자 지적),
                 # 정체 카운트/워치독을 리셋만 하고 이번 회차는 하켄 메뉴 체크 없이 넘어간다 - 전투를 대신 치러주진
                 # 않고, 다음 회차부터 다시 하켄 메뉴 확인을 재개한다.
-                if check_combat_template_present(img_np_h, t_combat_in, 0.80) or check_combat_template_present(img_np_h, t_combat_slow, 0.80):
+                if check_combat_template_present(img_np_h, t_combat_in, 0.70) or check_combat_template_present(img_np_h, t_combat_slow, 0.70):
                     print(f"⚔️ [하켄귀환] 이동 중 전투 조우 감지 - 정체 아님, 판정 리셋 ({h_wait+1}/10)")
                     harken_stuck_count = 0
                     harken_first_stuck_time = None
@@ -2015,7 +2015,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
         # 또 탭이 들어감). 이제 "압축 미니맵의 노란 커서가 실제로 보일 때만" 탭하는 양성 조건으로 바꾼다
         # - 커서가 보인다 = 지금 확실히 필드 위다. 안 보이면 무슨 화면인지부터 판별한다.
         if get_minimap_cursor_direction(img_np, t_cursor_up, t_cursor_down, t_cursor_left, t_cursor_right) is None:
-            if check_combat_template_present(img_np, t_combat_in, 0.80) or check_combat_template_present(img_np, t_combat_slow, 0.80):
+            if check_combat_template_present(img_np, t_combat_in, 0.70) or check_combat_template_present(img_np, t_combat_slow, 0.70):
                 print("⚔️ [필드맵 귀환] 전투 조우 - 메인 루프의 전투 처리로 넘깁니다(전투 종료 후 귀환 재시도).")
                 return "combat"
             # 커서가 안 보이는 정상 사유가 하나 더 있다 - 맵이 이미 확장돼서 압축 미니맵 자체가 사라진
@@ -2055,7 +2055,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
                 combat_interrupted = True
                 expand_attempts_used -= 1  # 조우로 무산된 시도는 예산에서 다시 돌려준다
                 break
-            if check_combat_template_present(img_np, t_combat_in, 0.80) or check_combat_template_present(img_np, t_combat_slow, 0.80):
+            if check_combat_template_present(img_np, t_combat_in, 0.70) or check_combat_template_present(img_np, t_combat_slow, 0.70):
                 print("⚔️ [필드맵 귀환] 탭 직후 전투 조우 - 메인 루프의 전투 처리로 넘깁니다(전투 종료 후 귀환 재시도).")
                 return "combat"
             if _check_fieldmap_expanded(img_np, t_field_expanded, t_fieldmap_close):
@@ -2192,7 +2192,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
             continue
         img_np = decode_screen_bytes(raw)
 
-        if check_combat_template_present(img_np, t_combat_in, 0.80) or check_combat_template_present(img_np, t_combat_slow, 0.80):
+        if check_combat_template_present(img_np, t_combat_in, 0.70) or check_combat_template_present(img_np, t_combat_slow, 0.70):
             # 🚨 여기서도 기다리지 않는다 - 메인 루프의 IN_COMBAT이 전투를 몰아야 자동전투가 깨져도 복구된다.
             print("⚔️ [필드맵 귀환] 자동이동 중 전투 조우 - 메인 루프의 전투 처리로 넘깁니다(전투 종료 후 귀환 재시도).")
             return "combat"
@@ -2514,7 +2514,13 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
             yeolda_threshold = 0.45
         else:
             field_threshold = 0.65
-            combat_threshold = 0.80
+            # 🚨 [2026-09-16 전수점검] 0.80 → 0.70 하향 - 동결(freeze) 상태이상 시각효과가 배속 버튼
+            # 인식 점수를 0.75 안팎으로 떨어뜨려, 이 값을 쓰는 전투 진입 1차 게이트(combat_active
+            # 판정, ~2860줄)가 명백한 전투 화면을 60초 넘게 못 알아채던 실전 사고 완치. 이 앵커를
+            # 8초 간격 배속체크(0.70)/main.py 두 곳(0.70)에 이미 검증된 값과 통일 - CLAUDE.md "도장
+            # 인식 방식을 고칠 때" 규칙 2에 따라 dungeon_bot.py 안의 같은 앵커 다른 호출부(1458/2018/
+            # 2058/2195/3200/3820줄 부근)도 전부 같이 0.70으로 맞췄다.
+            combat_threshold = 0.70
             yeolda_threshold = 0.65
 
         try:
@@ -3124,7 +3130,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
 
         if state in ["FIELD_WAIT", "AUTO_MOVING"]:
             if not check_field_anchor_present(img_np, t_field, 0.62):
-                if check_combat_template_present(img_np, t_combat_in, 0.80) or check_combat_template_present(img_np, t_combat_slow, 0.80):
+                if check_combat_template_present(img_np, t_combat_in, 0.70) or check_combat_template_present(img_np, t_combat_slow, 0.70):
                     print("⚔️ [메인] 배속 고정 UI 포착,적 인카운터 확정! 전투 대기(`IN_COMBAT`) 진입.")
                     state = "IN_COMBAT"
                     yuzuna_done = False
@@ -3740,7 +3746,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     raise RuntimeError(f"탈출 {exit_watchdog_seconds:.0f}초 초과 앱 강제 재시작: {elapsed_exit_time}초 동안 탈출하지 못하여 프로세스 강제 리셋을 수행합니다.")
 
             # 💡 [기습 방어 인터럽트] 탈출 중 전투 발생 즉시 0.1초 만에 전투 태세 전환
-            if check_combat_template_present(img_np, t_combat_in, 0.80) or check_combat_template_present(img_np, t_combat_slow, 0.80):
+            if check_combat_template_present(img_np, t_combat_in, 0.70) or check_combat_template_present(img_np, t_combat_slow, 0.70):
                 print("⚔️ [TRIGGER_EXIT 인터럽트] 탈출 행군 중 기습 포착! 즉시 전투 모드로 스위칭합니다.")
                 # 🚨 [v1.14.0-hotfix4] 전투 돌입 시에는 탈출 정체 누적 타이머를 초기화하여, 전투 시간으로 인한 억울한 타임아웃 격발을 방지합니다.
                 exit_first_start_time = None

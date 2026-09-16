@@ -1341,11 +1341,19 @@ def recover_app_startup(device):
         # village_common/inn.png("여관")가 리소스 다운로드 확인 화면 등 타이틀 팝업에서 0.65 문턱을 살짝 넘는 오탐(실측 0.686)이
         # 있었는데, 이 판정이 맨 위에 있으면 오탐 즉시 return True로 함수가 끝나버려서 정작 필요한 다운로드 버튼 클릭 등
         # 구체적 팝업 대응 코드에 도달하지도 못하는 결함이 있었음. 구체적 팝업들을 전부 먼저 걸러낸 뒤에만 범용 판정을 내리도록 완치.
+        # 🚨 [2026-09-16] 전투 임계값 0.80 → 0.70 하향 - "사령탑" 아웃게임 스캐너(2347행 부근)에 적용한
+        # 것과 완전히 동일한 결함의 쌍둥이 지점. get_combat_match_score()에 하드코딩된 0.80을 그때
+        # 하나만 고치고 이 기동 복구 루프(recover_app_startup) 쪽은 놓쳤었다 - CLAUDE.md "같은 도장을
+        # 쓰는 다른 스크립트도 반드시 전수 점검" 원칙을 이번에 뒤늦게 지킴. 동결 상태이상 등으로 전투
+        # 화면 인식 점수가 0.70~0.80 사이로 떨어지면, 매크로를 막 재시작했을 때(=이 함수가 도는 시점)
+        # 하필 그 화면이면 "로딩/타이틀 정체"로 오판해 빈 (1,1) 탭만 35회 반복하다 실패 처리됨(실전
+        # 재현 2026-09-16 23:28). dungeon_bot.py가 매 전투 틱마다 이미 0.70으로 오탐 없이 써온 값으로
+        # 통일한다.
         if (check_field_anchor_present(img_np, t_field, 0.62) or
             check_template_present(img_np, t_dungeon_sel, 0.70) or
             check_grayscale_template_present_in_roi(img_np, t_open_world, 800, 1200, 1480, 1650, 0.85) or
-            get_combat_match_score(img_np, t_combat_in) > 0.80 or
-            get_combat_match_score(img_np, t_combat_slow) > 0.80 or
+            get_combat_match_score(img_np, t_combat_in) > 0.70 or
+            get_combat_match_score(img_np, t_combat_slow) > 0.70 or
             check_template_present(img_np, t_yeolda, 0.65) or
             check_template_present(img_np, t_get_item, 0.65) or
             check_template_present(img_np, t_inn_title, 0.83) or
