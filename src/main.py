@@ -2475,11 +2475,13 @@ def start_grand_orchestrator():
                     # 💡 [진입 폴링 대기] 고정 5초 대기가 유령성 등 로딩이 느린 던전에서 부족해, 아직 던전선택 화면인데
                     # dungeon_bot을 호출 → 즉시 되돌아옴 → from_dungeon_select 컨텍스트 유실 → 뒤늦게 재진입 시
                     # "최초 기동 감지" 안전장치가 오작동하며 계속 하켄 탈출을 반복하던 결함을 완치.
-                    # 최대 10초까지 0.8초 간격으로 필드 안착을 직접 폴링하고, 로딩이 일찍 끝나면 그만큼 빨리 진입한다.
-                    print("⏳ [던전 진입 대기] 필드 안착을 최대 10초간 폴링합니다...")
+                    # 🚨 [2026-09-16] 최대 15초까지 0.8초 간격으로 필드 안착을 직접 폴링하고, 로딩이 일찍
+                    # 끝나면 그만큼 빨리 진입한다 - 기존 10초는 사용자 실기 확인 결과 종종 부족했음(10초로도
+                    # 필드 안착이 안 잡히고 진입 시퀀스로 넘어가는 경우 발생).
+                    print("⏳ [던전 진입 대기] 필드 안착을 최대 15초간 폴링합니다...")
                     poll_start = time.time()
                     entered = False
-                    while time.time() - poll_start < 10.0:
+                    while time.time() - poll_start < 15.0:
                         time.sleep(0.8)
                         try:
                             raw_poll = capture_screen_bytes(device)
@@ -2492,7 +2494,7 @@ def start_grand_orchestrator():
                         except Exception:
                             pass
                     if not entered:
-                        print("      ⚠️ [던전 진입 대기 초과] 10초 내 필드 안착 미확인. 일단 진입 시퀀스를 시도합니다.")
+                        print("      ⚠️ [던전 진입 대기 초과] 15초 내 필드 안착 미확인. 일단 진입 시퀀스를 시도합니다.")
 
                     run_skill_logic = ENABLE_FIRST_COMBAT_SKILL and (not global_skill_setup_completed)
                     try:
@@ -2656,10 +2658,12 @@ def start_grand_orchestrator():
 
             if find_and_click_template(device, img_np, t_heavysnow_floor, 0.80):
                 print(f"👉 [대설지대 경로선택] '{DUNGEON_FLOOR_NAME}' 행 터치 성공.")
-                print("⏳ [던전 진입 대기] 필드 안착을 최대 10초간 폴링합니다...")
+                # 🚨 [2026-09-16] 10초 → 15초로 상향 - 사용자 실기 확인 결과 10초로도 필드 안착이
+                # 종종 안 잡히고 진입 시퀀스로 넘어가는 경우가 있었음.
+                print("⏳ [던전 진입 대기] 필드 안착을 최대 15초간 폴링합니다...")
                 poll_start = time.time()
                 entered = False
-                while time.time() - poll_start < 10.0:
+                while time.time() - poll_start < 15.0:
                     time.sleep(0.8)
                     try:
                         raw_poll = capture_screen_bytes(device)
@@ -2672,7 +2676,7 @@ def start_grand_orchestrator():
                     except Exception:
                         pass
                 if not entered:
-                    print("      ⚠️ [던전 진입 대기 초과] 10초 내 필드 안착 미확인. 일단 진입 시퀀스를 시도합니다.")
+                    print("      ⚠️ [던전 진입 대기 초과] 15초 내 필드 안착 미확인. 일단 진입 시퀀스를 시도합니다.")
 
                 run_skill_logic = ENABLE_FIRST_COMBAT_SKILL and (not global_skill_setup_completed)
                 try:

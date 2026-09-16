@@ -887,6 +887,31 @@ def is_auto_combat_yellow(img_np):
         print(f"⚠️ [자동 색상 분석 오류] {e}")
         return False
 
+# 🆕 [2026-09-16 대설지대 눈보라구간] '재개(1번 Redo)' 버튼 활성/비활성 판정 - 미니맵 확장 패널 안의
+# 아이콘으로, 모양은 활성/비활성 둘 다 동일하고 밝기(색)만 다르다(기존 ROADMAP 5/11번 항목에서 이미
+# 확인된 패턴과 동일 - matchTemplate 점수로는 구분 불가). 실측(2026-09-16, 실전 정체 스샷 vs 사용자가
+# 나가기로 활성화시킨 직후 스샷 직접 대조): 아이콘 중앙 "장화" 솔리드 색상 영역 좌표(1217,468) 8px
+# 반경 평균 밝기가 비활성 92 vs 활성 162로 70pt 차이 나며 완전히 분리됨. 이 판정을 재개 탭 "전"에
+# 먼저 해서, 비활성이면 굳이 탭하고 30초 기다릴 것 없이 바로 나가기로 직행할 수 있다.
+def is_resume_button_active(img_np):
+    if img_np is None: return True  # 판정 불가 시 기존 동작(일단 탭 시도) 유지 - 안전 폴백
+    h, w = img_np.shape[:2]
+    try:
+        scale_x, scale_y = w / 1440.0, h / 2560.0
+        cx, cy = int(1217 * scale_x), int(468 * scale_y)
+        cx = max(0, min(cx, w - 1))
+        cy = max(0, min(cy, h - 1))
+        x1, x2 = max(0, cx - 8), min(w, cx + 8)
+        y1, y2 = max(0, cy - 8), min(h, cy + 8)
+        crop = img_np[y1:y2, x1:x2]
+        brightness = float(np.mean(crop))
+        is_active = brightness > 125.0
+        print(f"📊 [재개 버튼 밝기 분석] 평균 밝기 {brightness:.1f} → {'활성' if is_active else '비활성'} (기준 125.0, 실측 비활성92/활성162)")
+        return is_active
+    except Exception as e:
+        print(f"⚠️ [재개 버튼 밝기 분석 오류] {e}")
+        return True
+
 def check_auto_btn_template_present(img_np, template, threshold_val=0.70):
     if template is None or img_np is None: return False
     h, w = img_np.shape[:2]
@@ -2597,15 +2622,36 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                 
                 if field_matched_low or combat_matched_low or yeolda_matched_low:
                     print(f"🚨 [정체 탈출 가드] 임계값 0.45 완화 시 앵커 매칭 성공! (필드:{field_matched_low}, 전투:{combat_matched_low}, 상자:{yeolda_matched_low})")
-                    need_heal = True
+                    # 🚨 [2026-09-16 재설계] 예전엔 이 완화 매칭이 성공할 때마다 최대 3회까지 "빈사(딸피)
+                    # 장막"으로 간주해 힐 재시도 + 타이머 리셋을 반복했다. 사용자 지적: 힐링을 세 번씩이나
+                    # 할 필요는 없다 - 한 번 힐링하고 돌아왔는데도 또 같은 완화 매칭이 걸린다면, 그건 이미
+                    # 진짜 빈사가 아니라 다른 원인(예: 완화 임계값 0.45가 전혀 무관한 화면에서 우연히
+                    # 걸린 오탐)일 가능성이 높다. 그래서 힐 시도는 1회로 줄이고, 그 이후엔 힐 대신 곧장
+                    # 나가기 버튼을 눌러 던전을 이탈 시도한다(대설지대 눈보라구간에 적용한 것과 동일한
+                    # "안 되면 나가기" 패턴을 이 공용 블록에도 적용 - 모든 던전이 공유하는 t_move_exit
+                    # 도장을 그대로 재사용하므로 던전 종류를 안 가림). check_field_anchor_present()/
+                    # check_combat_template_present()는 둘 다 작은 고정 ROI(우상단 필드앵커, 좌상단 배속
+                    # 버튼)만 크롭해서 매칭하므로 전체화면 오탐 위험은 이미 낮지만(사용자 확인: "필드앵커의
+                    # roi값 지정하고 그랬던 것" 그대로), 그래도 완전히 무관한 화면에서 그 좁은 영역만
+                    # 우연히 걸릴 가능성 자체는 남아있어 이 안전장치가 여전히 필요하다.
                     low_threshold_active_until = current_time + 60.0
-                    if low_threshold_reset_count < 3:
+                    if low_threshold_reset_count < 1:
+                        need_heal = True
                         last_state_changed_time = current_time  # 정체 타이머 리셋
                         low_threshold_reset_count += 1
-                        print(f"🔴 빈사(딸피) 장막 간섭 판정: 완화 모드 리셋 적용 ({low_threshold_reset_count}/3)")
+                        print(f"🔴 빈사(딸피) 장막 간섭 판정: 완화 모드 리셋 적용 ({low_threshold_reset_count}/1) - 힐링 1회 시도 후에도 또 걸리면 진성 정체로 간주해 나가기를 시도합니다.")
                     else:
-                        print("🔴 빈사(딸피) 완화 리셋 한계(3회) 도달! 진성 정체 상태일 가능성이 있으므로 타이머 리셋을 건너뜁니다.")
-                    
+                        need_heal = False  # 더 이상 빈사로 보지 않음 - 힐 재시도 대신 탈출 시도로 전환
+                        print("🔴 빈사(딸피) 완화 리셋 한계(1회) 도달! 힐링으로도 안 풀리는 진성 정체로 판단해 나가기 버튼을 시도합니다.")
+                        exit_coords_lowthresh = find_and_get_field_btn_coords(img_np, t_move_exit, 0.70)
+                        if exit_coords_lowthresh:
+                            print(f"🚪 [정체 탈출 가드] 나가기 버튼 탭: {exit_coords_lowthresh}")
+                            safe_device_shell(device, f"input tap {exit_coords_lowthresh[0]} {exit_coords_lowthresh[1]}")
+                            time.sleep(1.5)
+                        else:
+                            print("🚪 [정체 탈출 가드] 나가기 버튼 미검출 - 다음 정체 사이클(60초 후)에 재시도합니다.")
+                        continue  # 위에서 이미 조치했으므로 아래 블랙박스 경고/KEYCODE_BACK과 중복 작동하지 않도록 다음 틱으로.
+
             if stuck_duration > stuck_limit:
                 if state == "TRIGGER_EXIT":
                     last_state_changed_time = time.time()
@@ -3393,6 +3439,23 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
 
                             if not blizzard_exit_tapped:
                                 img_np_bz = img_np  # 재개 탭 실패/미검출 시 30초 판정에서도 쓸 폴백(구 화면)
+
+                                # 🆕 [2026-09-16] 재개 버튼을 탭하기 "전"에 먼저 밝기로 활성/비활성을
+                                # 확인한다 - 비활성이면 탭해봐야 반응이 없을 게 뻔하므로(실측:
+                                # is_resume_button_active 주석 참고) 30초씩 기다리지 않고 바로 나가기로
+                                # 직행한다.
+                                if not is_resume_button_active(img_np):
+                                    print("❄️ [눈보라구간] 재개 버튼 비활성 확인(밝기 판정) - 탭 생략하고 즉시 나가기로 전환합니다.")
+                                    exit_coords = find_and_get_field_btn_coords(img_np, t_move_exit, 0.70)
+                                    if exit_coords:
+                                        print(f"❄️ [눈보라구간] 나가기 탭: {exit_coords}")
+                                        safe_device_shell(device, f"input tap {exit_coords[0]} {exit_coords[1]}")
+                                        blizzard_exit_tapped = True
+                                        time.sleep(1.5)
+                                    transition_delay_count = 0
+                                    time.sleep(1.0)
+                                    continue
+
                                 resume_coords = find_checkpoint_btn_coords(img_np, t_move_resume_act, t_move_resume_deact, 0.70)
                                 if resume_coords:
                                     print(f"❄️ [눈보라구간] 재개 버튼 탭: {resume_coords}")
