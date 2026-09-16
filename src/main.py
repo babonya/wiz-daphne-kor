@@ -2357,7 +2357,15 @@ def start_grand_orchestrator():
                 last_action_time = time.time()
                 continue
 
-            if is_mini_screen or score_loot > 0.65 or score_field > 0.60 or score_yeolda > 0.65 or score_heal_close > 0.65 or score_combat > 0.80:
+            # 🚨 [2026-09-16] score_combat 문턱 0.80 → 0.70 하향 - 동결(freeze) 상태이상의 시각 효과가
+            # 배속 버튼 인식을 0.752까지만 떨어뜨려(임계값 0.80 미달) 부팅 복구 분류기가 명백한 전투
+            # 화면을 1시간+ 동안 아웃게임으로 오판, dungeon_bot.py로 아예 못 넘어간 실전 사고 완치
+            # (logs/2026-09-16-2200-000_reboot1.txt, dev/ROI_check/MuMu-20260916-231353-652.png).
+            # 0.80이었던 근거는 git 이력 전수 확인 결과 최초 커밋(v1.11.x 이전)부터 있던 값으로, 의도적
+            # 튜닝 기록이 없음. dungeon_bot.py는 같은 도장/같은 ROI(get_combat_match_score와 동일한
+            # 0-200×1600-1800 크롭)를 매 전투 틱마다 이미 0.70으로 써왔고 오탐 없이 검증돼 있어(전투 중
+            # 상시 판정용), 여기도 그 기준에 맞춘다.
+            if is_mini_screen or score_loot > 0.65 or score_field > 0.60 or score_yeolda > 0.65 or score_heal_close > 0.65 or score_combat > 0.70:
                 print(f"   ➔ 🤖 [엔진 최종 판정] 아웃게임 부재 및 던전 조건 충족, '던전 내부' 상태로 확정합니다.")
                 last_action_time = time.time()
                 
