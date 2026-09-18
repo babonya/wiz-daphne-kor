@@ -3111,12 +3111,12 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
             # 🆕 [2026-09-19 사용자 확정] last_state_changed_time과 무관한 전용 카운터로 진성 정체를
             # 판단한다 - 상자 미니게임은 실제 게임 규칙상 최대 4회 도전만 가능한데, 우리는 승/패 결과를
             # 확인 안 하고 무지성 난타(solve_trap_game)만 하므로 미니게임 1트가 끝나기도 전에 난타를
-            # 또 주입했을 수 있어 여유를 배로 잡아 8회로 지정(사용자 확정). 8회 넘게 같은 상자를 두고
+            # 또 주입했을 수 있어 여유를 넉넉히 잡아 10회로 지정(사용자 확정). 10회 넘게 같은 상자를 두고
             # FIELD_WAIT↔PLAY_MINIGAME을 왕복하면(리셋 조건: 새 "열다" 감지 또는 상자 완료 후 필드 안착)
             # 뮤뮤 자체 동결 등 진성 정체로 간주해 강제 재시작한다.
             minigame_reentry_count += 1
-            print(f"🎮 [dungeon_bot] 미니게임 화면 포착! 즉각 PLAY_MINIGAME 상태로 진입합니다. (같은 상자 왕복 {minigame_reentry_count}/8)")
-            if minigame_reentry_count >= 8:
+            print(f"🎮 [dungeon_bot] 미니게임 화면 포착! 즉각 PLAY_MINIGAME 상태로 진입합니다. (같은 상자 왕복 {minigame_reentry_count}/10)")
+            if minigame_reentry_count >= 10:
                 raise RuntimeError(f"미니게임 왕복 정체 한계 초과: 같은 상자를 두고 FIELD_WAIT↔PLAY_MINIGAME을 {minigame_reentry_count}회 왕복해 강제 앱 재시작을 수행합니다.")
             state = "PLAY_MINIGAME"
             last_state_changed_time = time.time()
