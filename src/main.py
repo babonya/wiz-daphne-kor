@@ -2205,7 +2205,12 @@ def start_grand_orchestrator():
                 if not first_outgame_stuck_time_str:
                     first_outgame_stuck_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     first_outgame_stuck_start_time = time.time()
-                
+                    # 🆕 [2026-09-18] 정체 최초 발생 순간 증거 스샷 - 기존엔 300초 하드리밋(restart_process)
+                    # 시점에만 스샷이 남아, 그 전에 상태가 리셋되며 반복되는 사고(예: dungeon_bot.py의
+                    # PLAY_MINIGAME 33초 주기 리셋 루프, 1시간+ 반복돼도 증거가 하나도 안 남았음)는 전혀
+                    # 기록이 안 됐다. 이 경고가 뜨는 가장 이른 시점에 남겨야 이런 사고도 잡힌다.
+                    take_screencap_backup(device, prefix="stuck")
+
                 stuck_duration = time.time() - first_outgame_stuck_start_time
                 print(f"\n⚠️ [🚨 사령탑 블랙박스 경고] 아웃게임 상태 무반응 정체 중... (최초 정체 발생 시각: {first_outgame_stuck_time_str}, 경과: {int(stuck_duration)}초)")
                 

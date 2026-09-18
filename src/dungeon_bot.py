@@ -942,6 +942,24 @@ def is_resume_button_active(img_np):
         print(f"⚠️ [재개 버튼 밝기 분석 오류] {e}")
         return True
 
+# 🆕 [2026-09-18] "블랙박스 경고"(정체 감지) 발생 순간의 증거 스크린샷 저장 - 사용자 요청.
+# 기존에도 restart_process()(main.py)가 300초 하드리밋/앱 재시작 시점에 증거 스샷을 남기는 게
+# 있었지만, PLAY_MINIGAME이 30초마다 정체→"미니게임 화면 포착"으로 스스로 상태를 리셋하는
+# 것처럼 last_state_changed_time이 반복적으로 리셋되는 사고에서는 300초에 영영 도달하지 못해
+# 그 증거 스샷도 한 번도 안 찍혔다(실전 확인: 2026-09-18, 같은 33초 정체→리셋 패턴이 554회,
+# 1시간 넘게 반복됐는데 스샷이 하나도 없었음). 이 "블랙박스 경고"는 정체 감지의 가장 이른
+# 시점이라 여기서부터 남겨야 이런 사고도 증거가 남는다.
+def save_stuck_evidence_screenshot(img_np, state):
+    try:
+        os.makedirs("logs", exist_ok=True)
+        time_str = datetime.datetime.now().strftime("%Y-%m-%d-%H%M-%S")
+        safe_state = str(state).replace("/", "_")
+        out_path = os.path.join("logs", f"{time_str}_stuck_{safe_state}.png")
+        Image.fromarray(img_np).save(out_path)
+        print(f"📸 [정체 증거 스크린샷] 저장 완료: {out_path}")
+    except Exception as e:
+        print(f"⚠️ [정체 증거 스크린샷 실패] {e}")
+
 def check_auto_btn_template_present(img_np, template, threshold_val=0.70):
     if template is None or img_np is None: return False
     h, w = img_np.shape[:2]
@@ -2438,6 +2456,11 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     came_from_chest = False
     low_threshold_active_until = 0.0
     low_threshold_reset_count = 0
+    # 🆕 [2026-09-18] "블랙박스 경고"(정체 감지) 최초 발생 시 그 순간 화면을 증거로 남기기 위한
+    # 중복 방지 키 - 이 경고는 정체가 풀릴 때까지 1~2초 간격으로 계속 재출력되는데, 매번 스샷을
+    # 찍으면 거의 동일한 사진이 수십~수백 장 쌓인다. 같은 정체 에피소드(같은 last_state_changed_time)
+    # 동안은 최초 1장만 남긴다.
+    last_stuck_screenshot_key = None
     # 🆕 [2026-09-12 실전 확인] 빈사(딸피) 픽셀 카운터가 "사망"과 "빈사"를 구분 못 해, 실제로 죽은
     # 캐릭터가 있으면 힐을 아무리 넣어도 위험색이 안 사라져 정비를 무한 재격발하던 결함(실전 로그:
     # 12시간 동안 힐-재감지만 반복하다 게임 세션이 시간초과로 끊김) 완치용 플래그. 사망을 한 번
@@ -2472,6 +2495,13 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     last_empty_shortcut_detected_time = 0
     continuous_heal_retry_count = 0
     yeolda_stuck_retry_count = 0
+    # 🆕 [2026-09-19] 미니게임 "즉각 돌입 가드"(FIELD_WAIT↔PLAY_MINIGAME 왕복) 전용 재진입 카운터.
+    # last_state_changed_time은 상태가 바뀔 때마다(이 왕복도 포함) 범용 리셋 로직이 매번 다시 리셋해버려
+    # 300초 하드리밋이 절대 안 걸리는 사고가 있었다(실전: 2026-09-18, 뮤뮤 자체 동결 상황에서 이 왕복만
+    # 33초 주기로 554회, 1시간+ 반복). last_state_changed_time과 완전히 독립적으로 세는 이 카운터로만
+    # 진성 정체를 판단한다. "열다" 감지 시(새 상자 인카운터) 0으로 리셋, 상자 완료 후 필드 안착 시에도
+    # 0으로 리셋 - 즉 "같은 상자를 두고 왕복한 횟수"만 순수하게 센다.
+    minigame_reentry_count = 0
     exit_clicked_once = False
     exit_first_start_time = None
     exit_recovery_retry_count = 0
@@ -2694,7 +2724,13 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     continue
                 stuck_time_str = datetime.datetime.fromtimestamp(last_state_changed_time).strftime('%Y-%m-%d %H:%M:%S')
                 print(f"\n⚠️ [🚨 블랙박스 경고] 현재 던전봇이 '{state}' 상태로 정체 중... (정체 시작: {stuck_time_str}, 경과: {int(stuck_duration)}초)")
-                
+
+                # 같은 정체 에피소드(같은 last_state_changed_time)당 증거 스샷 1장만 남긴다.
+                stuck_episode_key = (state, last_state_changed_time)
+                if stuck_episode_key != last_stuck_screenshot_key:
+                    save_stuck_evidence_screenshot(img_np, state)
+                    last_stuck_screenshot_key = stuck_episode_key
+
                 # 🛑 [v1.13.5 추가] 일반 상태 5분 이상 정체 시 자동 재부팅 세이프티 가드
                 if stuck_duration >= 300.0:
                     raise RuntimeError(f"던전 필드 정체 한계 초과: '{state}' 상태로 {int(stuck_duration)}초간 정체되어 강제 앱 재시작을 수행합니다.")
@@ -2921,6 +2957,8 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
 
                 if check_template_present_multipass(img_np, t_yeolda, yeolda_threshold):
                     transition_delay_count = 0
+                    # 🆕 [2026-09-19] 새 상자("열다") 인카운터 - 미니게임 왕복 카운터를 0으로 리셋한다.
+                    minigame_reentry_count = 0
                     if yeolda_stuck_retry_count < 3:
                         yeolda_stuck_retry_count += 1
                         # 🚨 [2026-08-28 상자 첫 감지 오해성 로그 정정] 이 분기는 AUTO_MOVING이 아닌 상태(부팅
@@ -3070,7 +3108,16 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
             low_threshold_reset_count = 0
         # 🎮 [미니게임 즉각 돌입 가드] 화면이 미니게임 해제 창인 경우 30초 정체 대기 없이 즉시 전이
         if state in ["FIELD_WAIT", "AUTO_MOVING"] and chest_opener.is_minigame_screen(img_np, height, width):
-            print("🎮 [dungeon_bot] 미니게임 화면 포착! 즉각 PLAY_MINIGAME 상태로 진입합니다.")
+            # 🆕 [2026-09-19 사용자 확정] last_state_changed_time과 무관한 전용 카운터로 진성 정체를
+            # 판단한다 - 상자 미니게임은 실제 게임 규칙상 최대 4회 도전만 가능한데, 우리는 승/패 결과를
+            # 확인 안 하고 무지성 난타(solve_trap_game)만 하므로 미니게임 1트가 끝나기도 전에 난타를
+            # 또 주입했을 수 있어 여유를 배로 잡아 8회로 지정(사용자 확정). 8회 넘게 같은 상자를 두고
+            # FIELD_WAIT↔PLAY_MINIGAME을 왕복하면(리셋 조건: 새 "열다" 감지 또는 상자 완료 후 필드 안착)
+            # 뮤뮤 자체 동결 등 진성 정체로 간주해 강제 재시작한다.
+            minigame_reentry_count += 1
+            print(f"🎮 [dungeon_bot] 미니게임 화면 포착! 즉각 PLAY_MINIGAME 상태로 진입합니다. (같은 상자 왕복 {minigame_reentry_count}/8)")
+            if minigame_reentry_count >= 8:
+                raise RuntimeError(f"미니게임 왕복 정체 한계 초과: 같은 상자를 두고 FIELD_WAIT↔PLAY_MINIGAME을 {minigame_reentry_count}회 왕복해 강제 앱 재시작을 수행합니다.")
             state = "PLAY_MINIGAME"
             last_state_changed_time = time.time()
             continue
@@ -4208,6 +4255,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     print("✨ [상자깡 완료 및 필드 안착] 다음 탐색으로 정상 복귀합니다.")
                     state = "FIELD_WAIT"
                     came_from_chest = True
+                    minigame_reentry_count = 0  # 🆕 [2026-09-19] 상자 완료 - 미니게임 왕복 카운터 리셋
                     time.sleep(1.0)
                 else:
                     time.sleep(0.3)
