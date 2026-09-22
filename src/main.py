@@ -1089,6 +1089,11 @@ def recover_app_startup(device):
     print("🔮 [앱 기동 복구 시스템 작동] 로딩 및 인트로 팝업 극복 절차를 시작합니다.")
     
     t_re_retry = load_template("templates/reboot/retry.png")
+    # 🆕 [2026-09-22] "재시도" 버튼의 다른 변형(금색 테두리 박스 스타일) - 기존 도장(테두리 없는
+    # 텍스트만)은 이 스타일에서 실측 0.48로 임계값(0.70) 미달이라 인식을 못 했다(타이틀 화면
+    # 네트워크 오류 팝업, dev/ROI_check 233장 전수 대조로 오탐 최고 0.60 확인, 여유 있게 분리됨).
+    # 혹시 몰라 기존 도장은 남겨두고 "retry2"로 새로 추가 - 아래 체크는 둘 다 본다.
+    t_re_retry2 = load_template("templates/reboot/retry2.png")
     t_re_download = load_template("templates/reboot/start_download.png")
     t_re_maintenance = load_template("templates/reboot/maintenance.png")
     t_re_maintain_title = load_template("templates/reboot/maintain_to_title.png")
@@ -1298,9 +1303,10 @@ def recover_app_startup(device):
             download_started_at = time.time()
             continue
 
-        if check_template_present(img_np, t_re_retry, 0.70):
+        if check_template_present(img_np, t_re_retry, 0.70) or check_template_present(img_np, t_re_retry2, 0.70):
             print("🌐 [네트워크 재시도] 에러 재시도 버튼 감지! 즉시 터치합니다.")
-            find_and_click_template(device, img_np, t_re_retry, 0.70)
+            if not find_and_click_template(device, img_np, t_re_retry, 0.70):
+                find_and_click_template(device, img_np, t_re_retry2, 0.70)
             time.sleep(3.0)
             counter = 0
             continue
@@ -1976,6 +1982,11 @@ def start_grand_orchestrator():
     t_passport_close = load_template("templates/close_passport_popup.png")
     t_error_to_title = load_template("templates/Error_to_title.png")
     t_re_retry = load_template("templates/reboot/retry.png")
+    # 🆕 [2026-09-22] "재시도" 버튼의 다른 변형(금색 테두리 박스 스타일) - 기존 도장(테두리 없는
+    # 텍스트만)은 이 스타일에서 실측 0.48로 임계값(0.70) 미달이라 인식을 못 했다(타이틀 화면
+    # 네트워크 오류 팝업, dev/ROI_check 233장 전수 대조로 오탐 최고 0.60 확인, 여유 있게 분리됨).
+    # 혹시 몰라 기존 도장은 남겨두고 "retry2"로 새로 추가 - 아래 체크는 둘 다 본다.
+    t_re_retry2 = load_template("templates/reboot/retry2.png")
 
     print("=======================================")
 
@@ -2299,9 +2310,10 @@ def start_grand_orchestrator():
 
             # 💡 [재시도 팝업 가드] Error_to_title.png와 동일한 사유(recover_app_startup() 전용으로만 체크되고
             # 메인 루프엔 없었음)로 같이 추가. 언제든 뜰 수 있는 일반 네트워크/서버 재시도 팝업.
-            if check_template_present(img_np, t_re_retry, 0.70):
+            if check_template_present(img_np, t_re_retry, 0.70) or check_template_present(img_np, t_re_retry2, 0.70):
                 print("🌐 [네트워크 재시도] 'retry.png' 감지! 즉시 터치합니다.")
-                find_and_click_template(device, img_np, t_re_retry, 0.70)
+                if not find_and_click_template(device, img_np, t_re_retry, 0.70):
+                    find_and_click_template(device, img_np, t_re_retry2, 0.70)
                 time.sleep(3.0)
                 last_action_time = time.time()
                 continue
@@ -2483,9 +2495,10 @@ def start_grand_orchestrator():
             write_restart_counter(read_restart_counter() + 1)
             os.execv(sys.executable, [sys.executable] + sys.argv)
 
-        if check_template_present(img_np, t_re_retry, 0.70):
+        if check_template_present(img_np, t_re_retry, 0.70) or check_template_present(img_np, t_re_retry2, 0.70):
             print("🌐 [네트워크 재시도] 'retry.png' 감지! 즉시 터치합니다.")
-            find_and_click_template(device, img_np, t_re_retry, 0.70)
+            if not find_and_click_template(device, img_np, t_re_retry, 0.70):
+                find_and_click_template(device, img_np, t_re_retry2, 0.70)
             time.sleep(3.0)
             last_action_time = time.time()
             continue
