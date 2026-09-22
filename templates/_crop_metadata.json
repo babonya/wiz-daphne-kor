@@ -1,0 +1,12 @@
+{
+  "Error_to_title2": {
+    "source_image": "2026-09-22-1754-17_stuck.png",
+    "roi": {
+      "x1": 519,
+      "y1": 1373,
+      "x2": 922,
+      "y2": 1507
+    },
+    "roi_name": null
+  }
+}

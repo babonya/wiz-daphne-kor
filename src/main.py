@@ -1107,7 +1107,11 @@ def recover_app_startup(device):
     t_net_error = load_template("templates/anchor_network_error.png")
     t_net_retry = load_template("templates/btn_network_retry.png")
     t_error_to_title = load_template("templates/Error_to_title.png")
-    
+    # 🆕 [2026-09-22] "타이틀로" 버튼의 다른 폰트 변형 - 기존 도장은 실측 0.64로 임계값(0.70) 미달
+    # (세션 종료 팝업, dev/ROI_check 233장 전수 대조 오탐 최고 0.6513 확인, 여유 있게 분리됨). retry2와
+    # 동일 사유로 혹시 몰라 기존 도장은 남기고 신규 추가 - 아래 체크는 둘 다 본다.
+    t_error_to_title2 = load_template("templates/Error_to_title2.png")
+
     t_btn_resurrect = load_dead_template("templates/btn_resurrect.png")
     t_incombat_dead = load_template("templates/InCombat_dead.png")
     t_anchor_dead = load_dead_template("templates/anchor_dead_screen.png")
@@ -1328,9 +1332,10 @@ def recover_app_startup(device):
             counter = 0
             continue
 
-        if check_template_present(img_np, t_error_to_title, 0.70):
+        if check_template_present(img_np, t_error_to_title, 0.70) or check_template_present(img_np, t_error_to_title2, 0.70):
             print("👉 [타이틀 복귀 확인] 'Error_to_title.png' 감지! 즉시 탭합니다.")
-            find_and_click_template(device, img_np, t_error_to_title, 0.70)
+            if not find_and_click_template(device, img_np, t_error_to_title, 0.70):
+                find_and_click_template(device, img_np, t_error_to_title2, 0.70)
             time.sleep(3.0)
             counter = 0
             continue
@@ -1981,6 +1986,10 @@ def start_grand_orchestrator():
     t_passport_anchor = load_template("templates/anchor_passport_popup.png")
     t_passport_close = load_template("templates/close_passport_popup.png")
     t_error_to_title = load_template("templates/Error_to_title.png")
+    # 🆕 [2026-09-22] "타이틀로" 버튼의 다른 폰트 변형 - 기존 도장은 실측 0.64로 임계값(0.70) 미달
+    # (세션 종료 팝업, dev/ROI_check 233장 전수 대조 오탐 최고 0.6513 확인, 여유 있게 분리됨). retry2와
+    # 동일 사유로 혹시 몰라 기존 도장은 남기고 신규 추가 - 아래 체크는 둘 다 본다.
+    t_error_to_title2 = load_template("templates/Error_to_title2.png")
     t_re_retry = load_template("templates/reboot/retry.png")
     # 🆕 [2026-09-22] "재시도" 버튼의 다른 변형(금색 테두리 박스 스타일) - 기존 도장(테두리 없는
     # 텍스트만)은 이 스타일에서 실측 0.48로 임계값(0.70) 미달이라 인식을 못 했다(타이틀 화면
@@ -2302,7 +2311,7 @@ def start_grand_orchestrator():
             # ⚠️ "타이틀로"가 뜨면 게임이 로그인/로딩부터 다시 시작되어 자동전투 스킬 설정 등 세션 상태가 초기화되므로,
             # 매크로도 같이 완전히 새로 시작합니다(파이썬 프로세스 자체를 재시작 - 새 프로세스의 recover_app_startup이
             # 이 화면을 다시 감지해 탭까지 처리하므로 여기서 직접 탭할 필요 없음).
-            if check_template_present(img_np, t_error_to_title, 0.70):
+            if check_template_present(img_np, t_error_to_title, 0.70) or check_template_present(img_np, t_error_to_title2, 0.70):
                 print("👉 [타이틀 복귀 확인] 'Error_to_title.png' 감지! 매크로를 완전히 재시작합니다.")
                 take_screencap_backup(device, prefix="stuck")
                 write_restart_counter(read_restart_counter() + 1)
@@ -2489,7 +2498,7 @@ def start_grand_orchestrator():
         # 💡 [갱신 데이터 확인 팝업 가드 - 상시 체크] 위쪽 30초 정체 감지 블록은 last_action_time이 최근이면(예: 던전에서
         # 막 돌아온 직후) 통째로 스킵되어, 그 다음 줄부터 시작되는 상시 판별 로직(마을/월드맵/던전선택)이 이 팝업을 못 보고
         # village_common/inn.png와 오탐(0.72)될 수 있음(실사용 중 하켄 귀환 직후 발생 확인). 여기서도 동일하게 최우선 체크.
-        if check_template_present(img_np, t_error_to_title, 0.70):
+        if check_template_present(img_np, t_error_to_title, 0.70) or check_template_present(img_np, t_error_to_title2, 0.70):
             print("👉 [타이틀 복귀 확인] 'Error_to_title.png' 감지! 매크로를 완전히 재시작합니다.")
             take_screencap_backup(device, prefix="stuck")
             write_restart_counter(read_restart_counter() + 1)
