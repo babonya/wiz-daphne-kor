@@ -1920,11 +1920,26 @@ def start_grand_orchestrator():
     t_harken_blessing_donothing = dungeon_bot.load_template("templates/Field/harken_blessing_donothing.png")
     t_harken_return = dungeon_bot.load_color_template("templates/FFXI/harken_return.png")
 
+    # 🆕 [2026-09-22] "대화창 저격"이 화살표를 무조건 탭하기 전에 먼저 알려진 선택지 화면(중립몹 조우/
+    # 울타리 구멍/뼈상인/행상인)인지부터 확인하기 위한 도장들 - dungeon_bot.py의
+    # _handle_dungeon_interrupt()를 그대로 재사용한다(harken 처리와 동일하게 이미 검증된 로직 재사용,
+    # 새로 만들지 않음). 실전 사고(2026-09-22): 이 확인이 없어서 "울타리 구멍" 선택지 화면의 화살표를
+    # 8시간+ 무의미하게 탭만 하고 "빠져나간다"를 한 번도 선택 못 함(16,661회 반복).
+    t_dilog_fight = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_dilog_fight.png")
+    t_doghole = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_HS6_doghole.png")
+    t_dilog_bone = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_dilog_bone.png")
+    t_dilog_oil = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_dilog_oil.png")
+    t_dilog_elixir = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_dilog_elixir.png")
+    t_dilog_bonegoblin_name = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_dilog_bonegoblin_name.png")
+    t_seller_label = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_seller_label.png")
+    t_seller_let_me_see = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_seller_let_me_see.png")
+    t_seller_hammer = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_seller_hammer.png")
+
     t_field = load_grayscale_template("templates/Field/field_anchor.png")
     t_yeolda = load_template("templates/chestopening/yeolda_clean.png")
     t_get_item = load_template("templates/chestopening/get_item.png")
     t_app_exit = load_template("templates/app_exit.png")
-    
+
     t_heal_close = load_template("templates/close_panel.png")
     t_combat_in = load_grayscale_template("templates/combat_in.png")
     t_combat_slow = load_grayscale_template("templates/combat_slow.png")
@@ -2169,7 +2184,25 @@ def start_grand_orchestrator():
         # 📦 [상자 조우 예외 가드] 화면에 '열다'가 감지되는 경우 대화창 저격을 하지 않고 건너뜁니다.
         is_box_menu_present = check_template_present(img_np, t_yeolda, 0.65)
         is_get_item_present = check_template_present(img_np, t_get_item, 0.70)
-        
+
+        # 🆕 [2026-09-22 사용자 확정] 화살표를 무조건 탭하기(저격) 전에, 먼저 알려진 선택지 화면인지
+        # 스캔해서 선택할 게 있으면 그걸 선택하고, 없으면 그때 화살표 탭으로 넘어간다 - "울타리 구멍"
+        # 같은 선택지 화면은 화살표를 눌러봐야 아무 선택도 안 돼서 화면이 안 바뀌고, 그러면 다음 틱에
+        # 화살표가 또 보여서 무한 반복된다(실전 사고: 8시간+ 16,661회). t_dialogue_arrow=None을 넘겨서
+        # 이 호출 자체는 화살표 폴백을 하지 않게 하고(그건 아래 기존 코드가 격리구역 전용 크롭/임계값
+        # 으로 그대로 계속 담당), 알려진 선택지(중립몹/울타리 구멍/뼈상인/행상인)만 먼저 가로챈다.
+        if not is_box_menu_present and not is_get_item_present:
+            if dungeon_bot._handle_dungeon_interrupt(
+                device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer,
+                None, t_field, t_doghole=t_doghole, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil,
+                t_dilog_elixir=t_dilog_elixir, t_dilog_bonegoblin_name=t_dilog_bonegoblin_name
+            ):
+                print("👑 [대화창 저격 - 선택지 우선 처리] 알려진 선택지 화면을 감지해 화살표 대신 선택지를 눌렀습니다.")
+                last_action_time = time.time()
+                last_full_screen_shadow = None
+                last_freeze_check_time = time.time()
+                continue
+
         # [차원 안전 가드] dialogue_zone의 크기가 t_arrow_clean 템플릿 크기보다 작은 경우 매칭 생략
         has_dialogue_size_ok = True
         if t_arrow_clean is not None:
@@ -2177,7 +2210,7 @@ def start_grand_orchestrator():
             ha, wa = t_arrow_clean.shape[:2]
             if hz < ha or wz < wa:
                 has_dialogue_size_ok = False
-        
+
         if t_arrow_clean is not None and not is_box_menu_present and not is_get_item_present and has_dialogue_size_ok:
             gray_zone = cv2.cvtColor(dialogue_zone, cv2.COLOR_RGB2GRAY)
             _, thresh_zone = cv2.threshold(gray_zone, 160, 255, cv2.THRESH_BINARY)
