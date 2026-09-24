@@ -2469,6 +2469,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     came_from_chest = False
     low_threshold_active_until = 0.0
     low_threshold_reset_count = 0
+    low_threshold_last_hit_time = 0.0
     # 🆕 [2026-09-18] "블랙박스 경고"(정체 감지) 최초 발생 시 그 순간 화면을 증거로 남기기 위한
     # 중복 방지 키 - 이 경고는 정체가 풀릴 때까지 1~2초 간격으로 계속 재출력되는데, 매번 스샷을
     # 찍으면 거의 동일한 사진이 수십~수백 장 쌓인다. 같은 정체 에피소드(같은 last_state_changed_time)
@@ -2714,6 +2715,19 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     # roi값 지정하고 그랬던 것" 그대로), 그래도 완전히 무관한 화면에서 그 좁은 영역만
                     # 우연히 걸릴 가능성 자체는 남아있어 이 안전장치가 여전히 필요하다.
                     low_threshold_active_until = current_time + 60.0
+                    # 🚨 [2026-09-24 실전 확인 - 완치] 이 카운터가 아래 3117번째 줄 부근의 "상태 전환 시
+                    # 공용 리셋" 블록에 물려 있어서, "길 잃음 복구"(10초 무인식 시 ESC 주입)가 유발하는
+                    # FIELD_WAIT<->IN_COMBAT 허상 왕복(진짜 전투 조우가 아니라 피안개로 화면인식이
+                    # 튀는 것뿐)마다 매번 0으로 리셋되어, 같은 빈사 에피소드 안에서도 "1/1"을 절대
+                    # 못 넘고 힐 재시도만 무한 반복하는 사고가 있었다(실전 로그: 8시간 동안 400회,
+                    # 전부 "(1/1)"만 찍힘 - "진성 정체로 간주해 나가기" 분기가 단 한 번도 실행 안 됨).
+                    # 이제 그 공용 리셋에서는 빼고, 여기서 "직전 완화매칭 이후 5분 넘게 조용했다면 별개
+                    # 에피소드로 본다"는 자체 판단으로만 리셋한다 - 같은 에피소드 안에서의 반복 왕복(보통
+                    # 수십 초~2~3분 간격)은 카운터를 이어가고, 정말 한참 뒤(5분+)에 다시 걸리면 새
+                    # 에피소드로 보고 힐 재시도 기회를 다시 준다.
+                    if current_time - low_threshold_last_hit_time > 300.0:
+                        low_threshold_reset_count = 0
+                    low_threshold_last_hit_time = current_time
                     if low_threshold_reset_count < 1:
                         need_heal = True
                         last_state_changed_time = current_time  # 정체 타이머 리셋
@@ -3118,7 +3132,10 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
             previous_state = state
             last_state_changed_time = time.time()
             yeolda_stuck_retry_count = 0
-            low_threshold_reset_count = 0
+            # 🚨 [2026-09-24] low_threshold_reset_count는 여기서 더 이상 리셋하지 않는다 - 위 2716번째
+            # 줄 부근의 자체 5분 시간창 리셋으로 옮겼다(사유는 그 위치의 주석 참고). 상태가 바뀔 때마다
+            # 무조건 리셋하면 "길 잃음 복구" ESC가 유발하는 허상의 상태 왕복에도 매번 걸려 카운터가
+            # 절대 escalation 문턱을 못 넘던 8시간짜리 실전 사고가 있었다.
         # 🎮 [미니게임 즉각 돌입 가드] 화면이 미니게임 해제 창인 경우 30초 정체 대기 없이 즉시 전이
         if state in ["FIELD_WAIT", "AUTO_MOVING"] and chest_opener.is_minigame_screen(img_np, height, width):
             # 🆕 [2026-09-19 사용자 확정] last_state_changed_time과 무관한 전용 카운터로 진성 정체를
