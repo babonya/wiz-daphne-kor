@@ -23,6 +23,8 @@ came_from_chest = False
 # - 현재 버전: 1.21.13
 # - 최근 수정일: 2026-09-25
 # - 수정 기록:
+#   [미릴리즈]: 🆕 마을 이탈 감지 가드 - 던전 루프 안에서 마을(여관+사원 도장 둘 다 0.85)이 보이면 사령탑으로
+#     즉시 퇴장(5초 주기). 뒤로가기 누적으로 마을까지 밀려나 7~8시간 방치되던 사고 대비.
 #   1.21.13: 🚨 빈사 정체 탈출 가드 카운터(low_threshold_reset_count)를 공용 상태전환 리셋에서 빼고 자체
 #     5분 시간창(low_threshold_last_hit_time)으로 리셋 - 8시간 400회 "(1/1)" 반복, 나가기 에스컬레이션 불능 완치.
 #   1.21.12: 🆕 정체 증거 스크린샷 자동 저장 + 미니게임 왕복 전용 정체 카운터(10회) 신설.
@@ -2362,6 +2364,9 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     t_no_chest = load_template("templates/Field/toastmsg_nochest.png")
     t_yeolda = load_template("templates/chestopening/yeolda_clean.png")
     t_dialogue_indicator = load_template("templates/chestopening/dialogue_indicator.png")
+    # 🆕 [2026-09-25] 마을 이탈 감지 가드용(main.py와 같은 village_common 공용 그레이스케일 도장)
+    t_village_inn = load_grayscale_template("templates/village_common/inn.png")
+    t_village_temple = load_grayscale_template("templates/village_common/temple.png")
 
     # 🆕 [2026-09-08 대설지대] 중립몹 조우 / 행상인 조우 인터럽트 핸들러용 도장 - 다른 던전은
     # dungeon_name == "대설지대" 조건에서만 실제로 참조되므로 로드만 해도 영향 없음.
@@ -2552,6 +2557,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
 
     cap_fail_counter = 0
     resolution_fail_counter = 0  # 🚨 [v1.14.0-hotfix3] 해상도 미달 가드 연속 카운터 추가
+    last_village_check_time = 0.0  # 🆕 [2026-09-25] 마을 이탈 감지 가드 주기(5초) 관리
     while True:
         current_time = time.time()
         if current_time < low_threshold_active_until:
@@ -2610,6 +2616,21 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
         if check_template_present(img_np, t_dungeon_sel, 0.70):
             print("🚪 [dungeon_bot] 현실 화면이 '던전 선택창'으로 식별되었습니다! 사령탑으로 즉시 퇴장합니다.")
             return False, skill_mission_success_this_combat, need_pickaxe_refill
+
+        # 🆕 [2026-09-25 마을 이탈 감지 가드] 이 함수는 던전 전용이라 마을 화면을 처리할 줄 모른다. 미인식 화면
+        # 위에서 30초 BACK/길 잃음 복구 ESC가 누적돼 마을까지 밀려나도 계속 같은 복구만 반복하다 7~8시간
+        # 방치된 사고가 두 번 있었다(logs 2026-09-16-0207 reboot1, 2026-09-24-0502 reboot36). 정상 귀환은
+        # 전부 필드가 사라지는 순간 여기 오기 전에 return하므로, 루프 안에서 마을이 보이면 항상 비정상 -
+        # 사령탑(main.py)의 마을 처리에 넘긴다. inn 단독(0.65)은 타이틀 팝업에서 0.686/0.72 오탐 전례가 있어
+        # "여관"+"사원" 두 도장을 모두 0.85 이상 요구한다. 실측: 마을 5곳 inn 0.895~1.000 / temple
+        # 0.880~1.000, 마을 아닌 스샷 약 260장 inn 최고 0.730 / temple 최고 0.755. 전체화면 매칭이 장당
+        # 약 120ms라 5초에 한 번만, inn 통과 시에만 temple을 본다.
+        if current_time - last_village_check_time >= 5.0:
+            last_village_check_time = current_time
+            if (check_gray_template_present_specific(img_np, t_village_inn, 0.85) and
+                    check_gray_template_present_specific(img_np, t_village_temple, 0.85)):
+                print(f"🏠 [마을 이탈 감지] 던전 루프 안에서 마을 화면이 식별되었습니다(상태: {state}). 사령탑으로 즉시 퇴장합니다.")
+                return False, skill_mission_success_this_combat, need_pickaxe_refill
 
         # 🚨 [v1.14.1-hotfix11] 재부팅/최초 기동 시 던전 내부인 경우 즉시 던전 밖으로 탈출
         if farming_method == "광석파밍" and (not from_dungeon_select) and is_initial_start:
