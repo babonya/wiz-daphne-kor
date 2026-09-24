@@ -5,7 +5,7 @@ from screen_capture import capture_screen
 # - 현재 버전: 1.14.1-hotfix10
 # - 최근 수정일: 2026-07-26 22:45
 # - 수정 기록:
-#   (미릴리즈, 2026-09-24): 필드 앵커를 옛 루트 templates/field_anchor.png(전체화면) -> 최신
+#   1.21.13 (2026-09-24): 필드 앵커를 옛 루트 templates/field_anchor.png(전체화면) -> 최신
 #     templates/Field/field_anchor.png(우상단 ROI 크롭)로 교체 - dungeon_bot/main과 동일 방식으로 통일.
 #   1.14.1-hotfix10: 버전 동기화
 #   1.14.1-hotfix9: 버전 동기화
