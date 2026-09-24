@@ -5,6 +5,8 @@ from screen_capture import capture_screen
 # - 현재 버전: 1.14.1-hotfix10
 # - 최근 수정일: 2026-07-26 22:45
 # - 수정 기록:
+#   (미릴리즈, 2026-09-24): 필드 앵커를 옛 루트 templates/field_anchor.png(전체화면) -> 최신
+#     templates/Field/field_anchor.png(우상단 ROI 크롭)로 교체 - dungeon_bot/main과 동일 방식으로 통일.
 #   1.14.1-hotfix10: 버전 동기화
 #   1.14.1-hotfix9: 버전 동기화
 #   1.14.1-hotfix8: 버전 동기화
@@ -181,7 +183,27 @@ G_CLOSE_BTN = load_grayscale_template("templates/close_panel.png")
 G_YEOLDA = load_grayscale_template("templates/yeolda_clean.png")
 G_AUTO_ON = load_grayscale_template("templates/auto_on.png")
 G_SPEED_ON = load_grayscale_template("templates/speed_on.png")
-G_FIELD = load_grayscale_template("templates/field_anchor.png")
+# 🚨 [2026-09-24] 예전엔 루트의 옛 도장(templates/field_anchor.png)을 전체화면 매칭해서, 미니맵이 접힌
+# 필드(실측 0.433)를 필드로 못 알아보고 힐링 후 필드 위에 X 닫기 좌표를 오탭할 수 있었다. 사용자 확인으로
+# 최신본인 Field/field_anchor.png를 dungeon_bot.py/main.py와 같은 우상단 ROI 크롭 방식으로 쓴다
+# (실측: 필드 6종 0.987~1.000, 하켄 메뉴 0.29, 힐링 실패 팝업 0.11).
+G_FIELD = load_grayscale_template("templates/Field/field_anchor.png")
+
+def check_field_anchor_present(img_np, template, threshold_val=0.65):
+    if template is None or img_np is None: return False
+    h, w = img_np.shape[:2]
+    scale_x, scale_y = w / 1440.0, h / 2560.0
+    x1, x2 = int(1250 * scale_x), int(1420 * scale_x)
+    y1, y2 = int(380 * scale_y), int(530 * scale_y)
+    if x2 <= x1 or y2 <= y1 or x2 > w or y2 > h: return False
+    crop = img_np[y1:y2, x1:x2]
+    h_crop, w_crop = crop.shape[:2]
+    h_temp, w_temp = template.shape[:2]
+    if h_crop < h_temp or w_crop < w_temp: return False
+    gray_crop = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY) if len(crop.shape) == 3 else crop
+    result = cv2.matchTemplate(gray_crop, template, cv2.TM_CCOEFF_NORMED)
+    _, max_val, _, _ = cv2.minMaxLoc(result)
+    return max_val > threshold_val
 
 # 🏥 [캐릭터 슬롯 중심 좌표 매핑 정의]
 def get_slot_coords(slot_idx):
@@ -320,7 +342,7 @@ def run_party_healing_sequence(device, t_auto_btn, t_close_btn, healer_slot=5, m
         print_log("🚪 [party_manager] '닫기' 버튼 터치 완료.")
         time.sleep(1.0)
     else:
-        if not check_gray_template_present(img_np, G_FIELD, 0.65):
+        if not check_field_anchor_present(img_np, G_FIELD, 0.65):
             print_log("⚠️ [party_manager] '닫기' 버튼 미포착 및 힐러방 상태 유지 확인. 좌측 X 닫기 강제 좌표 사격.")
             device.shell("input tap 75 1940")
             time.sleep(1.0)
