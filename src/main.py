@@ -4,6 +4,11 @@ import datetime
 import time
 import json
 
+# 🚨 [2026-09-25] 단일 실행 가드 - 로그/재시작 카운터/PID 파일을 건드리기 전에 가장 먼저 실행해야 한다.
+# 이미 다른 매크로가 돌고 있으면 여기서 조용히 종료(상세는 single_instance.py 주석).
+from single_instance import enforce_single_instance_or_exit
+enforce_single_instance_or_exit()
+
 CURRENT_VERSION = "1.21.12" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
 
 # ==============================================================================
