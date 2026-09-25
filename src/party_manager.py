@@ -6,7 +6,7 @@ from screen_capture import capture_screen
 # - 최근 수정일: 2026-07-26 22:45
 # - 수정 기록:
 #   [미릴리즈] (2026-09-25): 힐링 중 "열다" 인터럽트 가드가 옛 경로(파일 없음)로 죽어 있던 결함 완치 -
-#     chestopening/yeolda_clean.png 그레이스케일 0.88.
+#     chestopening/yeolda_clean.png 그레이스케일 0.88, '열다' 버튼 자리 ROI(chest_opener.YEOLDA_ROI)만 본다.
 #   1.21.13 (2026-09-24): 필드 앵커를 옛 루트 templates/field_anchor.png(전체화면) -> 최신
 #     templates/Field/field_anchor.png(우상단 ROI 크롭)로 교체 - dungeon_bot/main과 동일 방식으로 통일.
 #   1.14.1-hotfix10: 버전 동기화
@@ -188,6 +188,9 @@ G_CLOSE_BTN = load_grayscale_template("templates/close_panel.png")
 # 0.694~0.751로 여유가 얇음). 단 0.65에선 상자 없는 화면도 최고 0.789까지 올라와 오탐하므로 0.88로 판정한다.
 G_YEOLDA = load_grayscale_template("templates/chestopening/yeolda_clean.png")
 YEOLDA_GRAY_THRESHOLD = 0.88
+# 🆕 [2026-09-25 ROADMAP 17] 다른 파일과 같은 '열다' 버튼 자리 ROI만 본다(진짜 상자 점수는 ROI 안팎 동일).
+import chest_opener
+_YR = chest_opener.YEOLDA_ROI
 G_AUTO_ON = load_grayscale_template("templates/auto_on.png")
 G_SPEED_ON = load_grayscale_template("templates/speed_on.png")
 # 🚨 [2026-09-24] 예전엔 루트의 옛 도장(templates/field_anchor.png)을 전체화면 매칭해서, 미니맵이 접힌
@@ -261,7 +264,7 @@ def run_party_healing_sequence(device, t_auto_btn, t_close_btn, healer_slot=5, m
         # 💡 [데드락 완파 핵심 가드 블록]
         # 정비창 진입 시도 도중 몬스터 기습이나 상자가 열려 인터럽트가 발생했다면,
         # 그냥 탈출하지 않고 확실하게 "치료 실패했다(False)"고 보고서를 반환합니다!
-        if check_gray_template_present(img_np, G_YEOLDA, YEOLDA_GRAY_THRESHOLD) or check_gray_template_present(img_np, G_AUTO_ON, 0.75) or check_gray_template_present(img_np, G_SPEED_ON, 0.75):
+        if check_gray_template_present(img_np[_YR[1]:_YR[3], _YR[0]:_YR[2]], G_YEOLDA, YEOLDA_GRAY_THRESHOLD) or check_gray_template_present(img_np, G_AUTO_ON, 0.75) or check_gray_template_present(img_np, G_SPEED_ON, 0.75):
             print_log("🚨 [party_manager 인터럽트] 상자 또는 전투 기습 포착!! 시퀀스를 긴급 폐쇄합니다.")
             return False
 

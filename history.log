@@ -20,7 +20,29 @@
   party_manager.check_gray_template_present)를 import해 저장소 스샷 281장에 적용 - 마을 가드 17장 검출(전부 실제
   마을 5곳, 캐릭터창 열림 포함) / 오탐 0, "열다" 가드 5장 검출(전부 실제 상자 선택지 화면, 피안개 3장 포함) / 오탐 0
   ("누가 열 거야?" 캐릭터 선택 화면 0.47). 실기 주행 검증은 아직.
-- 적용 파일: src/dungeon_bot.py, src/party_manager.py
+- 내용(3 - '열다' ROI, ROADMAP 17): '열다' 도장을 전체화면에서 찾던 것을 버튼 자리(chest_opener.YEOLDA_ROI =
+  x 550~900, y 1850~2150)만 보도록 전 호출부 통일 - dungeon_bot 10곳(신설 check_yeolda_present), main.py 3곳
+  (get_match_score_in_roi 재사용), chest_opener, party_manager. 실측: 진짜 "열다" 8장(사용자 제공 상자1_열다 (1).png,
+  피안개 3장, logs 실전 4장) 전부 도장 좌상단 (664,1990) 고정. 전체화면 시절 행상인 대화 화면
+  (이스벨크-6층/대설지대-행상인 (7).png)이 평상시 판정선 0.65에서도 0.689로 통과하던 오탐이 ROI 밖이라 사라짐.
+  ROI 안 최고 오탐은 캠핑 "쉰다" 0.604(같은 자리 버튼).
+- 내용(4 - '누가 열 거야?' 캐릭터 선택창 인식): 사용자 제작 도장 templates/chestopening/who_open.png(원본
+  상자1_열다 (2).png, 파일명이 who_open.png.png로 저장돼 있어 정정). 실측: 이 화면 8장(피안개 3장 포함) 그레이스케일
+  0.999~1.000 @ (512,1493) 고정 / 다른 화면 최고 0.487 -> 그레이스케일 0.80 + ROI(450~970, 1440~1630).
+  (a) chest_opener.open_and_disarm_chest: 예전엔 '열다'가 사라진 첫 프레임을 곧바로 선택창으로 간주하고 슬롯을
+  블라인드 탭(과도기 프레임으로 상자공포 검사까지) -> 이제 선택창 제목이 보인 프레임에서만 슬롯을 고르고, 5초 안에
+  안 보이면 탭 없이 False. 슬롯 우선순위 로직은 select_opener_slot()으로 그대로 분리.
+  (b) 매크로가 이 화면에서 시작해도 인식: main.py 기동 복구 "인게임 진입" 목록 + 사령탑 "던전 내부" 판정 + 대화창
+  저격 예외에 추가, dungeon_bot 공용 체인에 '열다' 다음 분기로 추가('열다' 분기와 같은 후처리 - BRANCH_CHECK,
+  transition_delay_count/minigame_reentry_count 리셋, 정체 타이머 리셋).
+  (c) 검증 중 잡은 결함: dungeon_bot 루프 화면은 4채널(RGBA)이라 3채널 상자공포 컬러 도장과 matchTemplate가
+  cv2.error - select_opener_slot 입구에서 3채널로 자름(예전엔 chest_opener가 직접 찍은 3채널만 써서 안 드러났음).
+- 검증(3,4): 실제 모듈 함수로 스샷 293장 - dungeon_bot '열다' 8/8 오탐 0, party_manager 8/8 오탐 0, 선택창 8/8
+  오탐 0. main.py 경로(단일 이진화 160, 멀티패스 아님 - 기존과 동일)는 피안개 2장을 못 봄(이번 변경 전과 같음).
+  가짜 디바이스 시뮬레이션: 열다->과도기->선택창 = 열다 탭 + 6번 슬롯 탭 / 선택창 안 뜸 = 열다 탭만, False /
+  선택창에서 시작(RGBA/RGB 각 3장) = 6번 슬롯 탭만. 실기 주행 검증은 아직.
+- 적용 파일: src/dungeon_bot.py, src/party_manager.py, src/chest_opener.py, src/main.py,
+  templates/chestopening/who_open.png(신규), templates/chestopening/_crop_metadata.json(신규)
 
 [1.21.13] 2026-09-25 - 🚨 단일 실행 가드 + 빈사 정체 탈출 가드 에스컬레이션 불능 완치 + 힐링 후 필드 판정 교정
 - 내용(1 - 외부 재시작 루프: 넣었다가 되돌림): 마을 "앱을 종료하시겠습니까?" 팝업 방치 사고

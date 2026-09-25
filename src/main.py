@@ -138,6 +138,8 @@ else:
 # - 현재 버전: 1.21.13
 # - 최근 수정일: 2026-09-25
 # - 수정 기록:
+#   [미릴리즈]: '열다' 판정을 버튼 자리 ROI로 제한(행상인 대화 오탐 차단) + '누가 열 거야?' 캐릭터 선택창을
+#     인게임/던전 내부로 인정(이 화면에서 기동해도 dungeon_bot으로 넘김).
 #   1.21.13: 🚨 단일 실행 가드(single_instance.py, 맨 첫 줄에서 호출) + '재시도'/'타이틀로' 신규 글꼴 도장
 #     (retry2.png/Error_to_title2.png) 인식 + HEALING_LOOPS 1(매 전투 후 힐링). 상세는 history.log.
 #   1.21.12: 🆕 정체 증거 스크린샷 자동 저장 + 미니게임 왕복 전용 정체 카운터(10회) + "대화창 저격"
@@ -881,6 +883,8 @@ from mumu_display_check import check_display_configuration
 import dungeon_bot
 import inn_manager
 import chest_opener
+# '열다' 버튼 자리 ROI를 main.py의 get_match_score_in_roi 인자 순서(x1, x2, y1, y2)로 - 실측 근거는 chest_opener.py
+YEOLDA_ROI_X1X2Y1Y2 = (chest_opener.YEOLDA_ROI[0], chest_opener.YEOLDA_ROI[2], chest_opener.YEOLDA_ROI[1], chest_opener.YEOLDA_ROI[3])
 from screen_capture import capture_screen_bytes, decode_screen_bytes
 
 def handle_exception(exc_type, exc_value, exc_traceback):
@@ -1384,7 +1388,9 @@ def recover_app_startup(device):
             check_grayscale_template_present_in_roi(img_np, t_open_world, 800, 1200, 1480, 1650, 0.85) or
             get_combat_match_score(img_np, t_combat_in) > 0.70 or
             get_combat_match_score(img_np, t_combat_slow) > 0.70 or
-            check_template_present(img_np, t_yeolda, 0.65) or
+            # 🆕 [2026-09-25] '열다'는 버튼 자리 ROI로만 본다(ROADMAP 17) + '열다' 다음 캐릭터 선택창도 인게임으로 인정
+            get_match_score_in_roi(img_np, t_yeolda, *YEOLDA_ROI_X1X2Y1Y2) > 0.65 or
+            chest_opener.is_who_open_screen(img_np) or
             check_template_present(img_np, t_get_item, 0.65) or
             check_template_present(img_np, t_inn_title, 0.83) or
             check_grayscale_template_present(img_np, t_world_map, 0.70) or
@@ -2221,7 +2227,8 @@ def start_grand_orchestrator():
         dialogue_zone = img_np[2200:2560, 1100:1440]
         
         # 📦 [상자 조우 예외 가드] 화면에 '열다'가 감지되는 경우 대화창 저격을 하지 않고 건너뜁니다.
-        is_box_menu_present = check_template_present(img_np, t_yeolda, 0.65)
+        is_box_menu_present = (get_match_score_in_roi(img_np, t_yeolda, *YEOLDA_ROI_X1X2Y1Y2) > 0.65
+                               or chest_opener.is_who_open_screen(img_np))
         is_get_item_present = check_template_present(img_np, t_get_item, 0.70)
 
         # 🆕 [2026-09-22 사용자 확정] 화살표를 무조건 탭하기(저격) 전에, 먼저 알려진 선택지 화면인지
@@ -2340,7 +2347,8 @@ def start_grand_orchestrator():
             score_inn = get_match_score(img_np, t_inn_title)
             
             score_field = get_field_match_score(img_np, t_field)
-            score_yeolda = get_match_score(img_np, t_yeolda)
+            score_yeolda = get_match_score_in_roi(img_np, t_yeolda, *YEOLDA_ROI_X1X2Y1Y2)  # 🆕 [2026-09-25] ROI(ROADMAP 17)
+            is_who_open = chest_opener.is_who_open_screen(img_np)  # 🆕 [2026-09-25] '열다' 다음 캐릭터 선택창
             score_loot = get_match_score(img_np, t_get_item)
             score_heal_close = get_match_score(img_np, t_heal_close)
             
@@ -2457,7 +2465,7 @@ def start_grand_orchestrator():
             # 튜닝 기록이 없음. dungeon_bot.py는 같은 도장/같은 ROI(get_combat_match_score와 동일한
             # 0-200×1600-1800 크롭)를 매 전투 틱마다 이미 0.70으로 써왔고 오탐 없이 검증돼 있어(전투 중
             # 상시 판정용), 여기도 그 기준에 맞춘다.
-            if is_mini_screen or score_loot > 0.65 or score_field > 0.60 or score_yeolda > 0.65 or score_heal_close > 0.65 or score_combat > 0.70:
+            if is_mini_screen or is_who_open or score_loot > 0.65 or score_field > 0.60 or score_yeolda > 0.65 or score_heal_close > 0.65 or score_combat > 0.70:
                 print(f"   ➔ 🤖 [엔진 최종 판정] 아웃게임 부재 및 던전 조건 충족, '던전 내부' 상태로 확정합니다.")
                 last_action_time = time.time()
                 

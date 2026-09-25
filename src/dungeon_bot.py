@@ -23,6 +23,8 @@ came_from_chest = False
 # - 현재 버전: 1.21.13
 # - 최근 수정일: 2026-09-25
 # - 수정 기록:
+#   [미릴리즈]: '열다' 판정 10곳을 버튼 자리 ROI(check_yeolda_present)로 제한 + 공용 체인에 '누가 열 거야?'
+#     캐릭터 선택창 분기(따개 슬롯 선택) 추가.
 #   [미릴리즈]: 🆕 마을 이탈 감지 가드 - 던전 루프 안에서 마을(여관+사원 도장 둘 다 0.85)이 보이면 사령탑으로
 #     즉시 퇴장(5초 주기). 뒤로가기 누적으로 마을까지 밀려나 7~8시간 방치되던 사고 대비.
 #   1.21.13: 🚨 빈사 정체 탈출 가드 카운터(low_threshold_reset_count)를 공용 상태전환 리셋에서 빼고 자체
@@ -523,6 +525,15 @@ def check_template_present_multipass(img_np, thresh_temp, threshold_val=0.68, bi
         if check_template_present_dynamic(img_np, thresh_temp, threshold_val, bin_th):
             return True
     return False
+
+def check_yeolda_present(img_np, t_yeolda, threshold_val=0.65, bin_passes=FOG_BIN_PASSES):
+    """🆕 [2026-09-25 ROADMAP 17] '열다'는 버튼 자리(chest_opener.YEOLDA_ROI)만 잘라서 본다.
+    전체화면 매칭 시절엔 행상인 대화 화면의 다른 글자가 평상시 판정선 0.65에서도 0.689로 통과했다
+    (dev/ROI_check/이스벨크-6층/대설지대-행상인 (7).png, 위치 1038,1614). 실측 근거는 chest_opener.py 참고."""
+    if t_yeolda is None or img_np is None: return False
+    x1, y1, x2, y2 = chest_opener.YEOLDA_ROI
+    if img_np.shape[0] < y2 or img_np.shape[1] < x2: return False
+    return check_template_present_multipass(img_np[y1:y2, x1:x2], t_yeolda, threshold_val, bin_passes)
 
 # 🩸 [빈사(딸피) 감지용 파티창 주황픽셀 기준]
 # 빈사 캐릭터는 파티창의 이름/HP가 주황빛으로 바뀐다. 안개까지 낀 상태에서 실측한 색이 RGB 약 (140,53,16)로
@@ -1435,7 +1446,7 @@ def check_and_handle_harken_menu(device, t_harken_blessing_donothing, t_harken_r
         # (실전 확인: 2026-08-16 20:26~20:27 2분 사이에만 상자 화면을 찍은 harken 증거 스샷 10장 발생,
         # 실제로는 가호 줄 좌표를 엉뚱하게 탭하고 있었음). 상자 화면에는 "열다"가 같이 있고 가호 팝업에는
         # 없다는 차이로 구분해 차단한다.
-        if t_yeolda is not None and check_template_present_multipass(img_np, t_yeolda, 0.65):
+        if t_yeolda is not None and check_yeolda_present(img_np, t_yeolda, 0.65):
             return "not_present"
 
         # 🚨 [2026-09-07 캠핑 화면 오판 차단] 위 상자 화면과 완전히 같은 유형의 함정이 캠핑 1차 화면에도
@@ -2721,7 +2732,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                 
                 field_matched_low = check_field_anchor_present(img_np, t_field, temp_thresh_f)
                 combat_matched_low = check_combat_template_present(img_np, t_combat_in, temp_thresh_c) or check_combat_template_present(img_np, t_combat_slow, temp_thresh_c)
-                yeolda_matched_low = check_template_present_dynamic(img_np, t_yeolda, temp_thresh_y, 160)
+                yeolda_matched_low = check_yeolda_present(img_np, t_yeolda, temp_thresh_y, bin_passes=(160,))
                 
                 if field_matched_low or combat_matched_low or yeolda_matched_low:
                     print(f"🚨 [정체 탈출 가드] 임계값 0.45 완화 시 앵커 매칭 성공! (필드:{field_matched_low}, 전투:{combat_matched_low}, 상자:{yeolda_matched_low})")
@@ -3005,7 +3016,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                         time.sleep(0.8)
                         continue
 
-                if check_template_present_multipass(img_np, t_yeolda, yeolda_threshold):
+                if check_yeolda_present(img_np, t_yeolda, yeolda_threshold):
                     transition_delay_count = 0
                     # 🆕 [2026-09-19] 새 상자("열다") 인카운터 - 미니게임 왕복 카운터를 0으로 리셋한다.
                     minigame_reentry_count = 0
@@ -3029,6 +3040,16 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                         time.sleep(1.0)
                         yeolda_stuck_retry_count = 0
                         state = "FIELD_WAIT"
+                elif chest_opener.is_who_open_screen(img_np):
+                    # 🆕 [2026-09-25] '열다' 다음 캐릭터 선택창("누가 열 거야?")이 이미 떠 있는 경우 - 매크로가
+                    # 이 화면에서 (재)시작했거나 open_and_disarm_chest가 슬롯 선택 전에 빠져나온 경우. 예전엔
+                    # 이 화면을 아는 곳이 없어 화면 과도기/뒤로가기로 흘렀다. '열다' 분기와 같은 후처리로 슬롯만 고른다.
+                    transition_delay_count = 0
+                    minigame_reentry_count = 0
+                    print("👤 [메인] 캐릭터 선택창('누가 열 거야?') 감지! 따개 슬롯 선택으로 상자 해제를 이어갑니다.")
+                    if chest_opener.select_opener_slot(device, img_np, chest_opener_slot=chest_opener_slot, masked_adventurer_slot=masked_adventurer_slot):
+                        state = "BRANCH_CHECK"
+                    last_state_changed_time = time.time()
                 elif chest_opener.is_minigame_screen(img_np, height, width):
                     transition_delay_count = 0
                     state = "PLAY_MINIGAME"
@@ -3217,7 +3238,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     continue
 
         if state in ["FIELD_WAIT", "AUTO_MOVING"]:
-            if check_template_present_multipass(img_np, t_yeolda, 0.65):
+            if check_yeolda_present(img_np, t_yeolda, 0.65):
                 print("📦 [메인] '열다' 감지! 상자 해제 시퀀스로 진입.")
                 if chest_opener.open_and_disarm_chest(device, img_np, t_yeolda, chest_opener_slot=chest_opener_slot, masked_adventurer_slot=masked_adventurer_slot):
                     state = "BRANCH_CHECK"
@@ -3322,7 +3343,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
 
                 # 3. 통합 힐링 기동: 안전 필드 안착 및 힐링 플래그 감지 시 작동
                 if need_heal:
-                    if check_template_present_multipass(img_np, t_yeolda, 0.65):
+                    if check_yeolda_present(img_np, t_yeolda, 0.65):
                         print("📦 [상자 발견 가드] 화면에 '열다' 버튼이 노출되어 있어 상자 해제를 우선 처리하고 힐링을 다음 루프로 유예합니다.")
                     else:
                         print("💊 [통합 힐링 기동] 안전 필드 안착 확인. 정비 시퀀스를 시작합니다.")
@@ -3371,7 +3392,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     continue
                 
                 # 🚨 [던전 공통 최우선 철칙] 화면에 상자 "열다" (t_yeolda) 앵커 포착 시 즉시 상자 해제 구동
-                if check_template_present_multipass(img_np, t_yeolda, 0.65):
+                if check_yeolda_present(img_np, t_yeolda, 0.65):
                     print("📦 [공통 상자 감지] 던전 필드에서 '열다' 버튼 포착! 상자 해제/개봉 시퀀스를 최우선 격발합니다.")
                     if chest_opener.open_and_disarm_chest(device, img_np, t_yeolda, chest_opener_slot=chest_opener_slot, masked_adventurer_slot=masked_adventurer_slot):
                         came_from_chest = True
@@ -3427,7 +3448,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                             except: pass
                             
                             # 🚨 [이동 안착 지점 2차 상자 포착 가드]
-                            if check_template_present_multipass(img_np, t_yeolda, 0.65):
+                            if check_yeolda_present(img_np, t_yeolda, 0.65):
                                 print("📦 [이동 도중 상자 발견!] 광석 이동 도착 지점/경로에서 '열다' 상자 포착! 상자 해제 시퀀스를 단행합니다.")
                                 if chest_opener.open_and_disarm_chest(device, img_np, t_yeolda, chest_opener_slot=chest_opener_slot, masked_adventurer_slot=masked_adventurer_slot):
                                     came_from_chest = True
@@ -3690,7 +3711,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                 except:
                                     continue
                                 
-                                if check_template_present_multipass(img_np_sub, t_yeolda, 0.65):
+                                if check_yeolda_present(img_np_sub, t_yeolda, 0.65):
                                     opened = True
                                     img_np = img_np_sub
                                     break
@@ -3777,7 +3798,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
         elif state == "AUTO_MOVING":
             toast_detected = False
             for scan_step in range(5):
-                if check_template_present_multipass(img_np, t_yeolda, 0.65): break
+                if check_yeolda_present(img_np, t_yeolda, 0.65): break
                 if check_template_present(img_np, t_no_chest, 0.55):
                     toast_detected = True
                     break
@@ -4080,7 +4101,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
             exit_prev_minimap = current_mini
             
             if not check_field_anchor_present(img_np, t_field, 0.62):
-                if check_template_present_multipass(img_np, t_yeolda, 0.65) or chest_opener.is_minigame_screen(img_np, height, width):
+                if check_yeolda_present(img_np, t_yeolda, 0.65) or chest_opener.is_minigame_screen(img_np, height, width):
                     print("⚠️ [탈출 감시] 필드가 미검출되었으나, 상자 선택창('열다') 또는 미니게임 화면이 감지되었습니다. 탈출 복귀를 취소하고 상자 해제로 이행합니다.")
                 else:
                     print("🎉 [탈출 무결점 성공] 던전 필드 화면이 완전히 소멸되었습니다! 사령탑 무대로 복귀합니다.")
