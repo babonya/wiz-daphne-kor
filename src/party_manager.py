@@ -5,6 +5,7 @@ from screen_capture import capture_screen
 # - 현재 버전: 1.14.1-hotfix10
 # - 최근 수정일: 2026-07-26 22:45
 # - 수정 기록:
+#   [미릴리즈] (2026-09-25): 블라인드 폴백 직전 '아는 화면'(캠핑 선택지/'열다'/'누가 열 거야?')이면 쏘지 않고 중단.
 #   [미릴리즈] (2026-09-25): 힐링 중 "열다" 인터럽트 가드가 옛 경로(파일 없음)로 죽어 있던 결함 완치 -
 #     chestopening/yeolda_clean.png 그레이스케일 0.88, '열다' 버튼 자리 ROI(chest_opener.YEOLDA_ROI)만 본다.
 #   1.21.13 (2026-09-24): 필드 앵커를 옛 루트 templates/field_anchor.png(전체화면) -> 최신
@@ -191,6 +192,16 @@ YEOLDA_GRAY_THRESHOLD = 0.88
 # 🆕 [2026-09-25 ROADMAP 17] 다른 파일과 같은 '열다' 버튼 자리 ROI만 본다(진짜 상자 점수는 ROI 안팎 동일).
 import chest_opener
 _YR = chest_opener.YEOLDA_ROI
+# 🆕 [2026-09-25] 블라인드 폴백 전 "캠핑 선택지" 판별용 - dungeon_bot 캠핑 감지와 같은 도장/이진화 160/0.70
+B_CAMP_REST1 = load_binarized_template("templates/Dungeon_dialogue/Dun_camping_rest.png")
+B_CAMP_REST2 = load_binarized_template("templates/Dungeon_dialogue/Dun_camping_rest2.png")
+B_CAMP_DRY = load_binarized_template("templates/Dungeon_dialogue/Dun_camping_dry.png")
+
+def is_camping_screen(img_np, threshold_val=0.70):
+    for t in (B_CAMP_REST1, B_CAMP_REST2, B_CAMP_DRY):
+        if t is not None and find_binarized_coords_with_score(img_np, t)[1] > threshold_val:
+            return True
+    return False
 G_AUTO_ON = load_grayscale_template("templates/auto_on.png")
 G_SPEED_ON = load_grayscale_template("templates/speed_on.png")
 # 🚨 [2026-09-24] 예전엔 루트의 옛 도장(templates/field_anchor.png)을 전체화면 매칭해서, 미니맵이 접힌
@@ -286,6 +297,28 @@ def run_party_healing_sequence(device, t_auto_btn, t_close_btn, healer_slot=5, m
     # 만약 모든 순회 시도 끝에 힐러방 안착 확인에 실패했다면
     # 이를 딸피 피장막 렉 또는 로딩 지연 상황으로 간주하고, 무매칭 블라인드 예외 복구(Fallback)를 전개합니다.
     if not enter_success:
+        # 🆕 [2026-09-25] 블라인드 폴백은 피장막(딸피) 때문에 힐러방을 못 알아보는 경우용이다. 그런데 슬롯 순회
+        # 도중 캠프에 도착해 캠핑 선택지가 뜬 경우에도 똑같이 블라인드 3연타를 쐈다(logs/2026-09-25-1803-000_
+        # reboot1.txt 19:22, '회복한다' 좌표(963,1898)가 '쉰다' 버튼 바로 위). "필드인지"로 막으면 피장막 대응이
+        # 죽으므로, 힐러방이 아닌 게 확실한 "아는 화면"(캠핑 선택지/'열다'/'누가 열 거야?')일 때만 중단한다 -
+        # 피장막으로 이 화면들까지 못 알아보면 예전처럼 블라인드로 간다(악화 없음).
+        # 실측(스샷 290여 장): 캠핑 도장 3종 캠핑 화면 0.977~1.000 / 다른 화면 최고 0.610(판정선 0.70, dungeon_bot 캠핑
+        # 감지와 같은 도장·방식).
+        try:
+            img_np = capture_screen(device)
+            known_screen = None
+            if is_camping_screen(img_np):
+                known_screen = "캠핑 선택지"
+            elif check_gray_template_present(img_np[_YR[1]:_YR[3], _YR[0]:_YR[2]], G_YEOLDA, YEOLDA_GRAY_THRESHOLD):
+                known_screen = "상자 '열다'"
+            elif chest_opener.is_who_open_screen(img_np):
+                known_screen = "상자 캐릭터 선택창"
+            if known_screen:
+                print_log(f"🚨 [party_manager 인터럽트] 슬롯 순회 후 '{known_screen}' 화면이 확인되어 블라인드 힐을 쏘지 않고 시퀀스를 중단합니다.")
+                return False
+        except Exception as e:
+            print_log(f"⚠️ [party_manager] 블라인드 전 화면 확인 실패(무시하고 기존대로 진행): {e}")
+
         print_log("⚠️ [party_manager] 모든 슬롯 순회 터치 후 힐러방 안착 미검출. 렉/딸피 장막으로 간주해 블라인드 Fallback 복구 힐을 집도합니다.")
         print_log("⚡ [party_manager] [블라인드] 힐링버튼 고정 좌표(1333, 1357) 사격.")
         device.shell("input tap 1333 1357")
