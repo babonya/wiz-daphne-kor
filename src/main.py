@@ -138,6 +138,8 @@ else:
 # - 현재 버전: 1.21.13
 # - 최근 수정일: 2026-09-25
 # - 수정 기록:
+#   [미릴리즈]: 기동 복구 - 던전 안 선택지 화면 인식(_handle_dungeon_interrupt 재사용), 'Tap to Start' 즉시 탭,
+#     '마스터 데이터 로딩 중'은 예산 비소진(페이드 대응 20초 창, 상한 10분).
 #   [미릴리즈]: '열다' 판정을 버튼 자리 ROI로 제한(행상인 대화 오탐 차단) + '누가 열 거야?' 캐릭터 선택창을
 #     인게임/던전 내부로 인정(이 화면에서 기동해도 dungeon_bot으로 넘김).
 #   1.21.13: 🚨 단일 실행 가드(single_instance.py, 맨 첫 줄에서 호출) + '재시도'/'타이틀로' 신규 글꼴 도장
@@ -1111,6 +1113,12 @@ def recover_app_startup(device):
     t_title_notice = load_template("templates/reboot/title_notice.png")
     t_title_notice_close = load_template("templates/reboot/title_notice_close.png")
     t_title_warning = load_template("templates/reboot/title_warning.png")
+    # 🆕 [2026-09-26] 타이틀 "Tap to Start" / "마스터 데이터 로딩 중" (원본 dev/ROI_check/boot_tap_to_start.png,
+    # boot_master_data_loading.png). 이 글자들은 반짝이며 페이드 인/아웃된다(사용자 확인) - 이진화(160)는 글자가 30%만
+    # 흐려져도 0점이라 못 쓰고, 그레이스케일은 밝기를 정규화해 25% 밝기까지 0.79/0.84를 유지(합성 페이드 실측).
+    # 다른 화면 320여 장 최고 0.427 -> 그레이스케일 0.70 + 글자 자리 ROI.
+    t_title_tap_to_start = load_grayscale_template("templates/reboot/title_tap_to_start.png")
+    t_master_data_loading = load_grayscale_template("templates/reboot/master_data_loading.png")
 
     t_yeolda = load_template("templates/chestopening/yeolda_clean.png")
     t_combat_in = load_grayscale_template("templates/combat_in.png")
@@ -1139,6 +1147,19 @@ def recover_app_startup(device):
     # 얇았음(실측 0.786/여유 0.086 vs 이진화 통일 시 0.997/여유 0.30). 다른 도장들과 동일하게 통일.
     t_harken_blessing_donothing = dungeon_bot.load_template("templates/Field/harken_blessing_donothing.png")
     t_harken_return = dungeon_bot.load_color_template("templates/FFXI/harken_return.png")
+
+    # 🆕 [2026-09-26] 던전 안 선택지 화면(중립몹/울타리 구멍/뼈상인/행상인)에서 재시작된 경우용 - 사령탑 "대화창
+    # 저격"과 같은 도장/같은 dungeon_bot._handle_dungeon_interrupt() 재사용. 예전엔 이 목록에 없어 35회 예산을 빈
+    # (1,1) 탭으로 다 쓰고서야 사령탑이 처리했다(logs/2026-09-26-0053-000_reboot3.txt, 울타리 구멍에서 3분 26초 허비).
+    t_rc_dilog_fight = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_dilog_fight.png")
+    t_rc_doghole = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_HS6_doghole.png")
+    t_rc_dilog_bone = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_dilog_bone.png")
+    t_rc_dilog_oil = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_dilog_oil.png")
+    t_rc_dilog_elixir = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_dilog_elixir.png")
+    t_rc_dilog_bonegoblin_name = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_dilog_bonegoblin_name.png")
+    t_rc_seller_label = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_seller_label.png")
+    t_rc_seller_let_me_see = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_seller_let_me_see.png")
+    t_rc_seller_hammer = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_seller_hammer.png")
 
     # 💡 [항목5] 마을별 개별 앵커(!!vill_FFXI.png 등) 대신 어떤 마을에나 있는 공용 여관 도장으로 통일
     t_village_anchor = load_grayscale_template("templates/village_common/inn.png")
@@ -1195,6 +1216,13 @@ def recover_app_startup(device):
     # 구분 못 할 이유가 없으므로 무한정 봐주지는 않음).
     download_started_at = None
     DOWNLOAD_GRACE_SECONDS = 1200.0  # 20분 - 기가바이트급 다운로드도 넉넉히 커버, 필요시 조정 가능
+    # 🆕 [2026-09-26] "마스터 데이터 로딩 중" 화면은 진행 중이니 예산을 깎지 않는다. 글자가 페이드로 안 보이는 순간은
+    # 마지막으로 본 뒤 LOADING_FADE_WINDOW초까지 로딩 중으로 간주하고, 처음 본 뒤 LOADING_GRACE_SECONDS가 지나면
+    # (로딩이 멈춘 것으로 보고) 원래대로 예산을 소진한다 - 다운로드 유예와 같은 패턴.
+    loading_first_seen_at = None
+    loading_last_seen_at = None
+    LOADING_FADE_WINDOW = 20.0
+    LOADING_GRACE_SECONDS = 600.0
 
     # 🚨 [2026-09-08 무한 정체 완치] 이 루프의 캡처 실패 경로 2개(None 반환 / Image.open 예외)는 원래
     # counter를 증가시키지 않고 조용히 continue만 했다 - 그래서 screencap이 계속 깨진 데이터를 돌려주면
@@ -1371,6 +1399,16 @@ def recover_app_startup(device):
             time.sleep(2.0)
             continue
 
+        # 🆕 [2026-09-26] 던전 안 선택지 화면이면 이미 인게임 - 선택지를 처리하고 사령탑에 넘긴다(화살표 폴백은 None으로
+        # 끔 - 대화창 저격과 같은 방식, 알려진 선택지만 가로챈다).
+        if dungeon_bot._handle_dungeon_interrupt(
+            device, img_np, t_rc_dilog_fight, t_rc_seller_label, t_rc_seller_let_me_see, t_rc_seller_hammer,
+            None, t_field, t_doghole=t_rc_doghole, t_dilog_bone=t_rc_dilog_bone, t_dilog_oil=t_rc_dilog_oil,
+            t_dilog_elixir=t_rc_dilog_elixir, t_dilog_bonegoblin_name=t_rc_dilog_bonegoblin_name
+        ):
+            print("✨ [앱 기동 복구 성공] 던전 안 선택지 화면에서 재시작된 것을 인지해 선택지를 처리했습니다. 매크로를 복구합니다.")
+            return True
+
         # 💡 [순서 재배치] "인게임 진입 성공" 판정을 모든 구체적 팝업(점검/다운로드/재시도/공지/주의/에러) 체크보다 뒤로 이동.
         # village_common/inn.png("여관")가 리소스 다운로드 확인 화면 등 타이틀 팝업에서 0.65 문턱을 살짝 넘는 오탐(실측 0.686)이
         # 있었는데, 이 판정이 맨 위에 있으면 오탐 즉시 return True로 함수가 끝나버려서 정작 필요한 다운로드 버튼 클릭 등
@@ -1399,6 +1437,27 @@ def recover_app_startup(device):
             (t_heavysnow_route is not None and check_template_present(img_np, t_heavysnow_route, 0.80))):
             print("✨ [앱 기동 복구 성공] 인게임 화면(필드/전투/던전선택/상자/여관/세계지도/마을/마을외곽 등) 진입 성공! 매크로를 복구합니다.")
             return True
+
+        # 🆕 [2026-09-26] 타이틀 "Tap to Start" - 4회(약 8초)를 기다리지 않고 바로 탭한다. 예산은 평소처럼 소진해서
+        # 탭이 계속 안 먹혀도 무한 반복하지 않게 한다.
+        if check_grayscale_template_present_in_roi(img_np, t_title_tap_to_start, 430, 1010, 2100, 2290, 0.70):
+            print(f"👆 [타이틀] 'Tap to Start' 화면 포착 - 즉시 탭합니다. ({counter}/{max_try})")
+            device.shell("input tap 720 2194")
+            time.sleep(3.0)
+            counter += 1
+            continue
+
+        # 🆕 [2026-09-26] "마스터 데이터 로딩 중" - 진행 중이므로 (1,1) 탭도, 예산 소진도 하지 않고 기다린다.
+        now_t = time.time()
+        if check_grayscale_template_present_in_roi(img_np, t_master_data_loading, 400, 1040, 2170, 2285, 0.70):
+            if loading_first_seen_at is None:
+                loading_first_seen_at = now_t
+                print("⏳ [타이틀] '마스터 데이터 로딩 중' 화면 포착 - 로딩이 끝날 때까지 예산을 깎지 않고 기다립니다.")
+            loading_last_seen_at = now_t
+        if (loading_last_seen_at is not None and now_t - loading_last_seen_at < LOADING_FADE_WINDOW
+                and now_t - loading_first_seen_at < LOADING_GRACE_SECONDS):
+            time.sleep(2.0)
+            continue
 
         if counter >= 4:
             print(f"💤 [스킵 가드] 로딩/타이틀 정체 감지 ({counter}/{max_try}). [1, 1] 터치를 주입합니다.")

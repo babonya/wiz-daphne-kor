@@ -8,5 +8,25 @@
       "y2": 1463
     },
     "roi_name": null
+  },
+  "title_tap_to_start": {
+    "source_image": "boot_tap_to_start.png",
+    "roi": {
+      "x1": 490,
+      "y1": 2158,
+      "x2": 950,
+      "y2": 2231
+    },
+    "roi_name": "[타이틀]Tap to Start"
+  },
+  "master_data_loading": {
+    "source_image": "boot_master_data_loading.png",
+    "roi": {
+      "x1": 454,
+      "y1": 2221,
+      "x2": 984,
+      "y2": 2275
+    },
+    "roi_name": "[타이틀]마스터 데이터 로딩 중"
   }
 }
