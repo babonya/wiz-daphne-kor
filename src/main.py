@@ -138,6 +138,8 @@ else:
 # - 현재 버전: 1.21.13
 # - 최근 수정일: 2026-09-25
 # - 수정 기록:
+#   [미릴리즈]: 🚨 모르는 화면 추측 탭이 아웃게임 정체 타이머를 매번 리셋해 300초 하드리밋 불능이던 결함 완치 +
+#     기동 복구 실패 시 실제로 앱 강제 종료/재실행(예전엔 반환값 무시).
 #   [미릴리즈]: 기동 복구 - 던전 안 선택지 화면 인식(_handle_dungeon_interrupt 재사용), 'Tap to Start' 즉시 탭,
 #     '마스터 데이터 로딩 중'은 예산 비소진(페이드 대응 20초 창, 상한 10분).
 #   [미릴리즈]: '열다' 판정을 버튼 자리 ROI로 제한(행상인 대화 오탐 차단) + '누가 열 거야?' 캐릭터 선택창을
@@ -2125,6 +2127,7 @@ def start_grand_orchestrator():
     first_stuck_start_time = None
     first_outgame_stuck_time_str = ""
     first_outgame_stuck_start_time = None
+    last_guess_action_time = None  # 🆕 [2026-09-27] 아래 "모르는 화면 추측 탭"이 찍은 last_action_time 값(정체 타이머 리셋 제외용)
     global_skill_setup_completed = False
 
     # 🛑 [Daphne 마스터 섀도우 통화면 동결 감지 엔진 변수]
@@ -2142,7 +2145,19 @@ def start_grand_orchestrator():
     worldmap_last_drag_time = 0.0
 
     # 🔮 [최초 구동 무인 안심 가드] 에뮬리부트/초기실행 후 타이틀/공지사항/주의 화면 돌파 강제 가동
-    recover_app_startup(device)
+    # 🚨 [2026-09-27] 예전엔 반환값을 무시해서, 실패 로그("강제 앱 재시작을 다시 시도합니다")와 달리 앱 재시작 없이 그냥
+    # 사령탑 루프로 넘어갔다(하켄 귀환 후 멈춘 앱 화면에서 켜면 그대로 방치). 실패하면 실제로 앱을 강제 종료 후
+    # 재실행하고 기동 복구를 한 번 더 태운다. 그래도 실패하면 사령탑 루프의 300초 정체 하드리밋이 이어받는다.
+    if not recover_app_startup(device):
+        print("🔄 [앱 기동 복구 실패 후속] 인게임 진입을 확인하지 못해 게임 앱을 강제 종료 후 재실행합니다.")
+        try:
+            launch_daphne_app(device)
+            time.sleep(15.0)
+            device.shell("input tap 1 1")
+            time.sleep(2.0)
+            recover_app_startup(device)
+        except Exception as relaunch_err:
+            print(f"⚠️ [앱 기동 복구 실패 후속] 앱 재실행 중 오류(사령탑 루프로 진행): {relaunch_err}")
 
     cap_fail_counter = 0
     resolution_fail_counter = 0  # 🚨 [v1.14.0-hotfix3] 해상도 미달 가드 연속 카운터 추가
@@ -2199,7 +2214,11 @@ def start_grand_orchestrator():
         current_time = time.time()
         
         # 정체 해소 감지 시 타임아웃 초기화
-        if current_time - last_action_time <= 30.0:
+        # 🚨 [2026-09-27] 단, 마지막 동작이 "모르는 화면 추측 탭"이면 리셋하지 않는다(AGENTS.md §5-3). 그 탭이
+        # last_action_time을 갱신해 매 사이클 여기서 타이머가 0이 되는 바람에 300초 하드리밋에 영영 못 닿았다 -
+        # 하켄 귀환 직후 앱이 멈춘 석상 화면에서 9시간+ 방치(logs/2026-09-26-2356-000_start.txt, 경고 889회 전부
+        # "경과 2초"). 진짜로 무언가를 인식해 동작하면 last_action_time이 새 값이 되어 정상적으로 리셋된다.
+        if current_time - last_action_time <= 30.0 and last_action_time != last_guess_action_time:
             first_stuck_time_str = ""
             first_stuck_start_time = None
             first_outgame_stuck_time_str = ""
@@ -2565,6 +2584,8 @@ def start_grand_orchestrator():
                 # 똑같은 패턴으로 반복된 게 이 함정에 갇힌 증거. 다른 함수와 동일하게 여기도 last_action_time을
                 # 갱신해야 다음 틱에 상시 판정으로 빠져나가 세계지도 이탈/재이동 로직에 도달할 수 있다.
                 last_action_time = time.time()
+                # 🚨 [2026-09-27] 이 탭은 추측이라 정체 타이머는 리셋하지 않도록 표시한다(위 "정체 해소 감지" 참고).
+                last_guess_action_time = last_action_time
                 time.sleep(2.0)
 
             continue
