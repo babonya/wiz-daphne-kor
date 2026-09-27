@@ -112,6 +112,8 @@ SERVER_PID_PATH = os.path.join(SCRIPT_DIR, "remote_server.pid")
 # /api/state가 tasklist를 호출할 때마다 화면이 깜빡이는 원인이었음). CREATE_NO_WINDOW로 이를 원천 차단합니다.
 # (실제 매크로를 띄우는 /start의 "start"는 사용자가 봐야 하는 창이라 의도적으로 이 플래그를 안 씁니다.)
 NO_WINDOW = subprocess.CREATE_NO_WINDOW
+# 🆕 [2026-09-27] "시작 시 뮤뮤 재시작" 1회용 표시 파일(프로젝트 루트, main.py와 공유)
+REMOTE_REBOOT_FLAG = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "reboot_mumu_on_start.flag")
 
 DEFAULT_CONFIG = {
     "port": 8765,
@@ -477,6 +479,9 @@ def render_dashboard_html(token):
       <label for="targetSelect">시작</label>
       <select id="targetSelect">__TARGET_OPTIONS__</select>
     </div>
+    <label style="display:flex;align-items:center;gap:8px;margin:8px 0;font-size:14px;">
+      <input type="checkbox" id="rebootMumu"> 시작 시 뮤뮤 재시작 (필요할 때만)
+    </label>
     <div class="btn-row">
       <button class="btn-start" id="btnStart">시작</button>
       <button class="btn-stop" id="btnStop">정지</button>
@@ -584,7 +589,8 @@ def render_dashboard_html(token):
     btnStart.disabled = true;
     toast.textContent = '시작 요청을 보냈습니다…';
     try {
-      const res = await fetch(`/start?target=${encodeURIComponent(target)}&token=${encodeURIComponent(TOKEN)}`);
+      const reboot = document.getElementById('rebootMumu').checked ? '&reboot_mumu=1' : '';
+      const res = await fetch(`/start?target=${encodeURIComponent(target)}&token=${encodeURIComponent(TOKEN)}${reboot}`);
       toast.textContent = await res.text();
     } catch (e) {
       toast.textContent = '요청 실패';
@@ -673,6 +679,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._respond(500, f"배치파일을 찾을 수 없습니다: {bat_path}")
                 return
             try:
+                # 🆕 [2026-09-27] 대시보드 "시작 시 뮤뮤 재시작" 체크(기본 해제, 저장 안 함) - 매크로가 기동 직후 이 1회용
+                # 표시 파일을 보고 지운 뒤 뮤뮤를 재시작한다(main.py consume_remote_reboot_flag).
+                if qs.get("reboot_mumu", ["0"])[0] == "1":
+                    with open(REMOTE_REBOOT_FLAG, "w", encoding="utf-8") as f:
+                        f.write("1")
                 subprocess.Popen(
                     f'start "" "{bat_path}"',
                     cwd=os.path.dirname(bat_path),

@@ -1938,7 +1938,22 @@ def find_and_click_grayscale_template(device, img_np, thresh_temp, threshold_val
         return True
     return False
 
+def consume_remote_reboot_flag():
+    """🆕 [2026-09-27] 원격 대시보드에서 "시작 시 뮤뮤 재시작"을 체크하고 시작했으면 뮤뮤를 재시작한다.
+    표시 파일을 **먼저 지우고** 재시작한다 - os.execv 자기재시작 때마다 뮤뮤까지 재시작되지 않게 1회용으로 쓴다."""
+    flag_path = os.path.join(os.path.dirname(script_dir), "reboot_mumu_on_start.flag")
+    if not os.path.exists(flag_path):
+        return
+    try:
+        os.remove(flag_path)
+    except Exception as e:
+        print(f"⚠️ [원격 뮤뮤 재시작] 표시 파일 삭제 실패 - 반복 재시작 방지를 위해 이번엔 재시작하지 않습니다: {e}")
+        return
+    print("🔁 [원격 뮤뮤 재시작] 대시보드에서 '시작 시 뮤뮤 재시작'이 요청되었습니다. 뮤뮤를 재시작합니다.")
+    reboot_emulator()
+
 def start_grand_orchestrator():
+    consume_remote_reboot_flag()
     device = connect_mumu()
     if not device:
         if ENABLE_EMULATOR_REBOOT:

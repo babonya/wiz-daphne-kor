@@ -37,3 +37,4 @@ dev/
 
 # 개인 작업용 파일 (릴리즈/배포에 불필요, 구동에도 무관)
 combat_strategy.json
+reboot_mumu_on_start.flag
