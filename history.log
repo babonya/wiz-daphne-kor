@@ -3,6 +3,20 @@
 =============================================================================
 
 [미릴리즈 - 다음 버전에 포함]
+- 내용(0 - 🧩 내 설정 분리 + 처음설정, 사용자 요청): 업데이트 zip 을 덮어쓰면 main.py 글로벌 설정이 날아가 사용자가 하나하나 복구해야
+  하던 문제. main.py 설정 구역은 "기본값"만 되고, 실제 값은 루트 my_settings.py(공통) -> my_settings_<프로필>.py(presets.json
+  "settings_profile") 순으로 덮어씀(src/user_settings.py). 두 파일과 setup_done.json 은 gitignore -> 릴리즈 zip 에 없어 업데이트로
+  안 덮임. 처음설정.bat(cp949, 1단계 파이썬 3.10+ 검사는 배치 명령) -> src/first_setup.py: 필수 라이브러리(y면 pip 설치) ->
+  ffmpeg(y면 winget 설치, 없이 진행 가능) -> my_settings.py(없으면 main.py 설정 구역을 주석째 복사해 생성 - 이전 버전 폴더 경로를
+  넣으면 그 폴더의 my_settings.py 또는 src/main.py 설정값을 옮김 / 있으면 새로 생긴 설정만 끝에 기본값으로 추가) -> setup_done.json
+  에 버전 기록. main.py·chest_only.py 는 맨 앞에서 setup_done 버전 < CURRENT_VERSION 이면(첫 실행·업데이트 직후) 게임을 안 건드리고
+  안내 후 종료 코드 3(배치파일은 3이면 pause, logs 에 *_setup_required.txt 도 남겨 원격 대시보드에서도 보임). 버전은 업데이트로만
+  바뀌어 실행 중 os.execv 재시작/에뮬 재부팅에는 안 걸림. 원격 대시보드 목록에서 처음설정 제외. ffmpeg 없으면 상자 조준 -> 연타
+  자동 전환. 검증: 설정 16개 주석째 추출, v1.21.13 main.py(힐링 3·따개 4로 변조)에서 옮기기 -> 옮긴 값 2개 + 새 설정 5개 기본값,
+  2회차는 "새 설정 없음", 3단 적용 순서·오타 경고, 차단 SystemExit(3), 원격 목록 6개(처음설정 제외). 삶은계란 PC 는 실행 중인 매크로가
+  재시작 때 막히지 않도록 setup_done.json(1.21.14)을 미리 기록(my_settings.py 는 아직 없음 = main.py 기본값 그대로).
+  테스트 중 user_settings 기본 인자(path=MY_SETTINGS)가 정의 시점 경로로 고정돼 가짜 값 my_settings.py 가 루트에 1~2분 생겼던
+  사고 -> 즉시 삭제(그 사이 매크로 재시작 없음 확인) + path=None 으로 수정.
 - 내용(2 - 🎯 상자 미니게임 예측 조준 통합, 매크로박스님 코드): 매크로박스님이 v1.21.14를 바탕으로 만든 조준 버전
   chest_opener.py(2,563줄)를 통합. 우리 코드 대비 차이는 solve_trap_game 전면 교체 + open_and_disarm_chest 몇 줄뿐(나머지
   12함수 동일 - 함수별 diff 확인). 동작: 노란 칸 확정 -> 흰 막대 속도 최소제곱 -> 착지 = x + v*프레임나이 + 부호*(G + L*|v|)

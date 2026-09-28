@@ -24,7 +24,12 @@
    원격 시작이 겹쳐도 두 번째는 15초 대기 후 스스로 종료).
 2. `main.py`가 `PRESET_ID_MAP`으로 한글 프리셋명을 찾고 `src/presets.json`에서 마을/던전/층/주회방식을
    읽는다(스키마 설명은 그 파일의 `_가이드` 키). 공통 설정(주회 한도, 힐 주기, 슬롯 번호)은 `main.py`
-   최상단 "마스터 글로벌 제어" 변수.
+   최상단 "마스터 글로벌 제어" 변수 = **기본값**이고, 실제 값은 `user_settings.apply_user_settings()`가
+   `my_settings.py` -> `my_settings_<프리셋의 settings_profile>.py` 순으로 덮어쓴다(2026-09-28~, 둘 다 git/릴리즈 제외).
+   ⚠️ 새 글로벌 설정을 추가할 땐 **`main.py` 설정 구역에 `이름 = 리터럴값  # 설명` 형식으로만** 넣을 것 - 처음설정이
+   그 구역을 파싱해 사용자 `my_settings.py`에 자동 추가한다(리터럴이 아니면 파싱에서 빠짐).
+   또 `main.py` 맨 앞에서 `setup_done.json` 버전 < `CURRENT_VERSION`이면 시작을 막는다(종료 코드 3) -
+   **릴리즈 때 CURRENT_VERSION을 올리면 모든 사용자가 처음설정을 한 번 다시 돌리게 된다**(의도된 동작).
 3. `main.py`의 `start_grand_orchestrator()`(=사령탑)가 **던전 밖**(타이틀/마을/여관/세계지도/던전선택/
    마을외곽)을 화면 분류로 처리하다가, 던전에 들어가면 `dungeon_bot.start_main_macro()`로 넘긴다.
 4. `start_main_macro()`는 **던전 안** 상태머신(FIELD_WAIT / AUTO_MOVING / IN_COMBAT / TRIGGER_EXIT /
@@ -43,6 +48,8 @@
 | `main.py` (~220KB) | 사령탑. 기동/ADB 연결/앱 복구/재시작(`restart_process`, `os.execv`)/로그/Watchdog/화면 분류 |
 | `dungeon_bot.py` (~330KB) | 던전 내부 상태머신 + 상자/전투/귀환/캠핑/대화. 거대 단일 함수 `start_main_macro()` |
 | `chest_opener.py` | 상자 해제(따개 선택, 함정 미니게임 **예측 조준** - 매크로박스님 코드 통합, ffmpeg 필요, PC별 영점 보정 `set_aim_calibration`) |
+| `user_settings.py` | 내 설정 로더(기본값 -> my_settings.py -> 프로필), 새 설정 자동 추가, 처음설정 완료 표시/시작 차단 |
+| `first_setup.py` | 처음설정 본체(루트 `처음설정.bat`이 파이썬 확인 후 실행) - 라이브러리/ffmpeg/내 설정 단계별 검사 |
 | `chest_only.py` | 상자만 자동 오픈 실행기(루트 `상자 자동오픈(수동플레이용).bat`) - 이동/전투 없이 상자 화면만 처리 |
 | `party_manager.py` | 파티 힐링(힐러방) 시퀀스 |
 | `inn_manager.py` | 여관 숙박 시퀀스 |
