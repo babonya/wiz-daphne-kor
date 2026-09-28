@@ -45,6 +45,8 @@ CHEST_OPENER_SLOT = 6                   # 🔑 [상자 해제 따개 슬롯] 1�
 CHEST_AIM_CALIBRATION = "auto"          # "auto"     = 기본. 쏠 때마다 실측을 aim_calibration.json에 쌓아 10발부터 이 PC에 자동으로 맞춤
                                         # "macrobox" = 매크로박스님 PC 값 고정(빠른 PC) / "lowspec" = 저사양 PC 값 고정
                                         # "manual"   = 아래 세 값을 직접 입력 (로그의 "📏 활공 실측" 줄을 보고 판단)
+                                        # "none"     = 조준 끔. 예전처럼 해제 버튼 무지성 연타(횟수 제한 없음, ffmpeg 불필요)
+                                        #              - 따개 스펙이 높아 노란 칸이 넓으면 이쪽이 더 나을 수 있음
 CHEST_AIM_MANUAL_GLIDE_PX = 86.0        #    manual 전용: 고정 활공(px)
 CHEST_AIM_MANUAL_LATENCY_MS = 184.0     #    manual 전용: 속도 비례 지연(ms) - 활공 = GLIDE + LATENCY x |속도|
 CHEST_AIM_MANUAL_JITTER_MS = 28.0       #    manual 전용: 흔들림 바닥값(ms) - 클수록 애매한 판에서 안 쏜다
@@ -147,7 +149,7 @@ else:
 # - 현재 버전: 1.21.14
 # - 최근 수정일: 2026-09-27
 # - 수정 기록:
-#   [미릴리즈]: 🎯 상자 조준(매크로박스님) 영점 보정 글로벌 설정 CHEST_AIM_CALIBRATION(auto/macrobox/lowspec/manual).
+#   [미릴리즈]: 🎯 상자 조준(매크로박스님) 영점 보정 글로벌 설정 CHEST_AIM_CALIBRATION(auto/macrobox/lowspec/manual/none).
 #   [미릴리즈]: 원격 대시보드 '시작 시 뮤뮤 재시작' 1회용 플래그(consume_remote_reboot_flag).
 #   1.21.14: 🚨 모르는 화면 추측 탭이 아웃게임 정체 타이머를 매번 리셋해 300초 하드리밋 불능이던 결함 완치 +
 #     기동 복구 실패 시 실제로 앱 강제 종료/재실행(예전엔 반환값 무시).

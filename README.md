@@ -345,7 +345,7 @@ pip install opencv-python pillow numpy pure-python-adb
 | **`HEALER_SLOT`** | `5` | 1번~6번 슬롯 중 주 힐러(스켈톤 등)의 배치 슬롯 번호입니다. |
 | **`MASKED_ADVENTURER_SLOT`** | `6` | 1번~6번 슬롯 중 주인공 캐릭터의 배치 슬롯 번호입니다. |
 | **`CHEST_OPENER_SLOT`** | `6` | 1번~6번 슬롯 중 상자 따기(함정 해제)를 담당할 캐릭터 슬롯 번호입니다. |
-| **`CHEST_AIM_CALIBRATION`** | `"auto"` | 상자 조준 영점 보정 방식입니다(아래 설명 참고).<br>- `"auto"`: 쏠 때마다 실측해 10발부터 내 PC에 자동으로 맞춤(권장)<br>- `"macrobox"`: 매크로박스님 PC 값 고정(빠른 PC)<br>- `"lowspec"`: 저사양 PC 값 고정<br>- `"manual"`: 아래 세 값을 직접 입력 |
+| **`CHEST_AIM_CALIBRATION`** | `"auto"` | 상자 조준 영점 보정 방식입니다(아래 설명 참고).<br>- `"auto"`: 쏠 때마다 실측해 10발부터 내 PC에 자동으로 맞춤(권장)<br>- `"macrobox"`: 매크로박스님 PC 값 고정(빠른 PC)<br>- `"lowspec"`: 저사양 PC 값 고정<br>- `"manual"`: 아래 세 값을 직접 입력<br>- `"none"`: 조준 끔 - 예전처럼 해제 버튼을 연타(횟수 제한 없음, ffmpeg 불필요). 따개 스펙이 높아 노란 칸이 넓다면 이쪽이 더 나을 수 있습니다 |
 | **`CHEST_AIM_MANUAL_GLIDE_PX`**<br>**`CHEST_AIM_MANUAL_LATENCY_MS`**<br>**`CHEST_AIM_MANUAL_JITTER_MS`** | `86.0`<br>`184.0`<br>`28.0` | `"manual"`일 때만 쓰입니다. 탭 후 막대가 더 미끄러지는 거리 = `GLIDE + LATENCY x 막대속도`, JITTER가 클수록 애매한 판에서 안 누릅니다. |
 | **`ENABLE_EMULATOR_REBOOT`** | `True` | 디바이스 오프라인 또는 정체 지속 시 에뮬레이터를 강제 재시작할지 설정합니다. |
 | **`MUMU_EXECUTABLE_PATH`** | *(경로)* | 에뮬레이터 자동 재부팅을 위해 본인 PC 환경에 맞는 MuMu Player의 실행 파일(`nx_main\MuMuNxMain.exe`) 절대 경로를 입력합니다. |

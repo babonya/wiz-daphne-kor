@@ -1379,6 +1379,7 @@ def _mg_sigma_ms(dt_hist):
 #   "macrobox" - 제작자 값 고정(86px / 184ms / 28ms).
 #   "lowspec"  - 저사양 PC 값 고정(삶은계란 PC 실측 46.4px / 311ms / 65ms).
 #   "manual"   - 직접 입력(CHEST_AIM_MANUAL_GLIDE_PX / _LATENCY_MS / _JITTER_MS).
+#   "none"     - 조준 끔. 예전 방식(해제 버튼 15연타, 횟수 제한 없음). 따개 스펙이 높아 칸이 넓은 사람용.
 # ==============================================================================
 AIM_CALIB_PRESETS = {
     "macrobox": (86.0, 184.0, 28.0),
@@ -1442,9 +1443,13 @@ def set_aim_calibration(mode="auto", glide_px=None, latency_ms=None, jitter_ms=N
     """영점 보정 모드를 적용한다(main.py 기동 시 1회). 알 수 없는 모드는 auto 로 본다."""
     global _MG_GLIDE_PX, _MG_LATENCY_MS, _MG_JITTER_MS, _AIM_CALIB_MODE
     mode = (mode or "auto").strip().lower()
-    if mode not in ("auto", "macrobox", "lowspec", "manual"):
+    if mode not in ("auto", "macrobox", "lowspec", "manual", "none"):
         mode = "auto"
     _AIM_CALIB_MODE = mode
+    if mode == "none":
+        if verbose:
+            print("🔨 [상자 조준 영점] 모드=none · 조준 끔 - 미니게임은 예전처럼 해제 버튼 15연타(횟수 제한 없음, ffmpeg 불필요)")
+        return
     if mode == "manual":
         base = AIM_CALIB_PRESETS["macrobox"]
         _MG_GLIDE_PX = float(glide_px) if glide_px is not None else base[0]
@@ -1984,6 +1989,21 @@ def _escape_fallback(device, width, height):
     return False
 
 
+def _solve_trap_game_barrage(device, img_np):
+    """🔨 [2026-09-28] "none" 모드 - 조준 도입 전의 원래 방식 그대로(해제 버튼 0.1초 간격 15연타, 횟수 제한 없음).
+    따개 스펙이 높아 노란 칸이 넓은 사람은 이쪽이 더 나을 수 있다(사용자 판단: 미니게임 성공 80%+ 커버)."""
+    print("🔮 [chest_opener] 미니게임 인카운터! (연타 모드 - 영점 보정 none) 0.1초 간격 15연타를 주입합니다.")
+    height, width = img_np.shape[:2]
+    release_x = int(width * 0.503)
+    release_y = int(height * 0.611)
+    for _ in range(15):
+        device.shell(f"input tap {release_x} {release_y}")
+        time.sleep(0.1)
+    print("⏳ 15연타 난사 완료. 정산창 연출 진입을 위해 0.3초 대기합니다...")
+    time.sleep(0.3)
+    return True
+
+
 def solve_trap_game(device, img_np):
     """미니게임 — 막대가 노란 구간에 '착지할 시각'을 예측해 해제 버튼을 한 발만 누른다.
 
@@ -1994,6 +2014,10 @@ def solve_trap_game(device, img_np):
        스트림은 '더 좋은 경로'일 뿐 유일한 경로가 아니다. ffmpeg 이 없는 기기에서도 (2)(3)으로
        예전과 똑같이 돈다. 어느 경로로 받든 판정 함수·임계는 완전히 같은 것을 쓴다.
     """
+    # 🔨 [2026-09-28] 영점 보정 "none" = 조준 없이 예전 무지성 연타(횟수 제한 없음, 스트림/발사 한도 전부 미사용).
+    if _AIM_CALIB_MODE == "none":
+        return _solve_trap_game_barrage(device, img_np)
+
     if img_np is None:
         print("🟡 [chest_opener] 폴백 불가: 화면 배열이 없습니다(None). 이번 호출은 아무것도 하지 않습니다.")
         _MG_STREAM.stop()
@@ -2643,6 +2667,8 @@ def open_and_disarm_chest(device, img_np, thresh_yeolda, chest_opener_slot=6, ma
     #    (실가동: 상자 한 개 전체가 약 11초). 실패해도 무시하고 진행한다 - solve_trap_game 이
     #    기존 screencap 2단 폴백으로 알아서 돈다. 정리는 solve_trap_game 의 finally 가 맡는다.
     try:
+        if _AIM_CALIB_MODE == "none":
+            raise RuntimeError("연타 모드 - 스트림 불필요")
         _scale_y = height / 2560.0
         _MG_STREAM.start(device, width, height,
                          max(0, int(_MG_STRIP_Y1 * _scale_y)),
