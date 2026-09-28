@@ -42,7 +42,8 @@
 |---|---|
 | `main.py` (~220KB) | 사령탑. 기동/ADB 연결/앱 복구/재시작(`restart_process`, `os.execv`)/로그/Watchdog/화면 분류 |
 | `dungeon_bot.py` (~330KB) | 던전 내부 상태머신 + 상자/전투/귀환/캠핑/대화. 거대 단일 함수 `start_main_macro()` |
-| `chest_opener.py` | 상자 해제(따개 캐릭 선택, 함정 미니게임 난타) |
+| `chest_opener.py` | 상자 해제(따개 선택, 함정 미니게임 **예측 조준** - 매크로박스님 코드 통합, ffmpeg 필요, PC별 영점 보정 `set_aim_calibration`) |
+| `chest_only.py` | 상자만 자동 오픈 실행기(루트 `상자 자동오픈(수동플레이용).bat`) - 이동/전투 없이 상자 화면만 처리 |
 | `party_manager.py` | 파티 힐링(힐러방) 시퀀스 |
 | `inn_manager.py` | 여관 숙박 시퀀스 |
 | `combat_manager.py` | 구형 스킬 시스템(폐기 예정 - ROADMAP 2번) |

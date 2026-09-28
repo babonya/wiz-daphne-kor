@@ -40,6 +40,15 @@ HEALER_SLOT = 5                         # 💊 [힐러 캐릭터 슬롯 번호] 
 MASKED_ADVENTURER_SLOT = 3              # 👤 [주인공 캐릭터 슬롯 번호] 1번~6번 슬롯 중 주인공의 배치 슬롯 (2번 사망 시 주인공이 앞으로 밀릴 수 있음)
 CHEST_OPENER_SLOT = 6                   # 🔑 [상자 해제 따개 슬롯] 1번~6번 슬롯 중 상자 따기(함정 해제)를 기본 담당할 캐릭터 슬롯
 
+# 🎯 [상자 미니게임 조준 영점 보정] (매크로박스님의 상자 조준법 - ffmpeg 설치 필수, README 참고)
+#    PC마다 탭이 먹히는 지연이 달라 "막대가 탭 후 얼마나 더 미끄러지는지"가 다르다. 영점이 안 맞으면 빗나간다.
+CHEST_AIM_CALIBRATION = "auto"          # "auto"     = 기본. 쏠 때마다 실측을 aim_calibration.json에 쌓아 10발부터 이 PC에 자동으로 맞춤
+                                        # "macrobox" = 매크로박스님 PC 값 고정(빠른 PC) / "lowspec" = 저사양 PC 값 고정
+                                        # "manual"   = 아래 세 값을 직접 입력 (로그의 "📏 활공 실측" 줄을 보고 판단)
+CHEST_AIM_MANUAL_GLIDE_PX = 86.0        #    manual 전용: 고정 활공(px)
+CHEST_AIM_MANUAL_LATENCY_MS = 184.0     #    manual 전용: 속도 비례 지연(ms) - 활공 = GLIDE + LATENCY x |속도|
+CHEST_AIM_MANUAL_JITTER_MS = 28.0       #    manual 전용: 흔들림 바닥값(ms) - 클수록 애매한 판에서 안 쏜다
+
 # 🖥️ [MuMu 에뮬레이터 콜드 리부트 자동 제어 세팅]
 ENABLE_EMULATOR_REBOOT = True       # 🔄 [에뮬레이터 리부트] 디바이스 오프라인/5분 정체 지속 시 에뮬레이터 자체를 강제 재시작할지 설정
 MUMU_EXECUTABLE_PATH = r"C:\Program Files\Netease\MuMuPlayer\nx_main\MuMuNxMain.exe"  # 뮤뮤 실행 파일 경로
@@ -138,6 +147,8 @@ else:
 # - 현재 버전: 1.21.14
 # - 최근 수정일: 2026-09-27
 # - 수정 기록:
+#   [미릴리즈]: 🎯 상자 조준(매크로박스님) 영점 보정 글로벌 설정 CHEST_AIM_CALIBRATION(auto/macrobox/lowspec/manual).
+#   [미릴리즈]: 원격 대시보드 '시작 시 뮤뮤 재시작' 1회용 플래그(consume_remote_reboot_flag).
 #   1.21.14: 🚨 모르는 화면 추측 탭이 아웃게임 정체 타이머를 매번 리셋해 300초 하드리밋 불능이던 결함 완치 +
 #     기동 복구 실패 시 실제로 앱 강제 종료/재실행(예전엔 반환값 무시).
 #   1.21.14: 기동 복구 - 던전 안 선택지 화면 인식(_handle_dungeon_interrupt 재사용), 'Tap to Start' 즉시 탭,
@@ -866,6 +877,7 @@ def print_daphne_global_settings():
     print(f" -> 목표 주회 설정 수치: {LIMIT_DUNGEON_LOOPS}회 안전 고정")
     print(f" -> 숏컷기반 스킬 예약 시스템 가동 여부: {bool(ENABLE_FIRST_COMBAT_SKILL)}")
     print(f" -> 상자 개방 후 긴급 힐링 가동 여부: {bool(ENABLE_HEAL_AFTER_CHEST)}")
+    print(f" -> 상자 조준 영점 보정 모드: {CHEST_AIM_CALIBRATION}")
     print("====================================================")
 
 print_daphne_global_settings()
@@ -887,6 +899,9 @@ from mumu_display_check import check_display_configuration
 import dungeon_bot
 import inn_manager
 import chest_opener
+# 🎯 [2026-09-28] 상자 조준 영점 보정 적용(dungeon_bot 도 같은 chest_opener 모듈 객체를 쓰므로 여기서 한 번이면 된다)
+chest_opener.set_aim_calibration(CHEST_AIM_CALIBRATION, CHEST_AIM_MANUAL_GLIDE_PX,
+                                 CHEST_AIM_MANUAL_LATENCY_MS, CHEST_AIM_MANUAL_JITTER_MS)
 # '열다' 버튼 자리 ROI를 main.py의 get_match_score_in_roi 인자 순서(x1, x2, y1, y2)로 - 실측 근거는 chest_opener.py
 YEOLDA_ROI_X1X2Y1Y2 = (chest_opener.YEOLDA_ROI[0], chest_opener.YEOLDA_ROI[2], chest_opener.YEOLDA_ROI[1], chest_opener.YEOLDA_ROI[3])
 from screen_capture import capture_screen_bytes, decode_screen_bytes

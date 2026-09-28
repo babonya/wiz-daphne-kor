@@ -3,6 +3,29 @@
 =============================================================================
 
 [미릴리즈 - 다음 버전에 포함]
+- 내용(2 - 🎯 상자 미니게임 예측 조준 통합, 매크로박스님 코드): 매크로박스님이 v1.21.14를 바탕으로 만든 조준 버전
+  chest_opener.py(2,563줄)를 통합. 우리 코드 대비 차이는 solve_trap_game 전면 교체 + open_and_disarm_chest 몇 줄뿐(나머지
+  12함수 동일 - 함수별 diff 확인). 동작: 노란 칸 확정 -> 흰 막대 속도 최소제곱 -> 착지 = x + v*프레임나이 + 부호*(G + L*|v|)
+  예측 -> 구간 85% 안쪽·지터 마진·프레임나이 40ms 이하일 때만 한 발, 상자당 2발, 못 맞힐 판은 안 누르고 뒤로가기 1회.
+  화면은 ffmpeg + screenrecord H.264 띠 스트림(중앙 25.8ms) -> 띠 screencap -> 전체 캡처 폴백.
+  실측(dev/shared_chest_aim, logs 2026-09-28 aimtest): ffmpeg 없음 = 띠 캡처 165ms라 프레임나이 게이트에 전부 막혀 발사 0.
+  ffmpeg 있음(winget Gyan.FFmpeg) = 31판 17발, 제작자 상수(86/184)로 명중 7 빗나감 9 - 활공 잔차 평균 +177px(빠른 막대
+  +229~+380px). -> 우리 PC 회귀 G=46.4 L=311, 잔차 표준편차 112px.
+- 내용(3 - PC별 영점 보정, 우리 쪽 추가): chest_opener.set_aim_calibration(mode) - "auto"(기본: 정지 확인·반환점 미통과 발의
+  활공 실측을 aim_calibration.json(gitignore)에 누적, 10발부터 최근 60발로 G/L 최소제곱 + 지터 바닥값 = 잔차표준편차/평균|v|,
+  범위 상한 G 0~250 · L 80~500 · 지터 28~120ms) / "macrobox"(86/184/28) / "lowspec"(46.4/311/65, 삶은계란 PC) / "manual".
+  main.py 글로벌 설정 CHEST_AIM_CALIBRATION + CHEST_AIM_MANUAL_GLIDE_PX/_LATENCY_MS/_JITTER_MS, import 직후 1회 적용
+  (dungeon_bot도 같은 모듈 객체). 매 발 "📏 활공 실측"(모델 vs 실측) + "🎯 [상자 조준 영점]" 로그. ffmpeg 폴백 경로를 제작자 PC
+  경로 대신 %LOCALAPPDATA%\Microsoft\WinGet\Links\ffmpeg.exe로(설치 전부터 켜진 원격 서버가 띄운 프로세스도 찾게).
+  검증: 네 모드 적용/auto 누적·재회귀(14발 -> 46.4/311/65로 수렴)/macrobox 모드는 미누적 확인. 삶은계란 PC 루트에 실측 14발
+  시드. 참고: chest_opener import 시 프로세스 우선순위를 ABOVE_NORMAL로 올림(제작자 코드, HIGH 금지).
+- 내용(4 - 상자만 자동 오픈): src/chest_only.py + 루트 "상자 자동오픈(수동플레이용).bat" - 이동/전투 없이 '열다'/'누가 열 거야?'/
+  미니게임만 처리(손으로 플레이하며 상자만 자동, 사용자 요청). 슬롯·영점 설정은 main.py를 import하지 않고 ast로 읽음.
+  단일 실행 잠금 공유 + macro.pid(원격 정지 가능), 로그 logs/<시각>_chestonly.txt.
+- 내용(5 - README): 기능 소개 3번을 예측 조준(매크로박스님 크레딧)으로, 2번 절에 ffmpeg 설치(winget), 4번 표에 영점 보정
+  설정 + 설명, 5번 실행에 상자만 자동 오픈, 끝에 기여(Acknowledgements) 섹션.
+- 적용 파일(2~5): src/chest_opener.py, src/chest_only.py(신규), src/main.py, 상자 자동오픈(수동플레이용).bat(신규), README.md,
+  AGENTS.md, .gitignore
 - 내용(1 - 원격 시작 시 뮤뮤 재시작 옵션): 원격 대시보드에 "시작 시 뮤뮤 재시작 (필요할 때만)" 체크박스 추가(페이지
   열 때마다 해제 상태, 저장 안 함). 체크 후 시작하면 server.py /start가 루트에 1회용 reboot_mumu_on_start.flag를 쓰고
   .bat을 띄움 -> main.py start_grand_orchestrator() 맨 앞 consume_remote_reboot_flag()가 파일을 **먼저 삭제**한 뒤
