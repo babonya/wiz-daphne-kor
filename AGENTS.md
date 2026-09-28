@@ -128,6 +128,10 @@ PYTHONIOENCODING=utf-8 python dev/tools/make_release_zip.py   # 릴리즈 zip(�
 - **"화면이 멈췄다"류 정체가 코드로 설명되지 않으면 GPU 드라이버 크래시(TDR)부터 의심.** 윈도우 이벤트
   뷰어에서 `nvlddmkm` / Event ID 4101을 **며칠 범위로** 조회. 현재 안정 설정: 안드15 인스턴스 + 30fps +
   **OpenGL** 렌더러 + GPU "메모리 사용 감소". (Vulkan/DirectX는 실패했음, 안드12는 렌더러 에러로 지원 중단)
+- **`src/main.py`와 `src/presets.json`은 UTF-8 + BOM이다**(2026-09-28). 사용자들이 노트패드++로 직접 열어 설정을
+  고치는 파일인데, BOM이 없으면 노트패드++가 ANSI(CP949)로 오인해 한글 주석이 깨져 보이고 그대로 저장하면 파일이
+  망가진다. 이 두 파일을 코드로 읽을 땐 `encoding="utf-8-sig"`(json.load는 BOM이 있으면 에러), 편집 후 BOM을
+  지우지 말 것.
 - **도장 파일명은 ASCII(영어)만.** 이 환경의 `cv2.imread`는 한글/중국어 경로면 조용히 `None`을 돌려준다.
 - 뮤뮤는 설정을 메모리에 들고 있다가 종료 시에만 `customer_config.json`에 쓴다 - 디스크 JSON과 실제 UI가 다를 수 있음.
 

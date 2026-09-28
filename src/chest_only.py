@@ -36,7 +36,7 @@ def read_main_settings():
               "CHEST_AIM_MANUAL_GLIDE_PX": None, "CHEST_AIM_MANUAL_LATENCY_MS": None,
               "CHEST_AIM_MANUAL_JITTER_MS": None}
     try:
-        tree = ast.parse(open(os.path.join(ROOT, "src", "main.py"), encoding="utf-8").read())
+        tree = ast.parse(open(os.path.join(ROOT, "src", "main.py"), encoding="utf-8-sig").read())
         for node in tree.body:
             if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
                 name = node.targets[0].id

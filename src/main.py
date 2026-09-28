@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 import os
 import datetime
 import time
@@ -117,7 +117,7 @@ presets_path = os.path.join(script_dir, "presets.json")
 
 if os.path.exists(presets_path):
     try:
-        with open(presets_path, "r", encoding="utf-8") as f:
+        with open(presets_path, "r", encoding="utf-8-sig") as f:  # utf-8-sig = BOM 있어도/없어도 읽힘
             preset_data = json.load(f)
             sel_preset = ACTIVE_PRESET_NAME if ACTIVE_PRESET_NAME else preset_data.get("active_preset")
             if sel_preset and sel_preset in preset_data.get("presets", {}):
