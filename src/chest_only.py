@@ -34,7 +34,7 @@ def read_main_settings():
     """src/main.py 최상단의 단순 대입(숫자/문자열)만 읽는다."""
     wanted = {"CHEST_OPENER_SLOT": 6, "MASKED_ADVENTURER_SLOT": 3, "CHEST_AIM_CALIBRATION": "auto",
               "CHEST_AIM_MANUAL_GLIDE_PX": None, "CHEST_AIM_MANUAL_LATENCY_MS": None,
-              "CHEST_AIM_MANUAL_JITTER_MS": None}
+              "CHEST_AIM_MANUAL_JITTER_MS": None, "CHEST_AIM_MAX_FIRES": 2}
     try:
         tree = ast.parse(open(os.path.join(ROOT, "src", "main.py"), encoding="utf-8-sig").read())
         for node in tree.body:
@@ -58,6 +58,8 @@ class Tee:
 
     def write(self, s):
         out = []
+        if self.at_line_start and s.lstrip(chr(10)).startswith("[20"):
+            self.at_line_start = False            # chest_opener 가 이미 시각을 붙인 줄 - 중복 방지
         for ch in s:
             if self.at_line_start and ch != "\n":
                 out.append(datetime.datetime.now().strftime("[%H:%M:%S.%f")[:-3] + "] ")
@@ -109,6 +111,7 @@ def main():
     print(f"📦 [상자 자동오픈] 시작 - 로그: {log_path} · 따개 {opener}번 · 주인공 {hero}번")
     co.set_aim_calibration(cfg["CHEST_AIM_CALIBRATION"], cfg["CHEST_AIM_MANUAL_GLIDE_PX"],
                            cfg["CHEST_AIM_MANUAL_LATENCY_MS"], cfg["CHEST_AIM_MANUAL_JITTER_MS"])
+    co.set_chest_max_fires(cfg["CHEST_AIM_MAX_FIRES"])
     ff = co._MgStream._ffmpeg_path()
     print(f"   ffmpeg: {ff or '없음 - 조준이 사실상 동작하지 않습니다(README의 ffmpeg 설치 참고)'}")
 

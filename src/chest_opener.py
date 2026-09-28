@@ -7,6 +7,8 @@
 #     그대로 통합(무작위 15연타 -> 막대 착지 예측 후 한 발, 상자당 2발, 애매하면 안 쏘고 뒤로가기, ffmpeg H.264
 #     띠 스트림 25.8ms). 우리 쪽 추가: PC별 영점 보정(set_aim_calibration - auto/macrobox/lowspec/manual,
 #     auto는 활공 실측을 aim_calibration.json에 쌓아 G/L/지터 재회귀), ffmpeg 폴백 경로를 winget Links로.
+#     + 로그 밀리초 시각, 스트림 유휴 회수 3->12초, 첫 프레임 대기는 조준 제한시간에서 제외, 상자당 발사 한도
+#       set_chest_max_fires(1~4, 3 이상이면 끝까지 여는 모드).
 #   1.21.14 (2026-09-25): '누가 열 거야?'(who_open.png)가 실제로 보인 프레임에서만 슬롯 선택(예전엔 '열다'
 #     소멸 첫 프레임에 블라인드 탭), 슬롯 선택을 select_opener_slot()으로 분리, '열다' 판정 ROI(YEOLDA_ROI).
 #   1.16.0: 상자 대화창 우하단 화살표 감지 터치 개편, 공포 팝업 연계 자가 복구, templates/chestopening/ 하위로 리소스 이동에 따른 버전 동기화
@@ -16,6 +18,18 @@
 import time
 import io
 import os
+import builtins as _builtins
+import datetime as _datetime
+
+
+# 🕒 [2026-09-28] 이 모듈의 모든 로그 줄에 밀리초 시각을 붙인다. 다른 모듈(main/dungeon_bot)은 자체 print 래퍼로 시각이
+#    찍히는데 이 파일만 맨 줄이라, "캐릭터 선택 -> 미니게임 진입 -> 스트림 첫 프레임" 간격을 로그로 잴 수 없었다.
+def print(*args, **kwargs):
+    ts = _datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S.%f")[:-3] + "] "
+    text = " ".join(str(a) for a in args)
+    lead = len(text) - len(text.lstrip("\n"))
+    _builtins.print(text[:lead] + ts + text[lead:], **kwargs)
+
 import shutil
 import socket
 import subprocess
@@ -554,7 +568,10 @@ _MG_FFMPEG_FALLBACK = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsof
 #    --time-limit 60 까지 방치하면 17.4MB/s 가 adb 소켓을 60초간 물고 dungeon_bot 본 캡처
 #    (screencap 337ms)와 경합한다. 그래서 latest() 가 이 시간 이상 안 불리면 _feed 스레드가
 #    스스로 소켓·ffmpeg 을 정리한다(스레드 거두기 join 은 다음 stop() 이 한다 - 자기 join = 교착).
-_MG_STREAM_IDLE_S = 3.0
+# 🔧 [2026-09-28] 3.0 -> 12.0. 매크로 본체에서는 캐릭터 선택 뒤 dungeon_bot 이 화면을 한두 번 더 판정하고서야
+#    solve_trap_game 에 들어와, 그 사이 3초를 넘기면 미리 띄운 스트림이 스스로 꺼지고 다시 켜느라(약 2초) 첫 판을
+#    느린 띠 캡처로 버텼다(logs/2026-09-28-2012-000_start.txt 20:23 - 6초에 스트림 27프레임·평균 94ms·발사 0).
+_MG_STREAM_IDLE_S = 12.0
 
 # 🔴 [2026-09-20] 최소 표본 강제 (AHK 정본 EstimateBarV() 이식 - macro\daphne_chest_farm.ahk:4568)
 #    실가동 3발이 전부 빗나간 원인은 lead 가 아니라 속도 추정이 부정확한 것이었다.
@@ -681,6 +698,28 @@ _MG_V_MAX_PX_MS = 2.8
 #    으로 준 것이 실제 피해다. 그래서 한 상자에서 2발까지만 쏘고 3발째는 **조준 없이 즉시 ESC** 다.
 #    (구 방식 난사 폐지가 결정적으로 옳았던 이유이기도 하다 — 0.1초 간격 15탭이면 매 상자마다
 _MG_MAX_FIRES_PER_CHEST = 2
+# 🆕 [2026-09-28] 상자당 발사 한도를 main.py 글로벌 설정(CHEST_AIM_MAX_FIRES, 1~4)으로. 게임 규칙(사용자 확인):
+#    미니게임 기회 기본 3회(도적 만렙 4회), 실패 1회마다 멘탈 -1, 기회를 모두 실패하면 추가로 -5.
+#    2(기본) = 두 발 뒤 포기(전부 실패 -5 회피) / 3 = 일반 도적 기회 전부 / 4 = 도적 만렙 전용.
+#    3 이상이면 "어떻게든 연다" 모드(_MG_PERSISTENT): 조준 제한시간 2배, 후반부는 발사 게이트 완화, 그래도 못 쏘면
+#    뒤로가기 대신 마지막 한 발.
+_MG_PERSISTENT = False
+_MG_RELAXED_FRAME_AGE_MS = 250.0      # 끝까지 여는 모드 후반부의 프레임나이 한도(평소 40ms)
+_MG_STREAM_WARMUP_MAX_S = 2.5         # 스트림 첫 프레임 대기 상한(이 시간은 조준 제한시간에서 뺀다)
+
+
+def set_chest_max_fires(n):
+    """상자당 발사 한도(1~4)를 적용한다. 3 이상이면 끝까지 여는 모드."""
+    global _MG_MAX_FIRES_PER_CHEST, _MG_PERSISTENT
+    try:
+        n = int(n)
+    except Exception:
+        n = 2
+    n = max(1, min(4, n))
+    _MG_MAX_FIRES_PER_CHEST = n
+    _MG_PERSISTENT = n >= 3
+    print(f"🎯 [상자 조준] 상자당 최대 발사 {n}회"
+          + (" · 끝까지 여는 모드(못 쏘면 뒤로가기 대신 마지막 한 발)" if _MG_PERSISTENT else f" · {n}발 뒤 포기(전부 실패 -5 회피)"))
 # 🔴 자가 리셋. open_and_disarm_chest 를 거치지 않고 들어온 경로(재시작·복구 분기 등)에서
 #    카운터가 낡은 채로 남으면 멀쩡한 상자를 조준도 안 해 보고 포기한다. 마지막 발사가
 #    이 시간보다 오래됐으면 다른 상자로 보고 스스로 푼다.
@@ -865,6 +904,11 @@ class _MgStream:
             if (time.time() - ts) * 1000.0 > _MG_STREAM_STALE_MS:
                 return None
             return self._frame.copy(), ts   # 읽는 중에 덮어써도 찢어지지 않게 복사해서 준다
+
+    def has_frame(self):
+        """🆕 [2026-09-28] 이번 실행분의 첫 프레임이 이미 왔는가(기동 2초가 끝났는가)."""
+        with self._lock:
+            return self._first_ts > 0.0
 
     def running(self):
         """살아 있는 스트림에만 True. 🔴 죽은 스트림에 True 를 주면 호출부가 재기동을 못 한다."""
@@ -2137,8 +2181,26 @@ def solve_trap_game(device, img_np):
         zones_locked = False          # 구간 확정 여부(확정 뒤에는 재스캔으로 덮어쓰지 않는다)
         prev_fresh = None             # 직전 프레임의 재스캔 결과(2프레임 안정 = 확정 조건)
 
-        while time.time() - t_start < _MG_AIM_TIMEOUT_S:
+        # 🆕 [2026-09-28] 스트림이 막 켜져 첫 프레임 전이면 최대 _MG_STREAM_WARMUP_MAX_S 기다리고, 그 시간은 조준 제한에서
+        #    뺀다 - 기동 2초 동안의 띠 캡처 프레임은 어차피 낡아서(40ms 초과) 쏠 수 없으니 제한시간만 깎아먹었다.
+        if _MG_STREAM.running() and not _MG_STREAM.has_frame():
+            _w0 = time.time()
+            while time.time() - _w0 < _MG_STREAM_WARMUP_MAX_S and not _MG_STREAM.has_frame():
+                time.sleep(0.02)
+            print(f"⏳ [chest_opener] 스트림 준비 대기 {(time.time() - _w0) * 1000:.0f}ms "
+                  f"({'첫 프레임 도착' if _MG_STREAM.has_frame() else '미도착 - 띠 캡처로 진행'}) - 조준 제한시간에서 제외")
+            t_start = time.time()
+        aim_timeout = _MG_AIM_TIMEOUT_S * (2.0 if _MG_PERSISTENT else 1.0)
+        relaxed_logged = False
+
+        while time.time() - t_start < aim_timeout:
             t0 = time.time()
+            # 🆕 [2026-09-28] 끝까지 여는 모드: 기본 제한시간이 지나도 못 쐈으면 남은 시간은 발사 게이트를 완화한다.
+            relaxed = _MG_PERSISTENT and (t0 - t_start) > _MG_AIM_TIMEOUT_S
+            if relaxed and not relaxed_logged:
+                relaxed_logged = True
+                print(f"🔓 [chest_opener] {_MG_AIM_TIMEOUT_S:.0f}초 안에 못 쐈습니다 - 끝까지 여는 모드라 게이트를 완화합니다"
+                      f"(프레임나이 {_MG_FRAME_AGE_MAX_MS:.0f}->{_MG_RELAXED_FRAME_AGE_MS:.0f}ms · 지터 마진 끔)")
             img = None
             tier = 0                  # 이 프레임이 어느 공급원에서 왔는지(진단용. 판정에는 안 쓴다)
             t_frame = t0              # 이 프레임이 '찍힌 시각' - 착지 예측의 기준점
@@ -2357,7 +2419,7 @@ def solve_trap_game(device, img_np):
             #    프레임나이 103·112·105ms 였고 **전부 빗나갔다**(정상 발사 31건은 전부 <=3ms).
             #    _MG_STREAM_STALE_MS(400)는 latest() 가 None 을 주는 기준이라 발사 게이트로는
             #    너무 느슨하다 - 둘은 다른 역할이다. 여기서 막으면 다음 프레임을 기다릴 뿐이다.
-            if frame_age_ms > _MG_FRAME_AGE_MAX_MS:
+            if frame_age_ms > (_MG_RELAXED_FRAME_AGE_MS if relaxed else _MG_FRAME_AGE_MAX_MS):
                 n_stale_frame += 1
                 continue
             land = _mg_predict_land(x, v, frame_age_ms)
@@ -2419,7 +2481,7 @@ def solve_trap_game(device, img_np):
                 # 🔴 지터 게이트 — 착지점에서 **가까운 쪽 경계**까지의 여유가 k x sigma 미만이면
                 #    안 쏜다. k=1.00 은 51발 역적용에서 명중 손실 0 · 빗나감 10건 차단(1.25 는 절벽).
                 margin_px = min(land - lo, hi - land)
-                if margin_px < _MG_FIRE_MARGIN_K * sigma_px:
+                if not relaxed and margin_px < _MG_FIRE_MARGIN_K * sigma_px:
                     f_jitter = True
                     continue
                 hit = True
@@ -2568,6 +2630,14 @@ def solve_trap_game(device, img_np):
                 + f" · 명중창 {hit_fraction:.2f}"
                 + f" · 발사 {_MG_CHEST_FIRES}/{_MG_MAX_FIRES_PER_CHEST})"
             )
+            # 🆕 [2026-09-28] 끝까지 여는 모드: 조준 기회를 못 잡았어도 포기하지 않고 마지막 한 발(구간은 찾은 판에서만).
+            if _MG_PERSISTENT:
+                print(f"🎲 [chest_opener] 끝까지 여는 모드 - 뒤로가기 대신 마지막 한 발을 누릅니다 "
+                      f"(발사 {_MG_CHEST_FIRES + 1}/{_MG_MAX_FIRES_PER_CHEST})")
+                device.shell(f"input tap {release_x} {release_y}")
+                _mg_note_fire()
+                time.sleep(0.5)
+                return True
         return _escape_fallback(device, width, height)   # 스트림은 유휴 회수에 맡긴다
 
     finally:
