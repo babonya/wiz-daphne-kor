@@ -50,12 +50,11 @@ CHEST_AIM_CALIBRATION = "auto"          # "auto"     = 기본. 쏠 때마다 실
 CHEST_AIM_MANUAL_GLIDE_PX = 86.0        #    manual 전용: 고정 활공(px)
 CHEST_AIM_MANUAL_LATENCY_MS = 184.0     #    manual 전용: 속도 비례 지연(ms) - 활공 = GLIDE + LATENCY x |속도|
 CHEST_AIM_MANUAL_JITTER_MS = 28.0       #    manual 전용: 흔들림 바닥값(ms) - 클수록 애매한 판에서 안 쏜다
-CHEST_AIM_MAX_FIRES = 2                 # 🎯 [상자당 최대 발사 수] 1~4. 게임 규칙: 미니게임 기회 기본 3회(도적 만렙 4회),
-                                        #    실패 1회마다 멘탈 -1, 기회를 모두 실패하면 추가로 멘탈 -5.
-                                        #    2 = 기본(매크로박스님 설정). 두 발 뒤 포기 - "전부 실패 -5"를 피함
-                                        #    3 = 일반 도적 기회를 전부 씀 / 4 = 도적 만렙 전용
-                                        #    ⚠️ 3 이상이면 "멘탈이 깎여도 어떻게든 연다" 모드: 조준할 틈이 안 나도 포기하지
-                                        #       않고(제한시간 2배 + 후반부 발사 조건 완화) 마지막엔 한 발을 누른다
+CHEST_AIM_PRESERVE_MENTAL = 1           # 🧠 [상자 멘탈 보존] 게임 규칙: 미니게임 기회 기본 3회(도적 만렙 4회), 실패 1회마다
+                                        #    멘탈 -1, 기회를 모두 실패하면 추가로 멘탈 -5.
+                                        #    1 = 기본(멘탈 보존). 상자당 2번 실패하면 포기 - "전부 실패 -5"를 피함
+                                        #    0 = 멘탈 갈아도 끝까지 연다. 횟수 제한 없이 미니게임이 보이면 계속 도전하고,
+                                        #        조준할 틈이 안 나도 포기하지 않고 마지막엔 누른다
 
 # 🖥️ [MuMu 에뮬레이터 콜드 리부트 자동 제어 세팅]
 ENABLE_EMULATOR_REBOOT = True       # 🔄 [에뮬레이터 리부트] 디바이스 오프라인/5분 정체 지속 시 에뮬레이터 자체를 강제 재시작할지 설정
@@ -156,7 +155,7 @@ else:
 # - 최근 수정일: 2026-09-27
 # - 수정 기록:
 #   [미릴리즈]: 🎯 상자 조준(매크로박스님) 영점 보정 글로벌 설정 CHEST_AIM_CALIBRATION(auto/macrobox/lowspec/manual/none)
-#     + 상자당 최대 발사 CHEST_AIM_MAX_FIRES(기본 2, 3 이상이면 끝까지 여는 모드).
+#     + 멘탈 보존 CHEST_AIM_PRESERVE_MENTAL(1=2회 후 포기 기본 / 0=횟수 제한 없이 끝까지).
 #   [미릴리즈]: 원격 대시보드 '시작 시 뮤뮤 재시작' 1회용 플래그(consume_remote_reboot_flag).
 #   1.21.14: 🚨 모르는 화면 추측 탭이 아웃게임 정체 타이머를 매번 리셋해 300초 하드리밋 불능이던 결함 완치 +
 #     기동 복구 실패 시 실제로 앱 강제 종료/재실행(예전엔 반환값 무시).
@@ -886,7 +885,7 @@ def print_daphne_global_settings():
     print(f" -> 목표 주회 설정 수치: {LIMIT_DUNGEON_LOOPS}회 안전 고정")
     print(f" -> 숏컷기반 스킬 예약 시스템 가동 여부: {bool(ENABLE_FIRST_COMBAT_SKILL)}")
     print(f" -> 상자 개방 후 긴급 힐링 가동 여부: {bool(ENABLE_HEAL_AFTER_CHEST)}")
-    print(f" -> 상자 조준 영점 보정 모드: {CHEST_AIM_CALIBRATION} · 상자당 최대 발사 {CHEST_AIM_MAX_FIRES}회")
+    print(f" -> 상자 조준 영점 보정 모드: {CHEST_AIM_CALIBRATION} · 멘탈 보존 {CHEST_AIM_PRESERVE_MENTAL}(1=2회 후 포기 / 0=끝까지)")
     print("====================================================")
 
 print_daphne_global_settings()
@@ -911,7 +910,7 @@ import chest_opener
 # 🎯 [2026-09-28] 상자 조준 영점 보정 적용(dungeon_bot 도 같은 chest_opener 모듈 객체를 쓰므로 여기서 한 번이면 된다)
 chest_opener.set_aim_calibration(CHEST_AIM_CALIBRATION, CHEST_AIM_MANUAL_GLIDE_PX,
                                  CHEST_AIM_MANUAL_LATENCY_MS, CHEST_AIM_MANUAL_JITTER_MS)
-chest_opener.set_chest_max_fires(CHEST_AIM_MAX_FIRES)
+chest_opener.set_chest_preserve_mental(CHEST_AIM_PRESERVE_MENTAL)
 # '열다' 버튼 자리 ROI를 main.py의 get_match_score_in_roi 인자 순서(x1, x2, y1, y2)로 - 실측 근거는 chest_opener.py
 YEOLDA_ROI_X1X2Y1Y2 = (chest_opener.YEOLDA_ROI[0], chest_opener.YEOLDA_ROI[2], chest_opener.YEOLDA_ROI[1], chest_opener.YEOLDA_ROI[3])
 from screen_capture import capture_screen_bytes, decode_screen_bytes
