@@ -125,8 +125,9 @@ HEADER = '''# -*- coding: utf-8 -*-
 '''
 
 
-def write_new_my_settings(overrides=None, path=MY_SETTINGS):
+def write_new_my_settings(overrides=None, path=None):
     """main.py 기본값(주석 포함)으로 my_settings.py 를 만든다. overrides 에 있는 값은 그 값으로."""
+    path = path or MY_SETTINGS   # 🔴 기본 인자에 MY_SETTINGS 를 직접 쓰면 정의 시점 값으로 고정된다
     overrides = overrides or {}
     parts = [HEADER]
     for name, e in default_setting_entries().items():
@@ -138,8 +139,9 @@ def write_new_my_settings(overrides=None, path=MY_SETTINGS):
         f.write("\n".join(parts) + "\n")
 
 
-def append_missing_settings(path=MY_SETTINGS, version=None):
+def append_missing_settings(path=None, version=None):
     """my_settings.py 에 없는 설정만 기본값+주석으로 끝에 추가하고, 추가한 이름 목록을 돌려준다."""
+    path = path or MY_SETTINGS
     have = set(load_settings_file(path).keys())
     missing = [(n, e) for n, e in default_setting_entries().items() if n not in have]
     if missing:

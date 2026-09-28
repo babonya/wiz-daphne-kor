@@ -135,6 +135,10 @@ def load_or_create_config():
         return json.load(f)
 
 
+# 🆕 [2026-09-28] 원격 목록에서 빼는 배치파일 - 처음설정은 PC 앞에서 입력하며 진행해야 해서 원격으로 켜면 안 된다.
+REMOTE_EXCLUDED_TARGETS = {"처음설정"}
+
+
 def discover_targets():
     # 💡 프로젝트 루트(remote_control/의 부모 폴더)에 있는 모든 .bat 파일을 자동으로 원격 시작 대상으로 등록합니다.
     # 새 프리셋 조합용 배치파일(예: 백아2.bat, 유령성2층채굴.bat)을 그냥 루트 폴더에 추가하기만 하면,
@@ -142,6 +146,8 @@ def discover_targets():
     targets = {}
     for bat_path in glob.glob(os.path.join(PROJECT_ROOT, "*.bat")):
         name = os.path.splitext(os.path.basename(bat_path))[0]
+        if name in REMOTE_EXCLUDED_TARGETS:
+            continue
         targets[name] = bat_path
     return targets
 

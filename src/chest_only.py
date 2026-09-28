@@ -23,6 +23,10 @@ sys.path.insert(0, os.path.join(ROOT, "src"))
 from single_instance import enforce_single_instance_or_exit
 enforce_single_instance_or_exit()
 
+# 🧩 [2026-09-28] 매크로 본체와 같은 처음설정 검사 + 내 설정(my_settings.py) 적용.
+import user_settings
+user_settings.block_if_setup_required(user_settings.read_current_version(), "상자 자동오픈")
+
 from ppadb.client import Client as AdbClient
 import chest_opener as co
 from screen_capture import capture_screen_bytes, decode_screen_bytes
@@ -31,23 +35,11 @@ PORTS = ["16448", "5559", "16384", "16385", "5555", "16416", "5557"]
 
 
 def read_main_settings():
-    """src/main.py 최상단의 단순 대입(숫자/문자열)만 읽는다."""
-    wanted = {"CHEST_OPENER_SLOT": 6, "MASKED_ADVENTURER_SLOT": 3, "CHEST_AIM_CALIBRATION": "auto",
-              "CHEST_AIM_MANUAL_GLIDE_PX": None, "CHEST_AIM_MANUAL_LATENCY_MS": None,
-              "CHEST_AIM_MANUAL_JITTER_MS": None, "CHEST_AIM_PRESERVE_MENTAL": 1}
-    try:
-        tree = ast.parse(open(os.path.join(ROOT, "src", "main.py"), encoding="utf-8-sig").read())
-        for node in tree.body:
-            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
-                name = node.targets[0].id
-                if name in wanted:
-                    try:
-                        wanted[name] = ast.literal_eval(node.value)
-                    except Exception:
-                        pass
-    except Exception as e:
-        print(f"⚠️ [상자 자동오픈] main.py 설정을 못 읽어 기본값을 씁니다: {e}")
-    return wanted
+    """main.py 기본값 -> my_settings.py 순으로 적용한 최종 설정(매크로 본체와 같은 규칙, 프로필은 없음)."""
+    cfg = {k: e["value"] for k, e in user_settings.default_setting_entries().items()}
+    for m in user_settings.apply_user_settings(cfg):
+        print(m)
+    return cfg
 
 
 class Tee:
@@ -130,7 +122,9 @@ def main():
                            cfg["CHEST_AIM_MANUAL_LATENCY_MS"], cfg["CHEST_AIM_MANUAL_JITTER_MS"])
     co.set_chest_preserve_mental(cfg["CHEST_AIM_PRESERVE_MENTAL"])
     ff = co._MgStream._ffmpeg_path()
-    print(f"   ffmpeg: {ff or '없음 - 조준이 사실상 동작하지 않습니다(README의 ffmpeg 설치 참고)'}")
+    print(f"   ffmpeg: {ff or '없음 - 예전 연타 방식으로 엽니다(처음설정.bat 으로 설치 가능)'}")
+    if not ff and str(cfg["CHEST_AIM_CALIBRATION"]).strip().lower() != "none":
+        co.set_aim_calibration("none")
 
     device = connect()
     if device is None:

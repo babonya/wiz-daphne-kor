@@ -6,3 +6,4 @@ if exist "restart_counter.txt" del "restart_counter.txt"
 set MACRO_SESSION_START=%date% %time%
 echo Starting Wizardry Daphne Bot (Isberg Heavysnow Church Chest Farm)...
 python src/main.py
+if %errorlevel%==3 pause
