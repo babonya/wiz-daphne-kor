@@ -11,8 +11,16 @@ enforce_single_instance_or_exit()
 
 CURRENT_VERSION = "1.21.14" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
 
+# 🧩 [2026-09-28] 처음설정 검사 - 첫 실행이거나 업데이트 직후(setup_done.json 버전 < CURRENT_VERSION)면 게임을 건드리지
+#    않고 "처음설정.bat 을 먼저 실행하세요" 안내 후 종료 코드 3으로 끝난다(배치파일이 3이면 창을 닫지 않고 멈춘다).
+#    버전은 업데이트로만 바뀌므로 돌아가는 도중의 os.execv 자기재시작/에뮬 재부팅에서는 절대 걸리지 않는다.
+import user_settings
+user_settings.block_if_setup_required(CURRENT_VERSION)
+
 # ==============================================================================
 # ⚙️ [Daphne 마스터 글로벌 제어 세팅 변수 구역 - 진짜 최상단 제어판]
+#    ⚠️ [2026-09-28~] 아래 값은 "기본값"입니다. 내 설정은 프로젝트 루트의 my_settings.py 에서 고치세요
+#       (업데이트해도 안 덮임, 처음설정.bat 이 이 구역을 주석까지 복사해 만들어 줌). 여기를 고쳐도 my_settings.py 가 우선합니다.
 #    던전 주회 방식(어떤 던전을 돌지)은 아래가 아니라 프로젝트 루트의 .bat 파일 선택으로 정합니다.
 #    이 구역은 "어떤 프리셋을 쓰든 공통으로 적용되는" 설정값만 모아둔 곳입니다.
 # ==============================================================================
@@ -115,6 +123,7 @@ FARMING_METHOD = "상자파밍"
 RETURN_METHOD = "exit_button"
 RESUPPLY_MODE = "items_only"
 INN_VISIT_LOOP_INTERVAL = 0
+SETTINGS_PROFILE = None   # 🆕 [2026-09-28] presets.json "settings_profile" - 있으면 my_settings_<이름>.py 를 추가로 적용
 
 # main.py 파일이 위치한 src/ 폴더를 기준으로 presets.json의 물리 절대 경로를 도출합니다. (v1.17.0-hotfix1부터 presets.json이 src/ 안으로 이동)
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -134,6 +143,7 @@ if os.path.exists(presets_path):
                 RETURN_METHOD = p_info.get("return_method", RETURN_METHOD)
                 RESUPPLY_MODE = p_info.get("resupply_mode", RESUPPLY_MODE)
                 INN_VISIT_LOOP_INTERVAL = p_info.get("inn_visit_loop_interval", INN_VISIT_LOOP_INTERVAL)
+                SETTINGS_PROFILE = p_info.get("settings_profile") or None
                 print(f"📂 [프리셋 로드 성공] 활성화된 프리셋: {sel_preset}")
                 print(f"   - 마을: {TOWN_NAME} | 던전: {DUNGEON_NAME} | 층: {DUNGEON_FLOOR_NAME} | 방식: {FARMING_METHOD}")
             else:
@@ -147,6 +157,10 @@ if DUNGEON_FLOOR_NAME == "백아2층":
     DUNGEON_FLOOR = 2
 else:
     DUNGEON_FLOOR = 1
+
+# 🧩 [2026-09-28] 내 설정 적용: main.py 기본값 -> my_settings.py -> my_settings_<프로필>.py (user_settings.py 참고).
+#    로그 엔진이 켜지기 전이라 메시지는 모아 뒀다가 print_daphne_global_settings() 에서 찍는다.
+USER_SETTINGS_MESSAGES = user_settings.apply_user_settings(globals(), SETTINGS_PROFILE)
 # ==============================================================================
 
 # ==============================================================================
@@ -156,6 +170,8 @@ else:
 # - 수정 기록:
 #   [미릴리즈]: 🎯 상자 조준(매크로박스님) 영점 보정 글로벌 설정 CHEST_AIM_CALIBRATION(auto/macrobox/lowspec/manual/none)
 #     + 멘탈 보존 CHEST_AIM_PRESERVE_MENTAL(1=2회 후 포기 기본 / 0=횟수 제한 없이 끝까지).
+#   [미릴리즈]: 🧩 내 설정 분리(my_settings.py + 프리셋별 프로필, user_settings.py) + 처음설정 미실행/업데이트 직후 시작 차단
+#     + ffmpeg 없으면 상자 조준 -> 연타 자동 전환.
 #   [미릴리즈]: ⚡ ADB 연결 빠른 경로 - 마지막 연결 포트(mumu_last_port.txt)부터, 실패 시 전체 스캔(시작 약 10초 단축).
 #   [미릴리즈]: 원격 대시보드 '시작 시 뮤뮤 재시작' 1회용 플래그(consume_remote_reboot_flag).
 #   1.21.14: 🚨 모르는 화면 추측 탭이 아웃게임 정체 타이머를 매번 리셋해 300초 하드리밋 불능이던 결함 완치 +
@@ -883,6 +899,8 @@ write_pid_file()
 def print_daphne_global_settings():
     print("====================================================")
     print("⚙️ [Daphne 마스터 글로벌 제어 세팅 변수 구역 - 최상단 제어판 연동 완료]")
+    for _m in USER_SETTINGS_MESSAGES:
+        print(f" {_m}")
     print(f" -> 목표 주회 설정 수치: {LIMIT_DUNGEON_LOOPS}회 안전 고정")
     print(f" -> 숏컷기반 스킬 예약 시스템 가동 여부: {bool(ENABLE_FIRST_COMBAT_SKILL)}")
     print(f" -> 상자 개방 후 긴급 힐링 가동 여부: {bool(ENABLE_HEAL_AFTER_CHEST)}")
@@ -912,6 +930,11 @@ import chest_opener
 chest_opener.set_aim_calibration(CHEST_AIM_CALIBRATION, CHEST_AIM_MANUAL_GLIDE_PX,
                                  CHEST_AIM_MANUAL_LATENCY_MS, CHEST_AIM_MANUAL_JITTER_MS)
 chest_opener.set_chest_preserve_mental(CHEST_AIM_PRESERVE_MENTAL)
+# 🧩 [2026-09-28] ffmpeg 가 없으면 조준은 사실상 한 발도 못 쏜다(띠 캡처 165ms라 프레임나이 게이트에 막힘 - 2026-09-28 1차
+#    실측 발사 0). 이때는 예전 연타 방식(none)으로 자동 전환해, zip만 풀어 쓰는 사람도 최소한 예전만큼은 연다.
+if str(CHEST_AIM_CALIBRATION).strip().lower() != "none" and not chest_opener._MgStream._ffmpeg_path():
+    print("⚠️ [상자 조준] ffmpeg 를 찾지 못해 조준 대신 예전 연타 방식으로 동작합니다 - 처음설정.bat 으로 ffmpeg 를 설치하세요.")
+    chest_opener.set_aim_calibration("none")
 # '열다' 버튼 자리 ROI를 main.py의 get_match_score_in_roi 인자 순서(x1, x2, y1, y2)로 - 실측 근거는 chest_opener.py
 YEOLDA_ROI_X1X2Y1Y2 = (chest_opener.YEOLDA_ROI[0], chest_opener.YEOLDA_ROI[2], chest_opener.YEOLDA_ROI[1], chest_opener.YEOLDA_ROI[3])
 from screen_capture import capture_screen_bytes, decode_screen_bytes

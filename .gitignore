@@ -41,3 +41,6 @@ reboot_mumu_on_start.flag
 상자조준 테스트.bat
 aim_calibration.json
 mumu_last_port.txt
+my_settings.py
+my_settings_*.py
+setup_done.json
