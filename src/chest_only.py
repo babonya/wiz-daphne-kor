@@ -84,14 +84,31 @@ class Tee:
 
 
 def connect():
+    """매크로 본체와 같은 규칙: 마지막 연결 포트(mumu_last_port.txt)부터 먼저, 안 되면 전체 포트 스캔."""
+    t0 = time.time()
     os.system("adb start-server > nul 2>&1")
+    client = AdbClient(host="127.0.0.1", port=5037)
+    last = None
+    try:
+        with open(os.path.join(ROOT, "mumu_last_port.txt"), encoding="utf-8") as f:
+            last = f.read().strip() or None
+    except Exception:
+        pass
+    if last:
+        os.system(f"adb connect 127.0.0.1:{last} > nul 2>&1")
+        try:
+            d = client.device(f"127.0.0.1:{last}")
+            if d is not None and d.get_state() == "device":
+                print(f"✅ [상자 자동오픈] ADB 연결: 127.0.0.1:{last} (마지막 포트 바로 연결 · {time.time() - t0:.1f}초)")
+                return d
+        except Exception:
+            pass
     for p in PORTS:
         os.system(f"adb connect 127.0.0.1:{p} > nul 2>&1")
-    client = AdbClient(host="127.0.0.1", port=5037)
     for p in PORTS:
         d = client.device(f"127.0.0.1:{p}")
         if d is not None:
-            print(f"✅ [상자 자동오픈] ADB 연결: 127.0.0.1:{p}")
+            print(f"✅ [상자 자동오픈] ADB 연결: 127.0.0.1:{p} (전체 포트 스캔 · {time.time() - t0:.1f}초)")
             return d
     return None
 

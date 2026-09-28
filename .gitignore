@@ -40,3 +40,4 @@ combat_strategy.json
 reboot_mumu_on_start.flag
 상자조준 테스트.bat
 aim_calibration.json
+mumu_last_port.txt

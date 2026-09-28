@@ -156,6 +156,7 @@ else:
 # - 수정 기록:
 #   [미릴리즈]: 🎯 상자 조준(매크로박스님) 영점 보정 글로벌 설정 CHEST_AIM_CALIBRATION(auto/macrobox/lowspec/manual/none)
 #     + 멘탈 보존 CHEST_AIM_PRESERVE_MENTAL(1=2회 후 포기 기본 / 0=횟수 제한 없이 끝까지).
+#   [미릴리즈]: ⚡ ADB 연결 빠른 경로 - 마지막 연결 포트(mumu_last_port.txt)부터, 실패 시 전체 스캔(시작 약 10초 단축).
 #   [미릴리즈]: 원격 대시보드 '시작 시 뮤뮤 재시작' 1회용 플래그(consume_remote_reboot_flag).
 #   1.21.14: 🚨 모르는 화면 추측 탭이 아웃게임 정체 타이머를 매번 리셋해 300초 하드리밋 불능이던 결함 완치 +
 #     기동 복구 실패 시 실제로 앱 강제 종료/재실행(예전엔 반환값 무시).
@@ -1034,14 +1035,33 @@ def pick_supported_device(client, verbose=True):
         print(f"   이 버전부터는 MuMu Player 안드로이드 {MIN_ANDROID_VERSION} 인스턴스만 지원합니다. 해당 인스턴스를 켜주세요.")
     return None, None, 0
 
+# 🆕 [2026-09-28] 마지막 연결 포트를 파일로도 남긴다(프로젝트 루트, gitignore). 예전엔 메모리에만 있어서 os.execv
+#    자기재시작/새 실행 때마다 잊혔고, 그래서 매번 7개 포트를 전부 adb connect 했다 - 안 쓰는 포트는 각 약 2.04초씩
+#    기다렸다 실패해서(실측 5개 = 약 10초) 매크로 시작이 느렸다. 이제 이 포트부터 먼저 붙어 본다.
+MUMU_LAST_PORT_FILE = os.path.join(os.path.dirname(script_dir), "mumu_last_port.txt")
+
+def read_last_mumu_port():
+    try:
+        with open(MUMU_LAST_PORT_FILE, encoding="utf-8") as f:
+            port = f.read().strip()
+        return port if port in MUMU_PORT_TO_INDEX else None
+    except Exception:
+        return None
+
 def record_mumu_port(port_str):
     global _last_connected_mumu_port
     if port_str in MUMU_PORT_TO_INDEX:
         _last_connected_mumu_port = port_str
+        try:
+            with open(MUMU_LAST_PORT_FILE, "w", encoding="utf-8") as f:
+                f.write(port_str)
+        except Exception:
+            pass
 
 def get_reboot_vm_index():
-    if _last_connected_mumu_port and _last_connected_mumu_port in MUMU_PORT_TO_INDEX:
-        return MUMU_PORT_TO_INDEX[_last_connected_mumu_port]
+    last = _last_connected_mumu_port or read_last_mumu_port()
+    if last and last in MUMU_PORT_TO_INDEX:
+        return MUMU_PORT_TO_INDEX[last]
     return MUMU_VM_INDEX
 
 def connect_all_mumu_ports_quietly():
@@ -1642,16 +1662,41 @@ def restart_process(reason):
     print("      ➔ 🚀 파이썬 프로세스를 전격 재시작합니다.")
     os.execv(sys.executable, [sys.executable] + sys.argv)
 
+def try_fast_mumu_connect(client):
+    """🆕 [2026-09-28] 마지막으로 연결됐던 포트 하나만 먼저 붙어 본다. 안드15 이상이면 (device, port, ver), 아니면 None."""
+    port = read_last_mumu_port()
+    if not port:
+        return None
+    try:
+        os.system(f"adb connect 127.0.0.1:{port} > nul 2>&1")
+        device = client.device(f"127.0.0.1:{port}")
+        if device and device.get_state() == "device":
+            ver = get_device_android_version(device)
+            if ver >= MIN_ANDROID_VERSION:
+                return device, port, ver
+    except Exception:
+        pass
+    return None
+
 def connect_mumu():
     global global_device
+    t_conn = time.time()
     os.system("adb start-server")
-    connect_all_mumu_ports_quietly()
-    time.sleep(1.0)
     try:
         client = AdbClient(host="127.0.0.1", port=5037)
-        device, port, android_version = pick_supported_device(client)
+        fast = try_fast_mumu_connect(client)
+        if fast:
+            device, port, android_version = fast
+            route = "마지막 포트 바로 연결"
+        else:
+            # 마지막 포트가 없거나(첫 실행) 안 붙으면(인스턴스 변경·뮤뮤 꺼짐) 예전처럼 전체 포트 스캔.
+            connect_all_mumu_ports_quietly()
+            time.sleep(1.0)
+            device, port, android_version = pick_supported_device(client)
+            route = "전체 포트 스캔"
         if device:
-            print(f"✅ 인스턴스 {MUMU_PORT_TO_INDEX.get(port, '?')}번 ({port}포트, 안드로이드 {android_version})에 연결 성공했습니다.")
+            print(f"✅ 인스턴스 {MUMU_PORT_TO_INDEX.get(port, '?')}번 ({port}포트, 안드로이드 {android_version})에 연결 성공했습니다. "
+                  f"({route} · {time.time() - t_conn:.1f}초)")
             # 🚨 [v1.20.0] 뮤뮤 '앱 상주'가 켜져 있으면 앱마다 별도 디스플레이가 생겨서, 매크로가 읽는
             #    화면과 클릭이 나가는 화면이 서로 달라진다(실측: 탭이 안드로이드 홈으로 새어 뮤뮤 스토어
             #    검색창이 열림). 이 상태로 계속 돌면 게임 대신 홈 화면을 마구 누르므로 여기서 멈춘다.
