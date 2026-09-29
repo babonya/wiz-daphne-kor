@@ -23,6 +23,7 @@ came_from_chest = False
 # - 현재 버전: 1.21.14
 # - 최근 수정일: 2026-09-27
 # - 수정 기록:
+#   [미릴리즈]: 필드맵 귀환 폴백(나가기 버튼) 전에 펼친 필드맵을 닫음(닫기 -> 안 되면 뒤로가기) - 폴백이 한 번도 성공 못 하던 결함.
 #   1.21.14: '열다' 판정 10곳을 버튼 자리 ROI(check_yeolda_present)로 제한 + 공용 체인에 '누가 열 거야?'
 #     캐릭터 선택창 분기(따개 슬롯 선택) 추가.
 #   1.21.14: 🆕 마을 이탈 감지 가드 - 던전 루프 안에서 마을(여관+사원 도장 둘 다 0.85)이 보이면 사령탑으로
@@ -1829,6 +1830,39 @@ def _find_first_icon(img_np, templates, min_y=None):
     return None
 
 
+def _close_fieldmap_before_exit(device):
+    """🆕 [2026-09-29] 나가기 버튼 폴백 전에 펼쳐 둔 필드맵을 닫는다. 닫혀 있으면 아무것도 안 한다.
+
+    🚨 실전(logs/2026-09-29 01:21~12:30, 재시작 113회): 목표 아이콘(캠프/하켄)을 못 찾으면 두 폴백
+    (_return_after_camping / _exit_via_walkout_or_harken)이 곧바로 필드 오른쪽 위에서 나가기 버튼을 찾는데, 필드맵이
+    화면 전체를 덮은 채라 버튼이 가려져 있었다(실측: 필드맵 열림 0.305 / 닫힘 0.944, 판정선 0.70) -> 폴백이 구조상
+    한 번도 성공할 수 없어 매번 앱 재시작. '✕ 닫기'를 누르고, 그래도 열려 있으면 뒤로가기(사용자 확인: 뒤로가기로도
+    필드맵이 닫힘)로 닫는다. 뒤로가기는 필드맵이 열린 게 확인됐을 때만 보낸다(닫힌 필드에서 누르면 엉뚱한 동작).
+    """
+    t_exp = load_grayscale_template("templates/Field/Fieldmap_exit_icon.png")
+    t_close = load_grayscale_template("templates/Field/FieldMap_Anchor.png")
+    for attempt in range(3):
+        raw = capture_screen_bytes(device)
+        if not raw:
+            time.sleep(0.5)
+            continue
+        img_np = decode_screen_bytes(raw)
+        if not _check_fieldmap_expanded(img_np, t_exp, t_close):
+            if attempt:
+                print("🗺️ [필드맵 귀환] 필드맵을 닫았습니다 - 이제 나가기 버튼을 찾습니다.")
+            return True
+        coords = find_gray_coords_specific(img_np, t_close, 0.70) if attempt == 0 else None
+        if coords:
+            print(f"🗺️ [필드맵 귀환] 나가기 전에 펼쳐 둔 필드맵을 닫습니다('닫기' 탭 {coords}).")
+            safe_device_shell(device, f"input tap {coords[0]} {coords[1]}")
+        else:
+            print("🗺️ [필드맵 귀환] 필드맵이 아직 열려 있어 뒤로가기로 닫습니다.")
+            safe_device_shell(device, "input keyevent 4")
+        time.sleep(1.2)
+    print("⚠️ [필드맵 귀환] 필드맵을 닫지 못했습니다 - 그대로 나가기 버튼을 찾아 봅니다.")
+    return False
+
+
 def _return_after_camping(device, return_method, t_move_exit, t_field, t_harken_return,
                           t_harken_blessing_donothing, t_combat_in, t_combat_slow, t_yeolda):
     """캠핑을 마치고 필드로 돌아온 상태에서의 공통 꼬리 - 나가기 버튼 탭 → 도보 탈출 확인 또는 하켄 귀환.
@@ -1841,6 +1875,7 @@ def _return_after_camping(device, return_method, t_move_exit, t_field, t_harken_
     재시작했다(실전 로그 23:57). 캠핑 이후에 필요한 건 아이콘 탐색이 아니라 "필드의 나가기 버튼 → 하켄
     귀환"이므로, 그 꼬리를 이렇게 따로 떼어 양쪽에서 같이 쓴다.
     """
+    _close_fieldmap_before_exit(device)   # 🆕 [2026-09-29] 필드맵이 나가기 버튼을 가리고 있으면 먼저 닫는다
     exit_coords = None
     for _try in range(5):
         raw = capture_screen_bytes(device)
@@ -1893,6 +1928,7 @@ def _exit_via_walkout_or_harken(device, t_move_exit, t_field, t_harken_return, t
     조건일 때만 도보 탈출로 인정한다 - 하켄 메뉴는 먼저 확인해 처리하고, 메뉴가 없는데 field_anchor도
     없는 경우에만 도보 탈출로 판정한다.
     """
+    _close_fieldmap_before_exit(device)   # 🆕 [2026-09-29] 필드맵이 나가기 버튼을 가리고 있으면 먼저 닫는다
     exit_coords = None
     for _try in range(5):
         raw = capture_screen_bytes(device)

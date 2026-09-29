@@ -170,6 +170,7 @@ USER_SETTINGS_MESSAGES = user_settings.apply_user_settings(globals(), SETTINGS_P
 # - 수정 기록:
 #   [미릴리즈]: 🎯 상자 조준(매크로박스님) 영점 보정 글로벌 설정 CHEST_AIM_CALIBRATION(auto/macrobox/lowspec/manual/none)
 #     + 멘탈 보존 CHEST_AIM_PRESERVE_MENTAL(1=2회 후 포기 기본 / 0=횟수 제한 없이 끝까지).
+#   [미릴리즈]: 🛑 진전 없는 연속 재시작 5회면 재시작/뮤뮤 재부팅을 멈추고 종료(113회 루프 재발 방지).
 #   [미릴리즈]: 🧩 내 설정 분리(my_settings.py + 프리셋별 프로필, user_settings.py) + 처음설정 미실행/업데이트 직후 시작 차단
 #     + ffmpeg 없으면 상자 조준 -> 연타 자동 전환.
 #   [미릴리즈]: ⚡ ADB 연결 빠른 경로 - 마지막 연결 포트(mumu_last_port.txt)부터, 실패 시 전체 스캔(시작 약 10초 단축).
@@ -1573,6 +1574,8 @@ def take_screencap_backup(device, prefix="start"):
     except Exception as err:
         print(f"⚠️ [{prefix.upper()} 스크린샷 실패] {err}")
 
+RESTART_STOP_LIMIT = 5   # 🆕 [2026-09-29] 진전 없는 연속 재시작이 이 횟수에 닿으면 멈춘다(restart_process 주석 참고)
+
 def restart_process(reason):
     print(f"\n🔄 [프로세스 자가 복구 가동] 사유: {reason}")
 
@@ -1600,6 +1603,28 @@ def restart_process(reason):
     # 카운트를 계산한 직후 즉시 저장한다 - 이 시도 자체가 멈추더라도 다음 시도(Watchdog 등)는 정확한
     # 누적 횟수를 보고 판단할 수 있음.
     write_restart_counter(consecutive_restart_count)
+
+    # 🆕 [2026-09-29] 진전 없는 연속 재시작 상한. 이 카운터는 던전 정상 진입/여관 숙박 때만 0이 되므로, 계속 늘기만 한다는 건
+    #    같은 자리에서 같은 실패를 반복한다는 뜻이다. 실전(logs/2026-09-29 01:21~12:30): 필드맵 귀환 실패로 113회 연속 재시작,
+    #    2회차부터는 매번 뮤뮤까지 강제 종료/재실행(11시간 동안 100회 이상). 상한에 닿으면 재시작/재부팅을 멈추고 화면을
+    #    그대로 둔 채 종료한다(사람이 보고 판단). .bat 으로 새로 켜면 카운터가 지워져 다시 정상 동작.
+    if consecutive_restart_count >= RESTART_STOP_LIMIT:
+        print("\n==========================================================")
+        print(f"🛑 [연속 재시작 상한] 진전 없이 {consecutive_restart_count}회 연속 재시작했습니다 - 같은 실패를 반복하는 중으로 보고")
+        print("   재시작/에뮬레이터 재부팅을 멈추고 매크로를 종료합니다. 뮤뮤 화면은 그대로 두었습니다.")
+        print(f"   마지막 사유: {reason}")
+        print("   화면을 확인해 상황을 정리한 뒤 배치파일로 다시 켜 주세요.")
+        print("==========================================================")
+        try:
+            if global_device is not None:
+                take_screencap_backup(global_device, prefix="stopped")
+        except Exception:
+            pass
+        try:
+            sys.stdout.flush()
+        except Exception:
+            pass
+        os._exit(5)
 
     # 🚨 [2026-08-29 정책 재조정] 한때 앱 재시작을 완전히 생략하고 매번 곧바로 에뮬레이터 완전 재시작으로
     # 갔었는데(뮤뮤가 화면만 죽고 ADB는 살아있는 경우 앱 재시작이 무의미하게 시간을 허비한다는 실전 사고
