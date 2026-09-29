@@ -23,6 +23,7 @@ came_from_chest = False
 # - 현재 버전: 1.21.14
 # - 최근 수정일: 2026-09-27
 # - 수정 기록:
+#   [미릴리즈]: 🧭 필드맵 제목으로 목표 구역 확인(교회/6층) - 아니면 이 구역 하켄으로 귀환 + 눈보라 나가기 직후 빠른 멈춤 감시.
 #   [미릴리즈]: 필드맵 귀환 폴백(나가기 버튼) 전에 펼친 필드맵을 닫음(닫기 -> 안 되면 뒤로가기) - 폴백이 한 번도 성공 못 하던 결함.
 #   1.21.14: '열다' 판정 10곳을 버튼 자리 ROI(check_yeolda_present)로 제한 + 공용 체인에 '누가 열 거야?'
 #     캐릭터 선택창 분기(따개 슬롯 선택) 추가.
@@ -1830,6 +1831,64 @@ def _find_first_icon(img_np, templates, min_y=None):
     return None
 
 
+# 🆕 [2026-09-29] 필드맵 제목으로 "지금 목표 구역이 맞나" 확인(보험). wvd 도 같은 방식(층 표시 도장 확인 -> 틀리면 지도 전체에서
+#    하켄 탐색)을 쓴다. 실측(뮤뮤 필드맵 확장 스샷 65장, 제목 띠 y 40~280 그레이스케일): "교회 구역" 일치 11장 최소 0.968 /
+#    불일치 54장 최대 0.507, "경로6 -호반 (남)-" 일치 9장 최소 0.949 / 불일치 56장 최대 0.394(동결 안개 경로2 43장 포함).
+#    제목 뒤에 어두운 띠가 깔려 있어 배경이 움직여도 흔들리지 않는다(폰 스샷 6장도 0.967~1.000).
+FIELDMAP_TITLE_TEMPLATES = {"교회구역": "templates/Field/FieldMap_title_church.png",
+                            "6층": "templates/Field/FieldMap_title_6F.png"}
+FIELDMAP_TITLE_ZONE = (0, 40, 1440, 280)   # (x1, y1, x2, y2)
+FIELDMAP_TITLE_THRESHOLD = 0.80
+
+
+def fieldmap_title_score(img_np, floor_name):
+    """펼친 필드맵의 제목이 floor_name 구역과 얼마나 맞는지(0~1). 도장이 없는 구역이면 None(확인 안 함)."""
+    path = FIELDMAP_TITLE_TEMPLATES.get(floor_name or "")
+    if not path or img_np is None:
+        return None
+    t = load_grayscale_template(path)
+    if t is None:
+        return None
+    x1, y1, x2, y2 = FIELDMAP_TITLE_ZONE
+    crop = img_np[y1:y2, x1:x2]
+    gray = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY) if len(crop.shape) == 3 else crop
+    return float(cv2.minMaxLoc(cv2.matchTemplate(gray, t, cv2.TM_CCOEFF_NORMED))[1])
+
+
+# 🆕 [2026-09-29] 눈보라 구간에서 '나가기'를 누른 직후의 빠른 멈춤 감시. 나가기 = 이 구역 출구로 자동이동이라, 눈보라를
+#    벗어나 커서가 보이는 순간 멈춰야 한다. 예전엔 메인 루프 한 바퀴(1~3초)마다만 확인해서, 교회구역처럼 눈보라가 출구 가까이
+#    이어진 곳에서는 멈추기 전에 출구를 밟아 옆 구역(경로2)으로 넘어갔다(logs/2026-09-29, 교회 프리셋이 경로2에서 113회 재시작).
+BLIZZARD_EXIT_WATCH_S = 20.0
+BLIZZARD_SAFE_TAP = (700, 150)   # 기존 "길 잃음 복구"/눈보라 잔여 이동 정지에서 쓰는 빈 공터 좌표
+
+
+def watch_blizzard_exit(device, t_field, t_cursor_up, t_cursor_down, t_cursor_left, t_cursor_right,
+                        t_combat_in=None, t_combat_slow=None):
+    """나가기 탭 직후 화면만 빠르게 찍어 커서가 보이면 즉시 멈춘다. 반환: stopped / zone_changed / combat / timeout."""
+    t0 = time.time()
+    while time.time() - t0 < BLIZZARD_EXIT_WATCH_S:
+        raw = capture_screen_bytes(device)
+        if not raw:
+            time.sleep(0.2)
+            continue
+        img_np = decode_screen_bytes(raw)
+        if float(np.mean(img_np[:, :, :3])) < 5.0:
+            print(f"🚪 [눈보라구간] 나가기 후 {time.time() - t0:.1f}초 만에 화면 암전 - 출구를 밟아 다른 구역으로 이동한 것으로 보입니다"
+                  "(필드맵 귀환 때 제목으로 구역을 다시 확인합니다).")
+            return "zone_changed"
+        if (t_combat_in is not None and check_combat_template_present(img_np, t_combat_in, 0.70)) or \
+                (t_combat_slow is not None and check_combat_template_present(img_np, t_combat_slow, 0.70)):
+            return "combat"
+        if check_field_anchor_present(img_np, t_field, 0.65) and \
+                get_minimap_cursor_direction(img_np, t_cursor_up, t_cursor_down, t_cursor_left, t_cursor_right) is not None:
+            safe_device_shell(device, f"input tap {BLIZZARD_SAFE_TAP[0]} {BLIZZARD_SAFE_TAP[1]}")
+            print(f"🧊 [눈보라구간] 나가기 후 {time.time() - t0:.1f}초 만에 눈보라를 벗어남(커서 보임) - 즉시 안전지대 터치로 멈춥니다.")
+            return "stopped"
+        time.sleep(0.15)
+    print(f"⚠️ [눈보라구간] 나가기 후 {BLIZZARD_EXIT_WATCH_S:.0f}초 동안 눈보라를 벗어나지 못했습니다 - 메인 루프로 넘깁니다.")
+    return "timeout"
+
+
 def _close_fieldmap_before_exit(device):
     """🆕 [2026-09-29] 나가기 버튼 폴백 전에 펼쳐 둔 필드맵을 닫는다. 닫혀 있으면 아무것도 안 한다.
 
@@ -1972,7 +2031,7 @@ def _exit_via_walkout_or_harken(device, t_move_exit, t_field, t_harken_return, t
     return "failed"
 
 
-def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_combat_slow=None, max_swipe_attempts=8):
+def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_combat_slow=None, max_swipe_attempts=8, floor_name=None):
     """
     필드맵을 확장해 캠프/대하켄 아이콘을 찾아 자동이동으로 복귀하는 범용 귀환 루틴.
     return_method: "camp_then_exit_button" | "camp_then_harken" | "harken_only" ("exit_button"은 호출 안 함).
@@ -2151,6 +2210,18 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
     if not expanded or img_np is None:
         print("⚠️ [필드맵 귀환] 미니맵 확장이 확인되지 않았습니다 - 좌표/타이밍 재검토 필요.")
         return "failed"
+
+    # 🆕 [2026-09-29] 구역 확인(보험) - 필드맵 제목이 목표 구역이 아니면 옆 구역으로 넘어온 것(눈보라 나가기 등). 목표 구역의
+    #    아이콘(캠프/대하켄)을 찾아 헤매지 말고, 이 구역에서 하켄(대/소)을 찾아 귀환한다(wvd 와 같은 방식). 하켄도 없으면
+    #    아래 폴백(나가기 버튼)으로 빠진다. 귀환 뒤에는 원래 순환(마을외곽/여관 -> 재진입)이 목표 구역으로 다시 들여보낸다.
+    title_score = fieldmap_title_score(img_np, floor_name)
+    if title_score is not None and title_score < FIELDMAP_TITLE_THRESHOLD:
+        print(f"🧭 [필드맵 귀환] 필드맵 제목이 목표 구역('{floor_name}')이 아닙니다(일치도 {title_score:.2f}) - 옆 구역으로 넘어온 것으로 보고"
+              " 이 구역의 하켄을 찾아 귀환합니다.")
+        is_camp_branch = False
+        target_icons = [t for t in (t_harken_large, t_harken_small) if t is not None]
+    elif title_score is not None:
+        print(f"🧭 [필드맵 귀환] 필드맵 제목 확인: 목표 구역('{floor_name}') 맞음(일치도 {title_score:.2f}).")
 
     # 3. 목표 아이콘 탐색 (안 보이면 스와이프 재시도 - 필드맵은 월드맵보다 훨씬 작아 폭/횟수는
     # 실기 로그로 튜닝 예정, 우선 보수적인 소폭 스와이프로 시작)
@@ -3644,7 +3715,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                         print(f"❄️ [눈보라구간] 나가기 탭: {exit_coords}")
                                         safe_device_shell(device, f"input tap {exit_coords[0]} {exit_coords[1]}")
                                         blizzard_exit_tapped = True
-                                        time.sleep(1.5)
+                                        watch_blizzard_exit(device, t_field, t_cursor_up, t_cursor_down, t_cursor_left, t_cursor_right, t_combat_in, t_combat_slow)
                                     transition_delay_count = 0
                                     time.sleep(1.0)
                                     continue
@@ -3663,7 +3734,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                                 print(f"❄️ [눈보라구간] '없습니다' 감지 - 즉시 나가기 1회 탭: {exit_coords}")
                                                 safe_device_shell(device, f"input tap {exit_coords[0]} {exit_coords[1]}")
                                                 blizzard_exit_tapped = True
-                                            time.sleep(1.5)
+                                                watch_blizzard_exit(device, t_field, t_cursor_up, t_cursor_down, t_cursor_left, t_cursor_right, t_combat_in, t_combat_slow)
                                 else:
                                     print("❄️ [눈보라구간] 재개 버튼 미검출 - 다음 틱 재시도.")
 
@@ -3678,7 +3749,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                         print(f"❄️ [눈보라구간] 재개 30초 무반응 - 강제 나가기 탭: {exit_coords}")
                                         safe_device_shell(device, f"input tap {exit_coords[0]} {exit_coords[1]}")
                                         blizzard_exit_tapped = True
-                                        time.sleep(1.5)
+                                        watch_blizzard_exit(device, t_field, t_cursor_up, t_cursor_down, t_cursor_left, t_cursor_right, t_combat_in, t_combat_slow)
 
                             # 🚨 [2026-09-15] 여기서 last_state_changed_time을 더 이상 매 틱 무조건 리셋
                             # 하지 않는다 - 예전엔 여기서 매초 리셋해버려서, 이 분기에 갇힌 채 아무 진전이
@@ -3860,7 +3931,8 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                 print(f"🚪 [TRIGGER_EXIT] 필드맵 아이콘 경유 귀환 루틴 진입 (return_method={return_method})")
                 # 🚨 캠핑을 이미 마쳤는지는 루틴이 내부에서 is_camping_done()으로 직접 판단해 "나가기 버튼
                 # → 하켄" 꼬리부터 이어간다(return_method를 바꿔치우면 안 된다 - 상세는 _return_after_camping 주석).
-                fieldmap_return_result = return_to_town_via_fieldmap_icon(device, return_method, t_combat_in, t_combat_slow)
+                fieldmap_return_result = return_to_town_via_fieldmap_icon(device, return_method, t_combat_in, t_combat_slow,
+                                                                          floor_name=dungeon_floor_name)
                 if fieldmap_return_result == "returned":
                     return True, skill_mission_success_this_combat, need_pickaxe_refill
                 if fieldmap_return_result == "combat":
