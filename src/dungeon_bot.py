@@ -23,6 +23,7 @@ came_from_chest = False
 # - 현재 버전: 1.21.14
 # - 최근 수정일: 2026-09-27
 # - 수정 기록:
+#   [미릴리즈]: 🚪 하켄 메뉴 먼저 확인 - 필드맵 귀환 대기 루프 / 눈보라 판별 / 상자 버튼 탭 전후(상자 좌표=메뉴의 경로2 줄).
 #   [미릴리즈]: 🧭 필드맵 제목으로 목표 구역 확인(교회/6층) - 아니면 이 구역 하켄으로 귀환 + 눈보라 나가기 직후 빠른 멈춤 감시.
 #   [미릴리즈]: 필드맵 귀환 폴백(나가기 버튼) 전에 펼친 필드맵을 닫음(닫기 -> 안 되면 뒤로가기) - 폴백이 한 번도 성공 못 하던 결함.
 #   1.21.14: '열다' 판정 10곳을 버튼 자리 ROI(check_yeolda_present)로 제한 + 공용 체인에 '누가 열 거야?'
@@ -2150,6 +2151,20 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
                 return _return_after_camping(device, return_method, t_move_exit, t_field, t_harken_return,
                                              t_harken_blessing_donothing, t_combat_in, t_combat_slow, t_yeolda)
             return "failed"
+        # 🆕 [2026-09-29 실전 확인] 하켄 메뉴(귀환목록)가 이미 떠 있으면 맵을 펼칠 필요 없이 '귀환'을 누른다.
+        #    재개(이전 자동이동 목적지 = 하켄)로 하켄에 먼저 도착해 메뉴가 뜬 상태에서 이 루틴에 들어오면, 메뉴엔
+        #    압축 미니맵 커서가 없어 "커서 미검출 -> 탭 보류"만 반복하다 미니맵 좌표(1217,219)를 메뉴 위에 눌렀다
+        #    (logs/2026-09-29-1635-000_start.txt 16:49:00~, 하켄 메뉴 스샷 dev/ROI_check/church_harken_menu_live.png:
+        #    필드 앵커/커서/상자 버튼 전부 미검출, 하켄 판정은 통과). 검증된 공용 판정을 그대로 재사용한다.
+        harken_state_pre = check_and_handle_harken_menu(device, t_harken_blessing_donothing, t_harken_return,
+                                                        img_np=img_np, t_yeolda=t_yeolda)
+        if harken_state_pre == "returned":
+            print("🚪 [필드맵 귀환] 하켄 메뉴가 이미 떠 있습니다 - 맵을 펼치지 않고 '귀환'을 눌렀습니다.")
+            time.sleep(2.0)
+            return "returned"
+        if harken_state_pre == "blessing":
+            print("🎁 [필드맵 귀환] 하켄 가호 팝업을 처리했습니다 - 귀환 목록을 다시 확인합니다.")
+            continue
         # 🚨 [2026-09-08 실전 확인] 예전엔 "전투 도장이 안 보이면 탭"이라는 음성 조건이었는데, 전투 중
         # 단 한 프레임만 매칭이 흔들려도 탭이 나가 자동전투가 깨지고 그대로 멈추는 사고가 났다(실기:
         # 전투 감지 로그가 연달아 찍히던 와중에 탭이 나갔고, 사용자가 수동으로 자동전투를 다시 켜줬더니
@@ -3675,10 +3690,23 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                             safe_device_shell(device, f"input tap {ex_bz} {ey_bz}")
                             time.sleep(1.5)
                             expanded_bz = False
+                            harken_bz = "not_present"
                             raw_bz_chk = capture_screen_bytes(device)
                             if raw_bz_chk:
                                 img_bz_chk = decode_screen_bytes(raw_bz_chk)
                                 expanded_bz = _check_fieldmap_expanded(img_bz_chk, t_field_expanded_common, t_fieldmap_close_common)
+                                # 🆕 [2026-09-29 실전 확인] 커서가 안 보인 이유가 "하켄 위에 도착해 메뉴가 뜨는 중"일 수
+                                # 있다 - 그 경우 맵이 안 펼쳐지는 건 눈보라가 아니라 하켄 메뉴가 덮은 것이다(16:48:53~55
+                                # 눈보라 오판 -> 이어서 상자 버튼 좌표(1337,576) 탭 = 하켄 메뉴의 '경로2' 줄).
+                                if not expanded_bz:
+                                    harken_bz = check_and_handle_harken_menu(device, t_harken_blessing_donothing, t_harken_return,
+                                                                             img_np=img_bz_chk, t_yeolda=t_yeolda)
+                            if harken_bz in ("returned", "blessing"):
+                                print(f"🚪 [눈보라 판별] 맵 대신 하켄 메뉴가 떠 있었습니다 - 눈보라 아님, '{harken_bz}' 처리 완료.")
+                                transition_delay_count = 0
+                                time.sleep(2.0)
+                                last_state_changed_time = time.time()
+                                continue
                             if expanded_bz:
                                 print("🗺️ [눈보라 판별] 필드맵이 정상 확장됨 - 눈보라가 아니라 커서가 아이콘에 가려진 상태입니다. 맵을 닫고 일반 절차로 진행합니다.")
                                 cx_bz, cy_bz = FIELDMAP_CLOSE_TAP_COORDS
@@ -3786,6 +3814,19 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                             fresh_cursor_dir = get_minimap_cursor_direction(img_np, t_cursor_up, t_cursor_down, t_cursor_left, t_cursor_right)
                             if fresh_cursor_dir is not None:
                                 prev_cursor_dir = fresh_cursor_dir
+                            # 🆕 [2026-09-29 실전 확인] 상자 버튼 좌표(1337,576)는 하켄 메뉴에서 '경로2' 줄 위치다. 틱 첫머리의
+                            #    공용 하켄 가드 이후에 하켄에 도착해 메뉴가 떠도 그대로 탭하면 경로2로 순간이동한다. 탭 직전
+                            #    화면을 한 번 더 찍어 확인한다(대설지대만 - 하켄 귀환 구역이 있는 던전).
+                            raw_hk_pre = capture_screen_bytes(device)
+                            if raw_hk_pre:
+                                harken_pre_chest = check_and_handle_harken_menu(device, t_harken_blessing_donothing, t_harken_return,
+                                                                                img_np=decode_screen_bytes(raw_hk_pre), t_yeolda=t_yeolda)
+                                if harken_pre_chest in ("returned", "blessing"):
+                                    print(f"🚪 [상자 이동 보류] 탭 직전에 하켄 메뉴가 떴습니다 - 상자 버튼 대신 '{harken_pre_chest}' 처리 완료.")
+                                    transition_delay_count = 0
+                                    time.sleep(2.0)
+                                    last_state_changed_time = time.time()
+                                    continue
                         # 🚨 [2026-08-28 상자 이동 대기시간 단축] 미니맵 이동 여부와 무관하게 항상 2연타부터
                         # 찍던 걸 1회 탭으로 변경 - 던전 필드에서 멈춰서 확인하는 시간 자체가 가장 위험한
                         # 구간(기습 위험)이라는 사용자 판단에 따라, 1차 탭으로 충분한 대부분의 경우 탭 간격
@@ -3799,6 +3840,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                         action_success = False
                         opened = False
                         toast_detected = False
+                        harken_after_chest = "not_present"
 
                         for retry_cnt in range(2): # 최초 1회 + 씹힘 시 재시도 1회
                             if retry_cnt > 0:
@@ -3821,6 +3863,11 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                 if check_yeolda_present(img_np_sub, t_yeolda, 0.65):
                                     opened = True
                                     img_np = img_np_sub
+                                    break
+                                # 🆕 [2026-09-29] 탭 뒤에 하켄 메뉴가 뜨면(상자 대신 하켄에 도착) 토스트 판정보다 먼저 처리한다.
+                                harken_after_chest = check_and_handle_harken_menu(device, t_harken_blessing_donothing, t_harken_return,
+                                                                                  img_np=img_np_sub, t_yeolda=t_yeolda)
+                                if harken_after_chest in ("returned", "blessing"):
                                     break
                                 if check_template_present(img_np_sub, t_no_chest, 0.55):
                                     toast_detected = True
@@ -3860,6 +3907,8 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                     prev_mini = mini
                                 time.sleep(0.4)
                             
+                            if harken_after_chest in ("returned", "blessing"):
+                                break
                             if opened or toast_detected or moved:
                                 # 🚨 [2026-09-09 실전 확인 - 정체 타이머 리셋 누락 완치] opened/toast_detected/
                                 # moved 셋 다 진짜 화면 진행인데 last_state_changed_time 리셋이 하나도 없었다
@@ -3869,6 +3918,12 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                                 action_success = True
                                 break
                         
+                        if harken_after_chest in ("returned", "blessing"):
+                            print(f"🚪 [상자 이동] 상자 대신 하켄 메뉴가 떴습니다 - '{harken_after_chest}' 처리 완료.")
+                            transition_delay_count = 0
+                            time.sleep(2.0)
+                            last_state_changed_time = time.time()
+                            continue
                         if opened:
                             if chest_opener.open_and_disarm_chest(device, img_np, t_yeolda, chest_opener_slot=chest_opener_slot, masked_adventurer_slot=masked_adventurer_slot):
                                 state = "BRANCH_CHECK"
