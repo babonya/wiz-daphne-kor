@@ -23,6 +23,7 @@ came_from_chest = False
 # - 현재 버전: 1.21.14
 # - 최근 수정일: 2026-09-27
 # - 수정 기록:
+#   [미릴리즈]: 🚫 필드맵 아이콘 명암 가드(표준편차 20 미만 = 흐릿한 얼룩 오탐 제외, 다음 후보 탐색) - 교회 가짜 하켄 헛탭 5회 재시작.
 #   [미릴리즈]: 🚪 하켄 메뉴 먼저 확인 - 필드맵 귀환 대기 루프 / 눈보라 판별 / 상자 버튼 탭 전후(상자 좌표=메뉴의 경로2 줄).
 #   [미릴리즈]: 🧭 필드맵 제목으로 목표 구역 확인(교회/6층) - 아니면 이 구역 하켄으로 귀환 + 눈보라 나가기 직후 빠른 멈춤 감시.
 #   [미릴리즈]: 필드맵 귀환 폴백(나가기 버튼) 전에 펼친 필드맵을 닫음(닫기 -> 안 되면 뒤로가기) - 폴백이 한 번도 성공 못 하던 결함.
@@ -1819,16 +1820,45 @@ def is_field_button_active(img_np, coords, template):
 # 더 아래쪽에서 다시 찾도록 넘긴다.
 FIELDMAP_CAMP_ICON_MIN_Y = 573
 
+# 🆕 [2026-09-29 실전 확인] 필드맵 아이콘 명암 가드. TM_CCOEFF_NORMED 는 밝기/대비를 평준화해서, 무늬 없는 흐릿한
+#    회색 얼룩도 하얀 별(하켄) 모양처럼 계산될 수 있다. 실전(logs/2026-09-29 20:05~20:28): 교회 구역 필드맵 가장자리/제목 옆
+#    얼룩에 대하켄 도장이 0.807~0.817(기준 0.80)로 잡혀 헛탭 -> 자동이동 버튼 없음 -> 재시도 5회 -> 재시작 5회(상한 정지).
+#    가짜가 "찾음"으로 잡히면 스와이프 탐색도 안 돌아 화면 밖 진짜 하켄을 영영 못 찾는다.
+#    실측(매칭 자리 그레이스케일 표준편차): 진짜 대하켄 5장 31.1~58.9 / 소하켄 38.9~53.3 / 캠프 7장 43.6~48.2,
+#    이번 가짜 6.6~9.1 (증거 dev/ROI_check/church_fieldmap_harken_fp_2028.png). 임계값은 그대로 두고 배제 조건만 추가.
+FIELDMAP_ICON_MIN_STD = 20.0
+FIELDMAP_ICON_MAX_CANDIDATES = 5   # 도장당 기준을 넘는 후보를 점수 순으로 이만큼까지 본다(가짜 뒤의 진짜를 놓치지 않게)
+
+
 def _find_first_icon(img_np, templates, min_y=None):
     """후보 도장들을 순서대로 시도해 처음 잡히는 좌표를 반환(하켄 대/소처럼 같은 목적의 여러 도장용).
     min_y를 주면 그보다 위쪽(화면 상단)에서 잡힌 매칭은 미검출로 간주한다 - FIELDMAP_CAMP_ICON_MIN_Y
-    주석 참고(자동이동 버블이 상단 타이틀바에 가려지는 문제 회피용)."""
+    주석 참고(자동이동 버블이 상단 타이틀바에 가려지는 문제 회피용).
+    매칭 자리의 명암 편차가 FIELDMAP_ICON_MIN_STD 미만이면(흐릿한 얼룩 오탐) 버리고 다음 후보를 본다."""
+    if img_np is None:
+        return None
+    gray_img = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY) if len(img_np.shape) == 3 else img_np
     for tmpl in templates:
         if tmpl is None:
             continue
-        coords = find_gray_coords_specific(img_np, tmpl, FIELDMAP_ICON_THRESHOLD)
-        if coords and (min_y is None or coords[1] >= min_y):
-            return coords
+        h, w = tmpl.shape[:2]
+        result = cv2.matchTemplate(gray_img, tmpl, cv2.TM_CCOEFF_NORMED)
+        for _ in range(FIELDMAP_ICON_MAX_CANDIDATES):
+            _, max_val, _, max_loc = cv2.minMaxLoc(result)
+            if max_val <= FIELDMAP_ICON_THRESHOLD:
+                break
+            x, y = max_loc
+            cx, cy = x + int(w / 2), y + int(h / 2)
+            patch_std = float(gray_img[y:y + h, x:x + w].std())
+            # 이 후보 주변은 다시 보지 않도록 지운다(같은 자리의 1px 옆 매칭 반복 방지)
+            result[max(0, y - h // 2):y + h // 2 + 1, max(0, x - w // 2):x + w // 2 + 1] = -1.0
+            if patch_std < FIELDMAP_ICON_MIN_STD:
+                print(f"🚫 [필드맵 아이콘] ({cx},{cy}) 점수 {max_val:.3f} 이지만 명암 편차 {patch_std:.1f} < {FIELDMAP_ICON_MIN_STD:.0f}"
+                      " - 흐릿한 얼룩 오탐으로 보고 버립니다.")
+                continue
+            if min_y is not None and cy < min_y:
+                continue
+            return cx, cy
     return None
 
 
