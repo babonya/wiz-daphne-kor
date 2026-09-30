@@ -58,10 +58,10 @@ CHEST_AIM_CALIBRATION = "auto"          # "auto"     = 기본. 쏠 때마다 실
 CHEST_AIM_MANUAL_GLIDE_PX = 86.0        #    manual 전용: 고정 활공(px)
 CHEST_AIM_MANUAL_LATENCY_MS = 184.0     #    manual 전용: 속도 비례 지연(ms) - 활공 = GLIDE + LATENCY x |속도|
 CHEST_AIM_MANUAL_JITTER_MS = 28.0       #    manual 전용: 흔들림 바닥값(ms) - 클수록 애매한 판에서 안 쏜다
-CHEST_AIM_PRESERVE_MENTAL = 1           # 🧠 [상자 멘탈 보존] 게임 규칙: 미니게임 기회 기본 3회(도적 만렙 4회), 실패 1회마다
+CHEST_AIM_PRESERVE_MENTAL = 0           # 🧠 [상자 멘탈 보존] 게임 규칙: 미니게임 기회 기본 3회(도적 만렙 4회), 실패 1회마다
                                         #    멘탈 -1, 기회를 모두 실패하면 추가로 멘탈 -5.
-                                        #    1 = 기본(멘탈 보존). 상자당 2번 실패하면 포기 - "전부 실패 -5"를 피함
-                                        #    0 = 멘탈 갈아도 끝까지 연다. 횟수 제한 없이 미니게임이 보이면 계속 도전하고,
+                                        #    1 = 멘탈 보존. 상자당 2번 실패하면 포기 - "전부 실패 -5"를 피함
+                                        #    0 = 기본(2026-10-01 사용자 지정). 멘탈 갈아도 끝까지 연다. 횟수 제한 없이 미니게임이 보이면 계속 도전하고,
                                         #        조준할 틈이 안 나도 포기하지 않고 마지막엔 누른다
 
 # 🖥️ [MuMu 에뮬레이터 콜드 리부트 자동 제어 세팅]
@@ -169,7 +169,7 @@ USER_SETTINGS_MESSAGES = user_settings.apply_user_settings(globals(), SETTINGS_P
 # - 최근 수정일: 2026-09-27
 # - 수정 기록:
 #   1.22.0: 🎯 상자 조준(매크로박스님) 영점 보정 글로벌 설정 CHEST_AIM_CALIBRATION(auto/macrobox/lowspec/manual/none)
-#     + 멘탈 보존 CHEST_AIM_PRESERVE_MENTAL(1=2회 후 포기 기본 / 0=횟수 제한 없이 끝까지).
+#     + 멘탈 보존 CHEST_AIM_PRESERVE_MENTAL(1=2회 후 포기 / 0=횟수 제한 없이 끝까지 - 2026-10-01부터 기본).
 #   1.22.0: 🏠 대설지대 여관 경유가 여관 건물을 안 누르고 1초 만에 가짜 숙박하던 결함 - 사령탑 여관 흐름으로 넘김.
 #   1.22.0: 🛑 진전 없는 연속 재시작 5회면 재시작/뮤뮤 재부팅을 멈추고 종료(113회 루프 재발 방지).
 #   1.22.0: 🧩 내 설정 분리(my_settings.py + 프리셋별 프로필, user_settings.py) + 처음설정 미실행/업데이트 직후 시작 차단
