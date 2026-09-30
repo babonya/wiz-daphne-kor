@@ -5,6 +5,7 @@
 # - 표준 라이브러리만 사용합니다 (pip install 추가 불필요).
 # - 이 폴더(remote_control/)를 통째로 지워도 매크로 본체(src/main.py) 동작에는 전혀 지장이 없습니다.
 # - 현재 버전: 1.21.14
+#   [미릴리즈]: 시작/정지 버튼을 하나로 통합(꺼짐=초록 TOUCH TO START, 실행 중=빨강 TOUCH TO STOP, 정지는 3초 안에 한 번 더, 요청 중 잠금).
 # - 수정 기록:
 #   1.21.14: (이 파일 자체는 변경 없음, 버전 동기화용) 던전 루프 마을 이탈 감지 + '열다' ROI/'누가 열 거야?' 인식 +
 #     아웃게임 정체 하드리밋 불능 완치 + 기동 복구 개선.
@@ -447,18 +448,21 @@ def render_dashboard_html(token):
     text-transform: uppercase; color: var(--ink-faint); flex-shrink: 0; }
   select { flex: 1; background: var(--bg); color: var(--ink); border: 1px solid var(--line);
     border-radius: 7px; padding: 9px 10px; font-size: 0.86rem; font-family: inherit; }
-  .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   button { font-family: inherit; font-size: 0.92rem; font-weight: 700; border-radius: 8px;
     border: 1px solid transparent; padding: 13px 10px; cursor: pointer;
     transition: filter 0.15s ease, transform 0.05s ease; }
   button:active { transform: scale(0.98); }
   button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
-  .btn-start { background: var(--amber); color: #1c1305; }
-  .btn-start:hover { filter: brightness(1.08); }
-  .btn-start:disabled { background: var(--line); color: var(--ink-faint); cursor: default; }
-  .btn-stop { background: transparent; color: var(--danger); border-color: var(--danger); }
-  .btn-stop:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
-  .btn-stop:disabled { color: var(--ink-faint); border-color: var(--line); cursor: default; }
+  .btn-toggle { width: 100%; min-height: 76px; border-radius: 12px; border-width: 2px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
+  .btn-toggle .main { font-size: 1.2rem; letter-spacing: 0.04em; }
+  .btn-toggle .sub { font-size: 0.72rem; font-weight: 600; opacity: 0.85; }
+  .btn-toggle.is-start { background: var(--good); color: var(--bg); }
+  .btn-toggle.is-stop { background: var(--danger); color: #ffffff; }
+  .btn-toggle.is-confirm { background: transparent; color: var(--danger); border-color: var(--danger); }
+  .btn-toggle.is-pending { background: var(--line); color: var(--ink-dim); cursor: default; }
+  .btn-toggle.is-start:hover, .btn-toggle.is-stop:hover { filter: brightness(1.08); }
+  .controls.locked select, .controls.locked input { opacity: 0.55; }
   .toast { font-size: 0.74rem; color: var(--ink-dim); text-align: center; min-height: 1em; }
   .footer-note { font-size: 0.66rem; color: var(--ink-faint); text-align: center; letter-spacing: 0.02em; }
 </style>
@@ -480,7 +484,7 @@ def render_dashboard_html(token):
     <div class="log-body" id="logBody"><div class="log-empty"><div class="msg">불러오는 중…</div></div></div>
   </div>
 
-  <div class="controls">
+  <div class="controls" id="controls">
     <div class="target-row">
       <label for="targetSelect">시작</label>
       <select id="targetSelect">__TARGET_OPTIONS__</select>
@@ -488,10 +492,7 @@ def render_dashboard_html(token):
     <label style="display:flex;align-items:center;gap:8px;margin:8px 0;font-size:14px;">
       <input type="checkbox" id="rebootMumu"> 시작 시 뮤뮤 재시작 (필요할 때만)
     </label>
-    <div class="btn-row">
-      <button class="btn-start" id="btnStart">시작</button>
-      <button class="btn-stop" id="btnStop">정지</button>
-    </div>
+    <button class="btn-toggle is-pending" id="btnToggle"><span class="main">CHECKING…</span><span class="sub">&nbsp;</span></button>
     <div class="toast" id="toast">&nbsp;</div>
   </div>
 
@@ -501,8 +502,43 @@ def render_dashboard_html(token):
 <script>
   const TOKEN = "__TOKEN__";
   const pill = document.getElementById('statusPill');
-  const btnStart = document.getElementById('btnStart');
-  const btnStop = document.getElementById('btnStop');
+  const btnToggle = document.getElementById('btnToggle');
+  const controls = document.getElementById('controls');
+  const rebootBox = document.getElementById('rebootMumu');
+  // 🆕 [2026-09-30] 시작/정지 버튼 하나로 통합. 버튼 모양은 서버가 알려주는 실제 실행 여부(running)를 따른다.
+  //    pending: 요청을 보낸 뒤 상태가 바뀔 때까지 잠금(두 번 눌림 방지, 30초 뒤 자동 해제).
+  //    confirmUntil: 정지는 3초 안에 한 번 더 눌러야 실행(폰 스크롤 중 실수 정지 방지).
+  let isRunning = null;
+  let pending = null;
+  let pendingTimer = null;
+  let confirmUntil = 0;
+  let confirmTimer = null;
+
+  function renderToggle() {
+    const main = btnToggle.querySelector('.main');
+    const sub = btnToggle.querySelector('.sub');
+    let cls, m, sb;
+    if (pending === 'starting') { cls = 'is-pending'; m = 'STARTING…'; sb = 'waiting for the macro'; }
+    else if (pending === 'stopping') { cls = 'is-pending'; m = 'STOPPING…'; sb = 'waiting for the macro'; }
+    else if (isRunning === null) { cls = 'is-pending'; m = 'CHECKING…'; sb = '&nbsp;'; }
+    else if (!isRunning) { cls = 'is-start'; m = '▶ TOUCH TO START'; sb = '&nbsp;'; }
+    else if (Date.now() < confirmUntil) { cls = 'is-confirm'; m = 'TAP AGAIN TO STOP'; sb = 'cancels in 3s'; }
+    else { cls = 'is-stop'; m = '■ TOUCH TO STOP'; sb = '&nbsp;'; }
+    btnToggle.className = 'btn-toggle ' + cls;
+    main.textContent = m;
+    sub.innerHTML = sb;
+    const locked = !!pending || isRunning === true;
+    controls.classList.toggle('locked', locked);
+    targetSelect.disabled = locked;
+    rebootBox.disabled = locked;
+  }
+
+  function setPending(kind) {
+    pending = kind;
+    clearTimeout(pendingTimer);
+    if (kind) pendingTimer = setTimeout(() => { pending = null; renderToggle(); }, 30000);
+    renderToggle();
+  }
   const toast = document.getElementById('toast');
   const logBody = document.getElementById('logBody');
   const logEyebrow = document.getElementById('logEyebrow');
@@ -566,14 +602,13 @@ def render_dashboard_html(token):
     if (running) {
       pill.classList.remove('off');
       pill.querySelector('.label').textContent = `실행 중 · PID ${pid}`;
-      btnStart.disabled = true;
-      btnStop.disabled = false;
     } else {
       pill.classList.add('off');
       pill.querySelector('.label').textContent = '정지 상태';
-      btnStart.disabled = false;
-      btnStop.disabled = true;
     }
+    isRunning = !!running;
+    if ((pending === 'starting' && isRunning) || (pending === 'stopping' && !isRunning)) setPending(null);
+    renderToggle();
   }
 
   async function refresh() {
@@ -589,31 +624,50 @@ def render_dashboard_html(token):
     }
   }
 
-  btnStart.addEventListener('click', async () => {
+  async function sendStart() {
     const target = targetSelect.value;
     if (!target) { toast.textContent = '시작할 배치파일이 없습니다.'; return; }
-    btnStart.disabled = true;
+    setPending('starting');
     toast.textContent = '시작 요청을 보냈습니다…';
     try {
-      const reboot = document.getElementById('rebootMumu').checked ? '&reboot_mumu=1' : '';
+      const reboot = rebootBox.checked ? '&reboot_mumu=1' : '';
       const res = await fetch(`/start?target=${encodeURIComponent(target)}&token=${encodeURIComponent(TOKEN)}${reboot}`);
       toast.textContent = await res.text();
+      if (!res.ok) setPending(null);
     } catch (e) {
       toast.textContent = '요청 실패';
+      setPending(null);
     }
     setTimeout(refresh, 1000);
-  });
+  }
 
-  btnStop.addEventListener('click', async () => {
-    btnStop.disabled = true;
+  async function sendStop() {
+    setPending('stopping');
     toast.textContent = '정지 요청을 보냈습니다…';
     try {
       const res = await fetch(`/stop?token=${encodeURIComponent(TOKEN)}`);
       toast.textContent = await res.text();
+      if (!res.ok) setPending(null);
     } catch (e) {
       toast.textContent = '요청 실패';
+      setPending(null);
     }
     setTimeout(refresh, 1000);
+  }
+
+  btnToggle.addEventListener('click', () => {
+    if (pending || isRunning === null) return;
+    if (!isRunning) { sendStart(); return; }
+    if (Date.now() < confirmUntil) {
+      confirmUntil = 0;
+      clearTimeout(confirmTimer);
+      sendStop();
+      return;
+    }
+    confirmUntil = Date.now() + 3000;
+    renderToggle();
+    clearTimeout(confirmTimer);
+    confirmTimer = setTimeout(renderToggle, 3050);
   });
 
   function startPolling() {
