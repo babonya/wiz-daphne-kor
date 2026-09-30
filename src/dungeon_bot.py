@@ -23,6 +23,7 @@ came_from_chest = False
 # - 현재 버전: 1.22.0
 # - 최근 수정일: 2026-09-27
 # - 수정 기록:
+#   1.22.1(미릴리즈): 🏔️ 던전 루프 안에서 마을 외곽(대설 지대 버튼 화면)이 보이면 사령탑으로 퇴장(300초 정체 재시작 2건 방지) + 📸 필드맵/하켄 귀환 실패 직전 증거 스샷(fieldmap_miss/fieldmap_exit_fail/harken_fail).
 #   1.22.0: 🩸 힐 3번 연속 넣어도 빈사가 안 풀리면(MP 고갈) 마을 귀환 + 🧩 잘린 자동이동 말풍선은 왼쪽(아이콘) 절반으로 검색 + 재시도 전 필드맵 닫기.
 #   1.22.0: 🚫 필드맵 아이콘 명암 가드(표준편차 20 미만 = 흐릿한 얼룩 오탐 제외, 다음 후보 탐색) - 교회 가짜 하켄 헛탭 5회 재시작.
 #   1.22.0: 🚪 하켄 메뉴 먼저 확인 - 필드맵 귀환 대기 루프 / 눈보라 판별 / 상자 버튼 탭 전후(상자 좌표=메뉴의 경로2 줄).
@@ -1567,6 +1568,7 @@ def trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessin
                         # 실패를 전파한다(예전엔 여기서도 그냥 재시도만 반복 - 무한루프 원인). main.py의 restart_process()로
                         # 이어지도록 dungeon_bot.py 안에서 잡지 않고 그대로 던진다.
                         if elapsed >= 60.0:
+                            save_stuck_evidence_screenshot(img_np_h, "harken_fail")  # 🆕 [2026-09-30] 재시작 직전 원인 화면 증거
                             raise RuntimeError(f"하켄 탈출 실패: 정체 최초 감지 후 {elapsed:.0f}초 경과, 백스텝 복구로도 해소되지 않아 강제 앱 재시작을 요청합니다.")
                     else:
                         harken_stuck_count = 0
@@ -1612,6 +1614,12 @@ def trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessin
             harken_clicked = True
         else:
             elapsed = (time.time() - harken_first_stuck_time) if harken_first_stuck_time else 0.0
+            try:  # 🆕 [2026-09-30] 재시작 직전 원인 화면 증거(캡처 실패는 삼키고 진행)
+                raw_hf = capture_screen_bytes(device)
+                if raw_hf:
+                    save_stuck_evidence_screenshot(decode_screen_bytes(raw_hf), "harken_fail")
+            except Exception:
+                pass
             raise RuntimeError(f"하켄 탈출 실패: 정체 최초 감지 후 {elapsed:.0f}초 경과, 백스텝 복구로도 해소되지 않아 강제 앱 재시작을 요청합니다.")
 
     time.sleep(4.0)  # 퇴장 연출 대기
@@ -2034,6 +2042,7 @@ def _exit_via_walkout_or_harken(device, t_move_exit, t_field, t_harken_return, t
     """
     _close_fieldmap_before_exit(device)   # 🆕 [2026-09-29] 필드맵이 나가기 버튼을 가리고 있으면 먼저 닫는다
     exit_coords = None
+    img_np = None
     for _try in range(5):
         raw = capture_screen_bytes(device)
         if raw:
@@ -2044,6 +2053,8 @@ def _exit_via_walkout_or_harken(device, t_move_exit, t_field, t_harken_return, t
         time.sleep(1.0)
     if not exit_coords:
         print("⚠️ [필드맵 귀환] 하켄 미검출 폴백 - 일반 나가기 버튼조차 찾지 못했습니다.")
+        if img_np is not None:
+            save_stuck_evidence_screenshot(img_np, "fieldmap_exit_fail")  # 🆕 [2026-09-30] 원인 화면 증거
         return "failed"
     print(f"🚪 [필드맵 귀환] 하켄 미검출 폴백 - 나가기 버튼 탭(도보 탈출/하켄 귀환 중 먼저 뜨는 쪽을 따라갑니다): {exit_coords}")
     safe_device_shell(device, f"input tap {exit_coords[0]} {exit_coords[1]}")
@@ -2326,6 +2337,8 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
 
     if not icon_coords:
         print("⚠️ [필드맵 귀환] 스와이프 탐색 끝까지 목표 아이콘을 찾지 못했습니다.")
+        if img_np is not None:
+            save_stuck_evidence_screenshot(img_np, "fieldmap_miss")  # 🆕 [2026-09-30] 마지막 스와이프 후 최신 화면(폴백 진입 전)
         # 🆕 [2026-09-09 사용자 확인] 캠핑을 마친 자리에서 앱이 재시작되면 캐릭터가 캠프 아이콘 위에
         # 서 있어서 필드맵에서 그 아이콘을 확인할 수 없다. 이때는 아이콘 탐색을 포기하고 그냥 나가기
         # 버튼을 눌러 하켄으로 빠져나가면 된다(캠핑은 어차피 필드당 1회라 다시 할 수도 없다).
@@ -2546,6 +2559,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     t_dialogue_indicator = load_template("templates/chestopening/dialogue_indicator.png")
     # 🆕 [2026-09-25] 마을 이탈 감지 가드용(main.py와 같은 village_common 공용 그레이스케일 도장)
     t_village_inn = load_grayscale_template("templates/village_common/inn.png")
+    t_heavysnow_outskirts = load_template("templates/Vill_Isberg/dungeon_Heavysnow.png")  # 🆕 [2026-09-30] 마을 외곽 이탈 감지용(main.py와 같은 이진화160 로더)
     t_village_temple = load_grayscale_template("templates/village_common/temple.png")
 
     # 🆕 [2026-09-08 대설지대] 중립몹 조우 / 행상인 조우 인터럽트 핸들러용 도장 - 다른 던전은
@@ -2742,6 +2756,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     cap_fail_counter = 0
     resolution_fail_counter = 0  # 🚨 [v1.14.0-hotfix3] 해상도 미달 가드 연속 카운터 추가
     last_village_check_time = 0.0  # 🆕 [2026-09-25] 마을 이탈 감지 가드 주기(5초) 관리
+    macro_loop_begin_time = time.time()  # 🆕 [2026-09-30] 마을외곽 이탈 감지 유예(진입 직후 외곽 화면 잔상 오탐 방지)용
     while True:
         current_time = time.time()
         if current_time < low_threshold_active_until:
@@ -2814,6 +2829,11 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
             if (check_gray_template_present_specific(img_np, t_village_inn, 0.85) and
                     check_gray_template_present_specific(img_np, t_village_temple, 0.85)):
                 print(f"🏠 [마을 이탈 감지] 던전 루프 안에서 마을 화면이 식별되었습니다(상태: {state}). 사령탑으로 즉시 퇴장합니다.")
+                return False, skill_mission_success_this_combat, need_pickaxe_refill
+            # 🆕 [2026-09-30] 마을 외곽(대설 지대/마을로 돌아가기 화면)도 같은 방식으로 퇴장. 하켄 귀환 후 이미 마을 외곽인데
+            # 이 루프가 몰라 300초 정체->재시작한 2건(12:27, 14:19, dev/ROI_check/outskirts_stuck). 사령탑은 0.80으로 판별.
+            if (current_time - macro_loop_begin_time >= 20.0) and check_template_present(img_np, t_heavysnow_outskirts, 0.80):
+                print(f"🏔️ [마을외곽 이탈 감지] 던전 루프 안에서 마을 외곽 화면이 식별되었습니다(상태: {state}). 사령탑으로 즉시 퇴장합니다.")
                 return False, skill_mission_success_this_combat, need_pickaxe_refill
 
         # 🚨 [v1.14.1-hotfix11] 재부팅/최초 기동 시 던전 내부인 경우 즉시 던전 밖으로 탈출
