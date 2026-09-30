@@ -10,6 +10,10 @@
 - 내용(🗺️ 미니맵 확장 실패 시 나가기 폴백 - 재시작 방지): 사망 후 마을 회군 중 "필드 커서 미검출" x3 + "미니맵 확장 탭 1~3/3" 뒤 "미니맵 확장이 확인되지 않았습니다"가 뜨면 곧장 "failed" -> TRIGGER_EXIT RuntimeError -> 재시작(logs/2026-09-30-0115 02:49, 2026-10-01-0301 04:32, 재시작 중 ADB 끊겨 뮤뮤 콜드 리부트까지). 이전: 즉시 failed. 이후: (a) `logs/<시각>_stuck_fieldmap_expand_fail.png` 증거 스샷(최근 캡처본, 없으면 1회 캡처, 예외 삼킴), (b) 스와이프 8/8 미검출 경로와 같은 `_exit_via_walkout_or_harken()`(필드맵 닫기 -> 나가기 버튼 -> 도보 탈출/하켄 귀환)의 반환값을 그대로 반환 - 폴백도 failed일 때만 기존처럼 재시작. 호출부 후처리는 두 경로 동일. 검증: py_compile + import 통과, 실전 미검증.
 - 적용: src/dungeon_bot.py
 
+- 내용(🗺️ 필드맵 아이콘 탐색 = 구석 몰기 + 뱀 모양 래스터): 예전엔 위/아래/왼/오른 4방향을 돌려가며 8번 고정으로 밀어 맵 일부만 봤다(다른 맵은 교회구역의 2~3배일 수 있음). 이제 ①아래 드래그를 끝까지(맵 맨 위) ②오른쪽 드래그를 끝까지(맵 맨 왼쪽) ③왼쪽 드래그로 가로 끝까지 -> 위로 드래그 1회(한 줄 내려감) -> 반대 가로 끝까지 ... 반복, 세로도 끝이면 맵 전부 본 것으로 종료. 총 30회(FIELDMAP_SCAN_MAX_SWIPES) 안에서, 매 화면 아이콘 검사/끼어듦 처리/120초 워치독/fieldmap_miss 스샷+폴백은 그대로. 미사용이 된 max_swipe_attempts 파라미터 제거.
+- 근거(오푸스 실측, 교회구역 라이브, dev/ROI_check/fieldmap_swipe_measure/): 700px 드래그 1회에 맵 390~600px 이동, 끝이면 안 움직임. 끝 판정 = img_gray[340:2010,:] 직전 화면 대비 평균 절대차 - 움직임 38~45 / 끝 4.6~6.3 -> 문턱 FIELDMAP_EDGE_DIFF=12.0.
+- 검증: py_compile + import 통과, 탐색 순서 상태기계(FieldmapScanPlanner)는 가짜 moved 열로 단위 확인. 라이브 실측 전(dev/tools/fieldmap_scan_test.py 로 탭 없이 전체 훑기 가능).
+- 적용: src/dungeon_bot.py(FieldmapScanPlanner/_fieldmap_view_moved/FIELDMAP_* 상수, return_to_town_via_fieldmap_icon), dev/tools/fieldmap_scan_test.py
 
 [v1.22.0 - 2026-09-30 릴리즈] (아래 여러 [미릴리즈] 묶음을 이 버전으로 출시)
 - 내용(📱 원격 대시보드 시작/정지 버튼 하나로 통합 - 사용자 요청): 꺼져 있으면 초록 "▶ TOUCH TO START", 실행 중이면 빨강

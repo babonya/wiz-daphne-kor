@@ -23,7 +23,7 @@ came_from_chest = False
 # - 현재 버전: 1.22.0
 # - 최근 수정일: 2026-09-27
 # - 수정 기록:
-#   1.22.1(미릴리즈): 🏔️ 던전 루프 안에서 마을 외곽(대설 지대 버튼 화면)이 보이면 사령탑으로 퇴장(300초 정체 재시작 2건 방지) + 📸 필드맵/하켄 귀환 실패 직전 증거 스샷(fieldmap_miss/fieldmap_exit_fail/harken_fail) + 🗺️ 미니맵 확장 실패 시 재시작 대신 나가기/하켄 폴백 + 증거 스샷(fieldmap_expand_fail).
+#   1.22.1(미릴리즈): 🏔️ 던전 루프 안에서 마을 외곽(대설 지대 버튼 화면)이 보이면 사령탑으로 퇴장(300초 정체 재시작 2건 방지) + 📸 필드맵/하켄 귀환 실패 직전 증거 스샷(fieldmap_miss/fieldmap_exit_fail/harken_fail) + 🗺️ 미니맵 확장 실패 시 재시작 대신 나가기/하켄 폴백 + 증거 스샷(fieldmap_expand_fail). 🗺️ 필드맵 아이콘 탐색을 구석 몰기+뱀 모양 래스터(끝 판정 diff<12, 최대 30회)로 교체.
 #   1.22.0: 🩸 힐 3번 연속 넣어도 빈사가 안 풀리면(MP 고갈) 마을 귀환 + 🧩 잘린 자동이동 말풍선은 왼쪽(아이콘) 절반으로 검색 + 재시도 전 필드맵 닫기.
 #   1.22.0: 🚫 필드맵 아이콘 명암 가드(표준편차 20 미만 = 흐릿한 얼룩 오탐 제외, 다음 후보 탐색) - 교회 가짜 하켄 헛탭 5회 재시작.
 #   1.22.0: 🚪 하켄 메뉴 먼저 확인 - 필드맵 귀환 대기 루프 / 눈보라 판별 / 상자 버튼 탭 전후(상자 좌표=메뉴의 경로2 줄).
@@ -2087,7 +2087,76 @@ def _exit_via_walkout_or_harken(device, t_move_exit, t_field, t_harken_return, t
     return "failed"
 
 
-def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_combat_slow=None, max_swipe_attempts=8, floor_name=None):
+# 🆕 [2026-10-01] 필드맵 아이콘 탐색 스와이프 = "구석으로 몰기 + 뱀 모양 래스터". 예전엔 위/아래/왼/오른 4방향을 돌아가며
+#    8번 고정으로 밀어 맵 일부만 봤다(다른 맵은 교회구역의 2~3배일 수 있음). 이제 맵 왼쪽 위 구석으로 몰고 -> 가로 끝까지 ->
+#    한 줄 내려가 -> 반대 가로 끝까지 ... 식으로 전체를 훑는다.
+#    실측(교회구역 라이브, dev/ROI_check/fieldmap_swipe_measure/): 손가락 위로 드래그=보기는 맵 아래쪽, 아래로 드래그=위쪽,
+#    왼쪽 드래그=오른쪽, 오른쪽 드래그=왼쪽. 700px 드래그 1회에 맵 390~600px 이동, 끝이면 안 움직인다.
+#    끝 판정: 격자 영역 img_gray[340:2010, :] 의 직전 화면 대비 평균 절대차 - 움직임 38~45 / 끝 4.6~6.3(눈 효과 노이즈).
+FIELDMAP_EDGE_DIFF = 12.0
+FIELDMAP_SCAN_MAX_SWIPES = 30
+FIELDMAP_SWIPE_DRAG_UP = (720, 1600, 720, 900)     # 보기 -> 아래쪽
+FIELDMAP_SWIPE_DRAG_DOWN = (720, 900, 720, 1600)   # 보기 -> 위쪽
+FIELDMAP_SWIPE_DRAG_LEFT = (1100, 1300, 400, 1300)   # 보기 -> 오른쪽
+FIELDMAP_SWIPE_DRAG_RIGHT = (400, 1300, 1100, 1300)  # 보기 -> 왼쪽
+FIELDMAP_SWIPE_MS = 400
+
+
+def _fieldmap_view_moved(prev_gray, cur_gray):
+    """스와이프 전후 화면(그레이)의 격자 영역 평균 절대차를 구해 (움직였나, 차이값)을 반환. 차이 < FIELDMAP_EDGE_DIFF 면 끝."""
+    a = prev_gray[340:2010, :].astype(np.int16)
+    b = cur_gray[340:2010, :].astype(np.int16)
+    diff = float(np.abs(a - b).mean())
+    return diff >= FIELDMAP_EDGE_DIFF, diff
+
+
+class FieldmapScanPlanner:
+    """탐색 스와이프 순서 생성기(상태 기계). next_swipe() -> (단계, 이름, (x1,y1,x2,y2)) 또는 종료 시 None.
+    스와이프 후 report(moved)로 "움직였나"를 알려주면 다음 방향을 정한다.
+    단계: corner_v(아래로 드래그=맵 맨 위) -> corner_h(오른쪽 드래그=맵 맨 왼쪽) -> raster(가로 끝까지 -> 위로 드래그 1회 -> 반대 가로 ...).
+    래스터에서 세로 스와이프가 끝 판정이면 맵 전부를 본 것이므로 종료."""
+
+    def __init__(self):
+        self.phase = "corner_v"
+        self.h = FIELDMAP_SWIPE_DRAG_LEFT
+        self.sub = "h"          # raster 안에서 다음 스와이프가 가로(h)인지 세로(v)인지
+        self.done = False
+        self.cur = None
+        self.count = 0          # 현재 단계/방향에서 연속으로 민 횟수(로그용)
+
+    def next_swipe(self):
+        if self.done:
+            return None
+        if self.phase == "corner_v":
+            self.cur = ("몰기 ↑", FIELDMAP_SWIPE_DRAG_DOWN)
+        elif self.phase == "corner_h":
+            self.cur = ("몰기 ←", FIELDMAP_SWIPE_DRAG_RIGHT)
+        elif self.sub == "h":
+            self.cur = ("래스터 →" if self.h == FIELDMAP_SWIPE_DRAG_LEFT else "래스터 ←", self.h)
+        else:
+            self.cur = ("래스터 ↓", FIELDMAP_SWIPE_DRAG_UP)
+        return (self.phase, self.cur[0], self.cur[1])
+
+    def report(self, moved):
+        if self.phase == "corner_v":
+            if not moved:
+                self.phase = "corner_h"
+        elif self.phase == "corner_h":
+            if not moved:
+                self.phase = "raster"
+                self.sub = "h"
+        elif self.sub == "h":
+            if not moved:
+                self.sub = "v"
+        else:
+            if not moved:
+                self.done = True
+            else:
+                self.h = FIELDMAP_SWIPE_DRAG_RIGHT if self.h == FIELDMAP_SWIPE_DRAG_LEFT else FIELDMAP_SWIPE_DRAG_LEFT
+                self.sub = "h"
+
+
+def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_combat_slow=None, floor_name=None):
     """
     필드맵을 확장해 캠프/대하켄 아이콘을 찾아 자동이동으로 복귀하는 범용 귀환 루틴.
     return_method: "camp_then_exit_button" | "camp_then_harken" | "harken_only" ("exit_button"은 호출 안 함).
@@ -2312,12 +2381,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
     # 3. 목표 아이콘 탐색 (안 보이면 스와이프 재시도 - 필드맵은 월드맵보다 훨씬 작아 폭/횟수는
     # 실기 로그로 튜닝 예정, 우선 보수적인 소폭 스와이프로 시작)
     icon_coords = None
-    swipe_waypoints = [
-        (720, 1600, 720, 900),   # 위로
-        (720, 900, 720, 1900),   # 아래로(원위치+더)
-        (1100, 1300, 400, 1300), # 왼쪽으로
-        (400, 1300, 1300, 1300), # 오른쪽으로(원위치+더)
-    ]
+    # 🆕 [2026-10-01] 스와이프 순서는 FieldmapScanPlanner(구석 몰기 + 뱀 모양 래스터)가 정한다(위 상수 주석 참고).
     # 🚨 [2026-09-08 정정] 예전엔 "맵이 확장되면 던전 타이머(=몹 조우)가 멈춘다"고만 알고 있었는데,
     # 사용자 실기 확인 결과 조건이 붙는다 - (1) 캐릭터가 움직이는 중이 아니어야 하고, (2) 확장 후 1~2초
     # 안에 전투 조우가 없어야 한다. 둘 중 하나라도 어긋나면 확장 상태에서도 전투가 열린다. 그래서 이
@@ -2329,10 +2393,12 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
     # 처리에 조용히 소모됨). while 루프 + 실제로 스와이프했을 때만 증가하는 카운터로 분리해 완치.
     # 화살표 폴백도 억제한다(사유는 위 탭 직후 폴링과 동일 - 확장 화면 UI 삼각형이 0.76~0.81로 근접 매칭).
     attempt = 0
+    planner = FieldmapScanPlanner()
     # 🚨 인터럽트 처리는 이제 attempt를 안 까먹으므로 이론상 무한정 반복될 수 있다(실제 진행 없이
     # 인터럽트만 계속 뜨는 이상 상황 대비) - 절대시간 워치독을 추가한다(다른 루프들과 동일 패턴).
+    # 스와이프가 최대 30회로 늘었으므로(회당 ~1.5초) 워치독도 120초 유지 - 넘으면 기존 "못 찾음" 경로.
     swipe_search_deadline = time.time() + 120.0
-    while attempt < max_swipe_attempts and time.time() < swipe_search_deadline:
+    while attempt < FIELDMAP_SCAN_MAX_SWIPES and time.time() < swipe_search_deadline:
         if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, None, t_field, t_doghole=t_doghole, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil, t_dilog_elixir=t_dilog_elixir, t_dilog_bonegoblin_name=t_dilog_bonegoblin_name):
             raw = capture_screen_bytes(device)
             if raw:
@@ -2341,15 +2407,24 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
         icon_coords = _find_first_icon(img_np, target_icons, min_y=FIELDMAP_CAMP_ICON_MIN_Y if is_camp_branch else None)
         if icon_coords:
             break
-        wp = swipe_waypoints[attempt % len(swipe_waypoints)]
-        print(f"🔍 [필드맵 귀환] 목표 아이콘 미검출 - 스와이프 탐색 {attempt + 1}/{max_swipe_attempts}")
-        safe_device_shell(device, f"input swipe {wp[0]} {wp[1]} {wp[2]} {wp[3]} 400")
+        plan = planner.next_swipe()
+        if plan is None:
+            print(f"🗺️ [필드맵 탐색] 맵 전체를 훑었습니다({attempt}회 스와이프) - 목표 아이콘 없음.")
+            break
+        phase_name, label, wp = plan
+        prev_gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY) if len(img_np.shape) == 3 else img_np
+        safe_device_shell(device, f"input swipe {wp[0]} {wp[1]} {wp[2]} {wp[3]} {FIELDMAP_SWIPE_MS}")
         time.sleep(1.0)
         attempt += 1
         raw = capture_screen_bytes(device)
         if not raw:
+            planner.report(True)  # 캡처 실패 - 끝 판정 불가, 움직였다고 가정(총 횟수/워치독이 안전망)
             continue
         img_np = decode_screen_bytes(raw)
+        cur_gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY) if len(img_np.shape) == 3 else img_np
+        moved, diff = _fieldmap_view_moved(prev_gray, cur_gray)
+        print(f"🗺️ [필드맵 탐색] {label} {attempt}/{FIELDMAP_SCAN_MAX_SWIPES} diff={diff:.1f} {'이동' if moved else '끝'}")
+        planner.report(moved)
 
     if not icon_coords:
         print("⚠️ [필드맵 귀환] 스와이프 탐색 끝까지 목표 아이콘을 찾지 못했습니다.")
