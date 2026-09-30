@@ -9,7 +9,7 @@ import json
 from single_instance import enforce_single_instance_or_exit
 enforce_single_instance_or_exit()
 
-CURRENT_VERSION = "1.21.14" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
+CURRENT_VERSION = "1.22.0" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
 
 # 🧩 [2026-09-28] 처음설정 검사 - 첫 실행이거나 업데이트 직후(setup_done.json 버전 < CURRENT_VERSION)면 게임을 건드리지
 #    않고 "처음설정.bat 을 먼저 실행하세요" 안내 후 종료 코드 3으로 끝난다(배치파일이 3이면 창을 닫지 않고 멈춘다).
@@ -165,17 +165,17 @@ USER_SETTINGS_MESSAGES = user_settings.apply_user_settings(globals(), SETTINGS_P
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.21.14
+# - 현재 버전: 1.22.0
 # - 최근 수정일: 2026-09-27
 # - 수정 기록:
-#   [미릴리즈]: 🎯 상자 조준(매크로박스님) 영점 보정 글로벌 설정 CHEST_AIM_CALIBRATION(auto/macrobox/lowspec/manual/none)
+#   1.22.0: 🎯 상자 조준(매크로박스님) 영점 보정 글로벌 설정 CHEST_AIM_CALIBRATION(auto/macrobox/lowspec/manual/none)
 #     + 멘탈 보존 CHEST_AIM_PRESERVE_MENTAL(1=2회 후 포기 기본 / 0=횟수 제한 없이 끝까지).
-#   [미릴리즈]: 🏠 대설지대 여관 경유가 여관 건물을 안 누르고 1초 만에 가짜 숙박하던 결함 - 사령탑 여관 흐름으로 넘김.
-#   [미릴리즈]: 🛑 진전 없는 연속 재시작 5회면 재시작/뮤뮤 재부팅을 멈추고 종료(113회 루프 재발 방지).
-#   [미릴리즈]: 🧩 내 설정 분리(my_settings.py + 프리셋별 프로필, user_settings.py) + 처음설정 미실행/업데이트 직후 시작 차단
+#   1.22.0: 🏠 대설지대 여관 경유가 여관 건물을 안 누르고 1초 만에 가짜 숙박하던 결함 - 사령탑 여관 흐름으로 넘김.
+#   1.22.0: 🛑 진전 없는 연속 재시작 5회면 재시작/뮤뮤 재부팅을 멈추고 종료(113회 루프 재발 방지).
+#   1.22.0: 🧩 내 설정 분리(my_settings.py + 프리셋별 프로필, user_settings.py) + 처음설정 미실행/업데이트 직후 시작 차단
 #     + ffmpeg 없으면 상자 조준 -> 연타 자동 전환.
-#   [미릴리즈]: ⚡ ADB 연결 빠른 경로 - 마지막 연결 포트(mumu_last_port.txt)부터, 실패 시 전체 스캔(시작 약 10초 단축).
-#   [미릴리즈]: 원격 대시보드 '시작 시 뮤뮤 재시작' 1회용 플래그(consume_remote_reboot_flag).
+#   1.22.0: ⚡ ADB 연결 빠른 경로 - 마지막 연결 포트(mumu_last_port.txt)부터, 실패 시 전체 스캔(시작 약 10초 단축).
+#   1.22.0: 원격 대시보드 '시작 시 뮤뮤 재시작' 1회용 플래그(consume_remote_reboot_flag).
 #   1.21.14: 🚨 모르는 화면 추측 탭이 아웃게임 정체 타이머를 매번 리셋해 300초 하드리밋 불능이던 결함 완치 +
 #     기동 복구 실패 시 실제로 앱 강제 종료/재실행(예전엔 반환값 무시).
 #   1.21.14: 기동 복구 - 던전 안 선택지 화면 인식(_handle_dungeon_interrupt 재사용), 'Tap to Start' 즉시 탭,
