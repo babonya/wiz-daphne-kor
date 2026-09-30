@@ -170,6 +170,7 @@ USER_SETTINGS_MESSAGES = user_settings.apply_user_settings(globals(), SETTINGS_P
 # - 수정 기록:
 #   [미릴리즈]: 🎯 상자 조준(매크로박스님) 영점 보정 글로벌 설정 CHEST_AIM_CALIBRATION(auto/macrobox/lowspec/manual/none)
 #     + 멘탈 보존 CHEST_AIM_PRESERVE_MENTAL(1=2회 후 포기 기본 / 0=횟수 제한 없이 끝까지).
+#   [미릴리즈]: 🏠 대설지대 여관 경유가 여관 건물을 안 누르고 1초 만에 가짜 숙박하던 결함 - 사령탑 여관 흐름으로 넘김.
 #   [미릴리즈]: 🛑 진전 없는 연속 재시작 5회면 재시작/뮤뮤 재부팅을 멈추고 종료(113회 루프 재발 방지).
 #   [미릴리즈]: 🧩 내 설정 분리(my_settings.py + 프리셋별 프로필, user_settings.py) + 처음설정 미실행/업데이트 직후 시작 차단
 #     + ffmpeg 없으면 상자 조준 -> 연타 자동 전환.
@@ -2875,23 +2876,19 @@ def start_grand_orchestrator():
                 # 마을로 돌아가기 -> town square -> 여관(체력회복+아이템정리 동시 처리, inn_manager가
                 # 이미 소지품 정리 팝업까지 다 처리해주므로 인벤정리 버튼은 따로 누르지 않는다).
                 if check_grayscale_template_present(img_np, t_village, 0.65):
-                    print("🏠 [마을외곽 후처리] town square 도착 확인 - 여관 숙박을 실행합니다.")
-                    try:
-                        inn_manager.run_inn_sleep_sequence(device)
-                    except Exception as inn_err:
-                        restart_process(f"대설지대 여관 경유 후처리 중 ADB 통신 치명적 예외 발생: {inn_err}")
-                    is_fully_healed = True
+                    # 🚨 [2026-09-30 실전 확인 - 완치] 예전엔 여기서 곧장 inn_manager.run_inn_sleep_sequence()를 불렀는데,
+                    # 여관 "건물"을 누르지 않은 채라 숙박 모듈이 첫 화면에서 마을 광장을 보고 "여관을 마치고 나왔다"로
+                    # 판단해 1초 만에 끝났다 - 그런데도 is_fully_healed=True 로 숙박 완료 처리(2026-09-08 구현 때부터).
+                    # 실전(logs/2026-09-29-2350 ~ 2026-09-30-0250): 교회 주회마다 가짜 숙박, 실제로 묵은 건 재시작 직후
+                    # 사령탑이 여관 건물을 누른 2번뿐 -> MP 고갈 -> 사망 2명 + 빈사 힐 6시간 무한 반복.
+                    # 이제 여기선 숙박하지 않고 "아직 안 쉼"(is_fully_healed=False)으로 남겨, 바로 아래 사령탑의 검증된
+                    # 마을 흐름(여관 건물 탭 -> 여관 화면 -> 숙박 -> is_fully_healed/dungeon_run_count/재시작 카운터 리셋 ->
+                    # 마을외곽 -> 재진입)에 넘긴다. 백아/유령성이 여관을 쓰는 방식과 같은 경로다.
+                    print("🏠 [마을외곽 후처리] town square 도착 확인 - 여관 건물로 들어가 숙박합니다(사령탑 여관 흐름).")
+                    is_fully_healed = False
                     heavysnow_resupply_pending = False
                     heavysnow_resupply_attempts = 0
                     heavysnow_force_inn_this_cycle = False
-                    # 🚨 [2026-09-10 실전 확인 - 완치] 다른 던전(백아/유령성)의 여관 경유 지점은 취침 직후
-                    # dungeon_run_count를 0으로 리셋하는데, 대설지대의 이 분기만 그 리셋이 빠져 있었다.
-                    # 그 결과 LIMIT_DUNGEON_LOOPS 도달로 여관을 다녀와도 카운트가 그대로 남아 재진입
-                    # 거부가 풀리지 않고, 마을외곽 화면과 무한 왕복하는 사고로 이어졌다(위
-                    # mark_heavysnow_resupply_pending() 주석 참고). 여관을 실제로 다녀왔으면 무조건
-                    # 리셋 - RESUPPLY_MODE=="inn"(교회구역, 매 주회 여관 경유)도 동일하게 적용되므로
-                    # 그쪽의 잠재적인 동일 버그도 함께 해소된다.
-                    dungeon_run_count = 0
                 elif find_and_click_template(device, img_np, t_back_to_village, 0.70):
                     print("🏠 [마을외곽 후처리] '마을로 돌아가기' 터치 성공.")
                     time.sleep(2.0)

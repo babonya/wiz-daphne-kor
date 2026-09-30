@@ -23,6 +23,7 @@ came_from_chest = False
 # - 현재 버전: 1.21.14
 # - 최근 수정일: 2026-09-27
 # - 수정 기록:
+#   [미릴리즈]: 🩸 힐 3번 연속 넣어도 빈사가 안 풀리면(MP 고갈) 마을 귀환 + 🧩 잘린 자동이동 말풍선은 왼쪽(아이콘) 절반으로 검색 + 재시도 전 필드맵 닫기.
 #   [미릴리즈]: 🚫 필드맵 아이콘 명암 가드(표준편차 20 미만 = 흐릿한 얼룩 오탐 제외, 다음 후보 탐색) - 교회 가짜 하켄 헛탭 5회 재시작.
 #   [미릴리즈]: 🚪 하켄 메뉴 먼저 확인 - 필드맵 귀환 대기 루프 / 눈보라 판별 / 상자 버튼 탭 전후(상자 좌표=메뉴의 경로2 줄).
 #   [미릴리즈]: 🧭 필드맵 제목으로 목표 구역 확인(교회/6층) - 아니면 이 구역 하켄으로 귀환 + 눈보라 나가기 직후 빠른 멈춤 감시.
@@ -545,6 +546,7 @@ def check_yeolda_present(img_np, t_yeolda, threshold_val=0.65, bin_passes=FOG_BI
 # 실측 분포: 빈사/안개 화면 6109·12092픽셀 vs 정상 화면 최대 2114픽셀 -> 그 사이를 넉넉히 잡아 4000으로 설정.
 # (빈사 샘플이 아직 2건뿐이라, 발동 시 실제 픽셀수를 로그로 남겨 추후 조정할 수 있게 한다.)
 DANGER_HP_PIXEL_LIMIT = 4000
+HEAL_FUTILE_LIMIT = 3   # 🆕 [2026-09-30] 빈사 감지 -> 힐을 이만큼 연속 넣어도 안 풀리면 회복 불가로 보고 마을 귀환(2-1. 빈사 감지 분기 참고)
 
 def count_danger_hp_pixels(img_np):
     """파티창 구역에서 빈사 표시(주황빛 이름/HP) 픽셀 수를 센다."""
@@ -1682,18 +1684,30 @@ def _find_automove_button(img_np, t_automove_primary, t_automove_fallback, thres
     분리도가 매우 뚜렷해(진짜 0.90~1.00 / 없는 화면 0.47~0.50) 위치를 추측할 이유가 없다 - 전체검색으로
     바꿔 위치 추정 오차라는 실패 요인 자체를 제거한다. 반투명 아이콘이라 이진화는 하지 않는다(실측:
     원본 그레이스케일 0.90 vs 이진화 0.54~0.74).
+    🆕 [2026-09-30 실전 확인] 전체 도장이 실패하면 도장의 왼쪽 절반(불투명한 동그란 아이콘 부분)으로 한 번 더 찾는다.
+    아이콘이 맵 오른쪽 끝에 있으면 말풍선 오른쪽이 잘려 전체 도장이 0.766~0.791(기준 0.80 미달)로 떨어졌다(경로2 스샷
+    4장). 맵 끝이라 밀어서 가운데로 가져올 수도 없다. 실측(필드맵 스샷 전체): 왼쪽 절반 - 잘린 말풍선 0.911~0.946,
+    온전한 말풍선 최저 0.884, 말풍선 없는 화면 최고 0.499. 오른쪽 절반("자동"/"자동 이동" 글자)은 반투명 바탕을 타서
+    온전한 말풍선도 0.63~0.73(이진화해도 분리 안 됨)이라 못 쓴다 - 임계값을 낮추지 않기 위해 넣지 않았다.
     """
     if img_np is None:
         return None
     gray_img = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-    for temp in (t_automove_primary, t_automove_fallback):
-        if temp is None or gray_img.shape[0] < temp.shape[0] or gray_img.shape[1] < temp.shape[1]:
-            continue
-        result = cv2.matchTemplate(gray_img, temp, cv2.TM_CCOEFF_NORMED)
-        _, max_val, _, max_loc = cv2.minMaxLoc(result)
-        if max_val > threshold:
-            th, tw = temp.shape[:2]
-            return max_loc[0] + int(tw / 2), max_loc[1] + int(th / 2)
+    for use_left_half in (False, True):
+        for temp in (t_automove_primary, t_automove_fallback):
+            if temp is None:
+                continue
+            if use_left_half:
+                temp = temp[:, :temp.shape[1] // 2]
+            if gray_img.shape[0] < temp.shape[0] or gray_img.shape[1] < temp.shape[1]:
+                continue
+            result = cv2.matchTemplate(gray_img, temp, cv2.TM_CCOEFF_NORMED)
+            _, max_val, _, max_loc = cv2.minMaxLoc(result)
+            if max_val > threshold:
+                th, tw = temp.shape[:2]
+                if use_left_half:
+                    print(f"🧩 [필드맵 귀환] 자동이동 말풍선이 잘려 있어 왼쪽(아이콘) 절반으로 찾았습니다(일치도 {max_val:.2f}).")
+                return max_loc[0] + int(tw / 2), max_loc[1] + int(th / 2)
     return None
 
 # 🚨 [2026-09-08 실전 확인] return_to_town_via_fieldmap_icon()은 자기 안에서 반복 폴링하는 자기완결형
@@ -2364,6 +2378,9 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
         # 경로(TRIGGER_EXIT의 fieldmap_return_retry_count, 최대 5회)로 돌려보내면 필드맵을 처음부터
         # 다시 열어 재시도하고, 그마저 5회를 넘길 때만 진짜 앱 재시작으로 넘어간다.
         print("⚠️ [필드맵 귀환] 자동이동 버튼을 끝내 찾지 못했습니다 - 필드맵을 다시 열어 재시도합니다.")
+        # 🆕 [2026-09-30] 펼친 필드맵을 닫고 돌아간다. 예전엔 연 채로 돌아가 메인 루프가 앵커 미검출("화면 과도기")
+        #    10회(30초)를 기다린 뒤 뒤로가기로 닫았다(logs/2026-09-29 20:05~, 재시도마다 30초 낭비).
+        _close_fieldmap_before_exit(device)
         return "retry"
 
     # 5. 자동이동 탭 → 도착 대기
@@ -2651,6 +2668,10 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     # 확인하고 나면, 그 뒤로는 같은 빈사 신호를 다시 힐 트리거로 쓰지 않는다(예전처럼 사망자를 달고
     # 그냥 주회를 계속한다) - 상세는 "2-1. 빈사 감지" 분기 주석 참고.
     death_confirmed_and_handled = False
+    # 🆕 [2026-09-30 실전 확인] 힐을 넣어도 빈사가 안 풀리는 연속 횟수(힐러 MP 고갈 등). 진짜로 풀렸을 때(빈사색 기준 미만)만
+    #    0으로 되돌린다 - 상태 전환 리셋에 물리지 않는 전용 카운터(AGENTS.md §5-2). 상세는 "2-1. 빈사 감지" 분기 주석.
+    heal_futile_count = 0
+    heal_futile_handled = False
     
     # 💡 [반응형 이동 및 즉시 복귀 상태 변수]
     last_target_coords = None
@@ -3463,8 +3484,10 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                 # 사용자가 직접 목격/보고: "예전엔 캐릭 죽었어도 그냥 주회는 돌았거든"). 사망이 한 번
                 # 확인되면(death_confirmed_and_handled), 그 뒤로는 이 빈사 신호를 아예 재평가하지
                 # 않는다 - 사망자를 그대로 달고 예전처럼 주회를 계속한다(힐 시도 자체를 반복하지 않음).
-                if not need_heal and not death_confirmed_and_handled:
+                if not need_heal and not death_confirmed_and_handled and not heal_futile_handled:
                     danger_px = count_danger_hp_pixels(img_np)
+                    if danger_px < DANGER_HP_PIXEL_LIMIT:
+                        heal_futile_count = 0
                     if danger_px >= DANGER_HP_PIXEL_LIMIT:
                         dead_slots = find_dead_slots(img_np, t_stat_dead)
                         if dead_slots:
@@ -3489,8 +3512,28 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                             last_click_time = 0.0
                             last_state_changed_time = time.time()
                             continue
+                        elif heal_futile_count >= HEAL_FUTILE_LIMIT:
+                            # 🆕 [2026-09-30 실전 확인] 힐을 넣어도 빈사가 안 풀림 = 힐러 MP 고갈 등으로 회복 자체가 안 되는 상태.
+                            #    실전(logs/2026-09-30-0250-000_reboot1.txt 02:56~09:00): 여관을 못 들러 MP가 바닥난 채 "빈사 감지 ->
+                            #    힐('회복한다'까지 정상) -> 재개 -> 빈사 감지"를 6시간 1,221회 반복. 힐 완료가 정상 진행으로 잡혀 300초
+                            #    정체 안전장치도 안 걸렸다(사용자 확인: 실제 빈사 맞음, MP가 없어 회복 못 함). 사망 확인과 같은
+                            #    TRIGGER_EXIT 절차로 마을에 돌아가 여관에서 쉬게 한다. 이번 던전 진입 동안은 다시 힐을 반복하지 않는다.
+                            print(f"🩸🚫 [빈사 회복 불가] 힐을 {heal_futile_count}번 넣어도 빈사가 그대로입니다(픽셀 {danger_px}개) - "
+                                  "힐러 MP 부족 등으로 회복이 안 되는 것으로 보고 마을로 돌아가 여관에서 쉽니다.")
+                            heal_futile_handled = True
+                            state = "TRIGGER_EXIT"
+                            exit_start_time = time.time()
+                            exit_clicked_once = False
+                            exit_stuck_count = 0
+                            exit_prev_minimap = None
+                            exit_last_action_was_exit_tap = False
+                            last_click_time = 0.0
+                            last_state_changed_time = time.time()
+                            continue
                         else:
-                            print(f"🩸 [빈사 감지] 파티창 빈사색 픽셀 {danger_px}개 (기준 {DANGER_HP_PIXEL_LIMIT}) - 피장막 유발 상태로 판단해 정비를 격발합니다.")
+                            heal_futile_count += 1
+                            print(f"🩸 [빈사 감지] 파티창 빈사색 픽셀 {danger_px}개 (기준 {DANGER_HP_PIXEL_LIMIT}) - 피장막 유발 상태로 판단해 정비를 격발합니다."
+                                  f" (연속 {heal_futile_count}/{HEAL_FUTILE_LIMIT})")
                             need_heal = True
 
                 # 3. 통합 힐링 기동: 안전 필드 안착 및 힐링 플래그 감지 시 작동
