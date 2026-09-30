@@ -4,7 +4,8 @@
 #         PC의 매크로를 시작/정지/상태확인 하기 위한 개인용 도구입니다.
 # - 표준 라이브러리만 사용합니다 (pip install 추가 불필요).
 # - 이 폴더(remote_control/)를 통째로 지워도 매크로 본체(src/main.py) 동작에는 전혀 지장이 없습니다.
-# - 현재 버전: 1.22.0
+# - 현재 버전: 1.22.1
+#   1.22.1: 시작/정지 버튼 디자인 - 박스 가운데 큰 반투명 정지(■)/재생(▶) 아이콘을 배경으로 깔고 글씨는 가로·세로 정중앙에 크게.
 #   1.22.0: 시작/정지 버튼을 하나로 통합(꺼짐=초록 TOUCH TO START, 실행 중=빨강 TOUCH TO STOP, 정지는 3초 안에 한 번 더, 요청 중 잠금).
 # - 수정 기록:
 #   1.21.14: (이 파일 자체는 변경 없음, 버전 동기화용) 던전 루프 마을 이탈 감지 + '열다' ROI/'누가 열 거야?' 인식 +
@@ -453,10 +454,18 @@ def render_dashboard_html(token):
     transition: filter 0.15s ease, transform 0.05s ease; }
   button:active { transform: scale(0.98); }
   button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
-  .btn-toggle { width: 100%; min-height: 76px; border-radius: 12px; border-width: 2px;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
-  .btn-toggle .main { font-size: 1.2rem; letter-spacing: 0.04em; }
-  .btn-toggle .sub { font-size: 0.72rem; font-weight: 600; opacity: 0.85; }
+  .btn-toggle { position: relative; overflow: hidden; width: 100%; min-height: 96px; border-radius: 12px; border-width: 2px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 8px 10px; }
+  .btn-toggle .ico { position: absolute; left: 50%; top: 50%; height: 118%; width: auto; aspect-ratio: 1 / 1;
+    transform: translate(-50%, -50%); pointer-events: none; z-index: 0; display: none; fill: #ffffff; opacity: 0.16; }
+  .btn-toggle.is-start .ico-play { display: block; }
+  .btn-toggle.is-stop .ico-stop { display: block; }
+  .btn-toggle.is-confirm .ico-stop { display: block; fill: var(--danger); }
+  .btn-toggle .main { position: relative; z-index: 1; white-space: nowrap; line-height: 1.1;
+    font-size: clamp(1.1rem, 6.4vw, 1.75rem); letter-spacing: 0.02em; }
+  .btn-toggle .main.long { font-size: clamp(0.95rem, 5.2vw, 1.5rem); }
+  .btn-toggle .sub { position: relative; z-index: 1; white-space: nowrap; font-size: 0.72rem; font-weight: 600; opacity: 0.85; }
+  .btn-toggle .sub:empty { display: none; }
   .btn-toggle.is-start { background: var(--good); color: var(--bg); }
   .btn-toggle.is-stop { background: var(--danger); color: #ffffff; }
   .btn-toggle.is-confirm { background: transparent; color: var(--danger); border-color: var(--danger); }
@@ -492,7 +501,10 @@ def render_dashboard_html(token):
     <label style="display:flex;align-items:center;gap:8px;margin:8px 0;font-size:14px;">
       <input type="checkbox" id="rebootMumu"> 시작 시 뮤뮤 재시작 (필요할 때만)
     </label>
-    <button class="btn-toggle is-pending" id="btnToggle"><span class="main">CHECKING…</span><span class="sub">&nbsp;</span></button>
+    <button class="btn-toggle is-pending" id="btnToggle">
+      <svg class="ico ico-stop" viewBox="0 0 100 100" aria-hidden="true"><rect x="12" y="12" width="76" height="76" rx="8"/></svg>
+      <svg class="ico ico-play" viewBox="0 0 100 100" aria-hidden="true"><path d="M22 8 L92 50 L22 92 Z" stroke-linejoin="round"/></svg>
+      <span class="main">CHECKING…</span><span class="sub"></span></button>
     <div class="toast" id="toast">&nbsp;</div>
   </div>
 
@@ -520,12 +532,13 @@ def render_dashboard_html(token):
     let cls, m, sb;
     if (pending === 'starting') { cls = 'is-pending'; m = 'STARTING…'; sb = 'waiting for the macro'; }
     else if (pending === 'stopping') { cls = 'is-pending'; m = 'STOPPING…'; sb = 'waiting for the macro'; }
-    else if (isRunning === null) { cls = 'is-pending'; m = 'CHECKING…'; sb = '&nbsp;'; }
-    else if (!isRunning) { cls = 'is-start'; m = '▶ TOUCH TO START'; sb = '&nbsp;'; }
+    else if (isRunning === null) { cls = 'is-pending'; m = 'CHECKING…'; sb = ''; }
+    else if (!isRunning) { cls = 'is-start'; m = 'TOUCH TO START'; sb = ''; }
     else if (Date.now() < confirmUntil) { cls = 'is-confirm'; m = 'TAP AGAIN TO STOP'; sb = 'cancels in 3s'; }
-    else { cls = 'is-stop'; m = '■ TOUCH TO STOP'; sb = '&nbsp;'; }
+    else { cls = 'is-stop'; m = 'TOUCH TO STOP'; sb = ''; }
     btnToggle.className = 'btn-toggle ' + cls;
     main.textContent = m;
+    main.classList.toggle('long', m.length > 15);
     sub.innerHTML = sb;
     const locked = !!pending || isRunning === true;
     controls.classList.toggle('locked', locked);
