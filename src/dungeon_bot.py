@@ -23,7 +23,7 @@ came_from_chest = False
 # - 현재 버전: 1.22.0
 # - 최근 수정일: 2026-09-27
 # - 수정 기록:
-#   1.22.1(미릴리즈): 🏔️ 던전 루프 안에서 마을 외곽(대설 지대 버튼 화면)이 보이면 사령탑으로 퇴장(300초 정체 재시작 2건 방지) + 📸 필드맵/하켄 귀환 실패 직전 증거 스샷(fieldmap_miss/fieldmap_exit_fail/harken_fail).
+#   1.22.1(미릴리즈): 🏔️ 던전 루프 안에서 마을 외곽(대설 지대 버튼 화면)이 보이면 사령탑으로 퇴장(300초 정체 재시작 2건 방지) + 📸 필드맵/하켄 귀환 실패 직전 증거 스샷(fieldmap_miss/fieldmap_exit_fail/harken_fail) + 🗺️ 미니맵 확장 실패 시 재시작 대신 나가기/하켄 폴백 + 증거 스샷(fieldmap_expand_fail).
 #   1.22.0: 🩸 힐 3번 연속 넣어도 빈사가 안 풀리면(MP 고갈) 마을 귀환 + 🧩 잘린 자동이동 말풍선은 왼쪽(아이콘) 절반으로 검색 + 재시도 전 필드맵 닫기.
 #   1.22.0: 🚫 필드맵 아이콘 명암 가드(표준편차 20 미만 = 흐릿한 얼룩 오탐 제외, 다음 후보 탐색) - 교회 가짜 하켄 헛탭 5회 재시작.
 #   1.22.0: 🚪 하켄 메뉴 먼저 확인 - 필드맵 귀환 대기 루프 / 눈보라 판별 / 상자 버튼 탭 전후(상자 좌표=메뉴의 경로2 줄).
@@ -2279,7 +2279,23 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
 
     if not expanded or img_np is None:
         print("⚠️ [필드맵 귀환] 미니맵 확장이 확인되지 않았습니다 - 좌표/타이밍 재검토 필요.")
-        return "failed"
+        # 🆕 [2026-10-01] 증거 스샷(가장 최근 캡처본, 없으면 1회 캡처 - 예외는 삼킨다)
+        try:
+            if img_np is None:
+                _raw_evd = capture_screen_bytes(device)
+                if _raw_evd:
+                    img_np = decode_screen_bytes(_raw_evd)
+            if img_np is not None:
+                save_stuck_evidence_screenshot(img_np, "fieldmap_expand_fail")
+        except Exception:
+            pass
+        # 🆕 [2026-10-01] 예전엔 여기서 곧장 "failed" -> TRIGGER_EXIT RuntimeError -> 앱/프로세스 재시작이었다
+        #    (logs/2026-09-30-0115 02:49, 2026-10-01-0301 04:32, 재시작 중 ADB 끊겨 뮤뮤 콜드 리부트까지).
+        #    스와이프 8/8 미검출 경로와 같은 폴백(나가기 버튼 -> 도보 탈출/하켄 귀환)을 먼저 시도하고,
+        #    폴백도 "failed"일 때만 기존처럼 실패 반환(-> 재시작)한다. 폴백이 필드맵을 먼저 닫는다.
+        print("🚪 [필드맵 귀환] 확장 실패 - 나가기 버튼으로 도보 탈출/하켄 귀환 폴백을 시도합니다.")
+        return _exit_via_walkout_or_harken(device, t_move_exit, t_field, t_harken_return,
+                                           t_harken_blessing_donothing, t_yeolda)
 
     # 🆕 [2026-09-29] 구역 확인(보험) - 필드맵 제목이 목표 구역이 아니면 옆 구역으로 넘어온 것(눈보라 나가기 등). 목표 구역의
     #    아이콘(캠프/대하켄)을 찾아 헤매지 말고, 이 구역에서 하켄(대/소)을 찾아 귀환한다(wvd 와 같은 방식). 하켄도 없으면
