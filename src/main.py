@@ -2031,6 +2031,28 @@ def find_and_click_template(device, img_np, thresh_temp, threshold_val=0.70):
 # 행과의 오탐 여유도 0.10 이상 유지), 문턱 160(기존 배경)과 150(진엔딩 이후 배경) 두 패스를 순차 시도하면
 # 양쪽 다 커버된다. 신뢰도 임계값 자체는 건드리지 않고 이진화 문턱만 다르게 시도 - 상자/피안개 대응 때 쓴
 # 것과 동일한 원칙(check_template_present_multipass).
+def find_and_click_template_rebin(device, img_np, raw_path, threshold_val, bin_th):
+    """🆕 [2026-10-04] 화면과 도장을 **같은 문턱**으로 이진화해 매칭한다. load_template()은 도장을 문턱 160으로 미리 이진화해 두므로
+    find_and_click_template_multipass()의 다른 문턱 패스는 '화면@문턱 vs 도장@160'이 되어 점수가 낮다(새 던전선택 배경 실측 3rd 0.82).
+    원본 PNG를 그레이로 다시 읽어 양쪽을 같은 문턱으로 맞춘다. 성공하면 탭 후 True."""
+    try:
+        if img_np is None or not raw_path: return False
+        raw = cv2.imdecode(np.fromfile(raw_path, np.uint8), cv2.IMREAD_GRAYSCALE)
+        if raw is None: return False
+        gray_img = cv2.cvtColor(img_np[:, :, :3], cv2.COLOR_RGB2GRAY) if img_np.ndim == 3 else img_np
+        h, w = raw.shape[:2]
+        if gray_img.shape[0] < h or gray_img.shape[1] < w: return False
+        _, a = cv2.threshold(gray_img, bin_th, 255, cv2.THRESH_BINARY)
+        _, t = cv2.threshold(raw, bin_th, 255, cv2.THRESH_BINARY)
+        _, max_val, _, max_loc = cv2.minMaxLoc(cv2.matchTemplate(a, t, cv2.TM_CCOEFF_NORMED))
+        if max_val > threshold_val:
+            device.shell(f"input tap {max_loc[0] + int(w / 2)} {max_loc[1] + int(h / 2)}")
+            print(f"🔁 [던전선택 - FFXI] 문턱 {bin_th} 재이진화 패스(점수 {max_val:.2f})로 층 버튼 인식")
+            return True
+    except Exception as e:
+        print(f"⚠️ [재이진화 매칭] 예외: {e}")
+    return False
+
 def find_and_click_template_multipass(device, img_np, thresh_temp, threshold_val=0.70, bin_passes=(160, 150)):
     if thresh_temp is None or img_np is None: return False
     h_img, w_img = img_np.shape[:2]
@@ -2777,7 +2799,11 @@ def start_grand_orchestrator():
                     # 🚨 [2026-08-26] 유령성 3회차 진엔딩 이후 배경 교체로 문턱 160만으로는 밤새 매칭 실패하던 결함 완치 -
                     # 문턱 160/150 순차 시도로 교체(신뢰도 임계값 0.88은 그대로 유지).
                     print(f"📋 [던전선택 - FFXI] '{DUNGEON_FLOOR_NAME}' 층 버튼 도장 정밀 조준을 시도합니다.")
-                    if find_and_click_template_multipass(device, img_np, t_enter_dungeon, 0.88, bin_passes=(160, 150)):
+                    # 🚨 [2026-10-04] 콜라보 종료로 던전선택 배경이 바뀌어 문턱 160/150 점수가 0.74~0.82로 떨어져(0.88 미달) 층 버튼을 못 찾던 결함.
+                    #    실측(새 배경 스샷 2장, 화면·도장 같은 문턱 120): 정답 3rd 0.97/2nd 1.00/4th 0.96/5th 0.94 vs 다른 행 최대 0.88 -> 기존 패스가 실패할 때만
+                    #    같은 문턱 120 재이진화 패스를 0.92로 추가 시도(기존 배경에서 통과하던 동작은 그대로).
+                    if (find_and_click_template_multipass(device, img_np, t_enter_dungeon, 0.88, bin_passes=(160, 150))
+                            or find_and_click_template_rebin(device, img_np, floor_img_path, 0.92, 120)):
                         print(f"👉 [던전선택 - FFXI] '{DUNGEON_FLOOR_NAME}' 진입 버튼 격파 성공!")
                         click_success = True
                     else:
