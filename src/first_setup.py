@@ -7,6 +7,7 @@
   [1] 파이썬 (배치파일이 이미 확인) + 필수 라이브러리
   [2] ffmpeg (상자 조준용 - 없으면 매크로가 예전 연타 방식으로 자동 전환)
   [3] 내 설정 파일 my_settings.py (없으면 만들기 - 이전 버전 폴더에서 옮겨오기 가능 / 있으면 새 설정만 추가)
+  [2026-10-01] ffmpeg 탐색 강화(winget Packages glob·레지스트리 PATH·-version 실행 확인), winget 없음/실패 처리, 무한반복 수정
 """
 import os
 import sys
@@ -70,8 +71,60 @@ def step_libs():
             return False
 
 
+def _ffmpeg_candidates():
+    """shutil.which 실패 시 뒤져볼 후보 경로(순서대로). winget 은 PATH 에 Links 가 아니라 Packages/.../bin 을 등록하기도 하고,
+    설치 직후엔 이 콘솔의 PATH 가 갱신되지 않는다(2026-10-01)."""
+    import glob
+    la = os.environ.get("LOCALAPPDATA", "")
+    yield WINGET_FFMPEG
+    pk = os.path.join(la, "Microsoft", "WinGet", "Packages", "Gyan.FFmpeg*")
+    for pat in (os.path.join(pk, "**", "bin", "ffmpeg.exe"), os.path.join(la, "Microsoft", "WinGet", "Links", "ffmpeg.exe")):
+        for hit in glob.glob(pat, recursive=True):
+            yield hit
+    try:  # 레지스트리의 (갱신된) PATH - 이 콘솔이 설치 전에 떠 있었어도 최신 값을 읽는다
+        import winreg
+        for root, sub in ((winreg.HKEY_CURRENT_USER, "Environment"),
+                          (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment")):
+            try:
+                with winreg.OpenKey(root, sub) as k:
+                    val, _ = winreg.QueryValueEx(k, "Path")
+            except OSError:
+                continue
+            for d in os.path.expandvars(val).split(os.pathsep):
+                if d.strip():
+                    yield os.path.join(d.strip().strip('"'), "ffmpeg.exe")
+    except Exception:
+        pass
+
+
+def _ffmpeg_runs(path):
+    try:
+        r = subprocess.run([path, "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
 def find_ffmpeg():
-    return shutil.which("ffmpeg") or (WINGET_FFMPEG if os.path.exists(WINGET_FFMPEG) else None)
+    """실행되는 ffmpeg 경로 또는 None. 파일이 있어도 -version 이 실패하면 안내 후 못 찾은 것으로 취급."""
+    cands = []
+    w = shutil.which("ffmpeg")
+    if w:
+        cands.append(w)
+    cands.extend(c for c in _ffmpeg_candidates() if os.path.isfile(c))
+    seen = set()
+    for c in cands:
+        key = os.path.normcase(os.path.abspath(c))
+        if key in seen:
+            continue
+        seen.add(key)
+        if _ffmpeg_runs(c):
+            d = os.path.dirname(os.path.abspath(c))
+            if d.lower() not in os.environ.get("PATH", "").lower().split(os.pathsep):
+                os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
+            return c
+        print(f"  ⚠️ ffmpeg 파일은 있으나 실행에 실패했습니다: {c}")
+    return None
 
 
 def step_ffmpeg():
@@ -86,7 +139,24 @@ def step_ffmpeg():
         print("     해결 방법: 아래 명령을 실행하면 됩니다(설치 중 동의 질문이 나오면 직접 확인 후 Y).")
         print("       winget install ffmpeg")
         if ask_yes("  지금 winget 으로 설치할까요?"):
-            subprocess.call(["winget", "install", "--id", "Gyan.FFmpeg", "-e"])
+            try:
+                rc = subprocess.call(["winget", "install", "--id", "Gyan.FFmpeg", "-e"])
+            except FileNotFoundError:
+                print("  ❌ 이 PC에 winget이 없습니다. https://www.gyan.dev/ffmpeg/builds/ 에서 직접 설치 후 처음설정을 다시 실행하세요.")
+                rc = None
+            else:
+                if rc != 0:
+                    print(f"  ⚠️ winget 이 종료 코드 {rc} 로 끝났습니다(이미 설치돼 있거나 실패일 수 있음).")
+                ff = find_ffmpeg()
+                if ff:
+                    print(f"  ✅ ffmpeg 확인: {ff}")
+                    return True
+                print("  ⚠️ 설치는 됐을 수 있으나 이 창에서는 못 찾았습니다 - 이 창을 닫고 처음설정을 다시 실행하세요.")
+            if ask_yes("  ffmpeg 없이 진행할까요? (상자는 예전 연타 방식으로 엽니다)"):
+                print("  ⚠️ ffmpeg 없이 진행합니다.")
+                return True
+            if not wait_key():
+                return False
             continue
         if ask_yes("  ffmpeg 없이 진행할까요? (상자는 예전 연타 방식으로 엽니다)"):
             print("  ⚠️ ffmpeg 없이 진행합니다.")

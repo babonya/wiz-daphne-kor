@@ -3,6 +3,8 @@
 # - 현재 버전: 1.16.0
 # - 최근 수정일: 2026-07-29 08:05
 # - 수정 기록:
+#   1.22.2: 사망 카드 판별(slot_is_dead, dead_skull.png) + 따개 기준 서명 추적(chest_thief_ref) + 선택 순서 따개->주인공->첫 생존자, 전원 사망이면 BACK(10/04).
+#   1.22.2: _ffmpeg_path() 탐색 보강 - which/Links 에 더해 WinGet Packages\Gyan.FFmpeg* glob(PATH 갱신 전 콘솔의 매크로도 ffmpeg 를 찾게).
 #   1.22.0 (2026-09-28): 🎯 상자 미니게임 "예측 조준" - 매크로박스님이 v1.21.14를 바탕으로 만든 조준 버전을
 #     그대로 통합(무작위 15연타 -> 막대 착지 예측 후 한 발, 상자당 2발, 애매하면 안 쏘고 뒤로가기, ffmpeg H.264
 #     띠 스트림 25.8ms). 우리 쪽 추가: PC별 영점 보정(set_aim_calibration - auto/macrobox/lowspec/manual,
@@ -220,6 +222,144 @@ def get_slot_center(slot_idx):
         return (733, 2390)  # 기본값
     x1, y1, x2, y2 = roi
     return (x1 + x2) // 2, (y1 + y2) // 2
+
+# 💀 [2026-10-04 사망 캐릭터 따개 지정 무한반복] 사망 카드는 붉은 배경 + 이름 빨강 + 우상단 해골 아이콘.
+# 실측(dev/ROI_check 의 '누가 열 거야?' 화면 10장, 카드 60장 - 사망 카드 5장 포함):
+#   붉은 비율(R-max(G,B)>20 인 픽셀 비율) 사망 0.86~0.91 / 생존 최대 0.037  -> 문턱 0.30
+#   해골 도장(컬러, 카드 우상단 절반 안) 사망 0.98~1.00 / 생존 최대 0.66      -> 문턱 0.85
+# 둘 중 하나라도 넘으면 사망(생존을 사망으로 오판하는 피해 < 사망을 못 알아보는 피해).
+DEAD_RED_RATIO_TH = 0.30
+DEAD_SKULL_TH = 0.85
+_t_dead_skull = None
+
+def slot_dead_scores(img_np, slot):
+    """ (붉은 비율, 해골 점수) - 판독 실패 시 (0.0, 0.0) """
+    global _t_dead_skull
+    try:
+        x1, y1, x2, y2 = SLOT_ROIS[slot]
+        card = img_np[y1:y2, x1:x2, :3].astype(np.int16)
+        red = float(np.mean((card[..., 0] - np.maximum(card[..., 1], card[..., 2])) > 20))
+        if _t_dead_skull is None:
+            _t_dead_skull = load_color_template("templates/chestopening/dead_skull.png")
+        skull = 0.0
+        if _t_dead_skull is not None:
+            crop = np.ascontiguousarray(img_np[y1:y1 + (y2 - y1) // 2, x1 + (x2 - x1) // 2:x2, :3])
+            if crop.shape[0] >= _t_dead_skull.shape[0] and crop.shape[1] >= _t_dead_skull.shape[1]:
+                r = cv2.matchTemplate(crop, _t_dead_skull, cv2.TM_CCOEFF_NORMED)
+                skull = float(r.max())
+        return red, skull
+    except Exception:
+        return 0.0, 0.0
+
+def slot_is_dead(img_np, slot):
+    """ 카드가 사망 상태(붉은 배경/해골 아이콘)인지 """
+    red, skull = slot_dead_scores(img_np, slot)
+    return red >= DEAD_RED_RATIO_TH or skull >= DEAD_SKULL_TH
+
+# 🧬 [2026-10-04 따개 정체성] 사망 시 후열이 전열로 당겨져 따개가 다른 슬롯으로 이동할 수 있다.
+# 카드 상단(레벨·직업보석·이름 줄, 오른쪽 상태아이콘 제외)의 서명을 따개가 생존일 때 한 번 저장해 두고,
+# 나중에 6개 슬롯 서명과 대조해 따개의 현재 슬롯을 찾는다. 서명 = V채널(max RGB, 흰 글씨/빨간 글씨 모두 밝음)의
+# 반해상도 DoG(국소 대비) -> 사망으로 붉어져도 거의 같다. 실측(DoG, 정규화 상관):
+#   같은 캐릭터(슬롯 이동/사망 전환 포함) 0.91~1.00 / 서로 다른 캐릭터 최대 0.67 -> 문턱 0.80, 2등과 0.10 이상 차이.
+THIEF_SIG_TH = 0.80
+THIEF_SIG_MARGIN = 0.10
+_THIEF_MARGIN_PX = 6
+_THIEF_REF_PNG = os.path.join(os.path.dirname(os.path.abspath("aim_calibration.json")), "chest_thief_ref.png")
+_THIEF_REF_JSON = os.path.join(os.path.dirname(os.path.abspath("aim_calibration.json")), "chest_thief_ref.json")
+
+def _card_signature(img_np, slot):
+    """ 카드 상단 서명(uint8, 128 중심). 실패 시 None """
+    try:
+        x1, y1, x2, y2 = SLOT_ROIS[slot]
+        w, h = x2 - x1, y2 - y1
+        c = img_np[y1:y1 + int(h * 0.45), x1:x1 + int(w * 0.76), :3]
+        v = c.max(axis=2).astype(np.float32)
+        v = cv2.resize(v, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
+        d = v - cv2.GaussianBlur(v, (0, 0), 4)
+        return np.clip(d + 128.0, 0, 255).astype(np.uint8)
+    except Exception:
+        return None
+
+def _sig_score(slot_sig, ref_sig):
+    try:
+        m = _THIEF_MARGIN_PX
+        t = ref_sig[m:-m, m:-m].astype(np.float32)
+        r = cv2.matchTemplate(slot_sig.astype(np.float32), t, cv2.TM_CCOEFF_NORMED)
+        return float(r.max())
+    except Exception:
+        return 0.0
+
+def _thief_ref_load(chest_opener_slot):
+    """ 기준 서명 읽기. 없음/읽기 실패/저장된 슬롯 번호가 다르면 None (조용히) """
+    try:
+        import json
+        if not (os.path.exists(_THIEF_REF_PNG) and os.path.exists(_THIEF_REF_JSON)):
+            return None
+        with open(_THIEF_REF_JSON, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+        if int(meta.get("slot", -1)) != int(chest_opener_slot):
+            return None
+        ref = cv2.imdecode(np.fromfile(_THIEF_REF_PNG, np.uint8), cv2.IMREAD_GRAYSCALE)
+        return ref
+    except Exception:
+        return None
+
+def _thief_ref_save(sig, chest_opener_slot):
+    try:
+        import json
+        ok, buf = cv2.imencode(".png", sig)
+        if not ok:
+            return
+        buf.tofile(_THIEF_REF_PNG)
+        with open(_THIEF_REF_JSON, "w", encoding="utf-8") as f:
+            json.dump({"slot": int(chest_opener_slot)}, f)
+        print(f"🧬 [chest_opener] 따개({chest_opener_slot}번) 기준 서명을 저장했습니다.")
+    except Exception:
+        pass
+
+def _all_slot_sig_scores(img_np, ref):
+    scores = {}
+    for s in SLOT_ROIS:
+        sg = _card_signature(img_np, s)
+        scores[s] = _sig_score(sg, ref) if sg is not None else 0.0
+    return scores
+
+def find_thief_slot(img_np, chest_opener_slot):
+    """ 기준 서명과 가장 닮은 슬롯 번호. 확신이 없으면(문턱 미달/2등과 차이 부족/기준 없음) None """
+    try:
+        ref = _thief_ref_load(chest_opener_slot)
+        if ref is None:
+            return None
+        scores = _all_slot_sig_scores(img_np, ref)
+        order = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+        best_slot, best = order[0]
+        second = order[1][1]
+        if best >= THIEF_SIG_TH and (best - second) >= THIEF_SIG_MARGIN:
+            return best_slot
+        return None
+    except Exception:
+        return None
+
+def _thief_ref_update(img_np, chest_opener_slot, dead_map, found_slot):
+    """ 따개 슬롯이 생존일 때만: 기준이 없으면 저장. 있으면 유지(일치하든 아니든).
+        단 어느 슬롯도 기준과 안 맞고(=파티 교체) 사망자가 없을 때만 새로 만든다. """
+    try:
+        if dead_map.get(chest_opener_slot, True):
+            return
+        sig = _card_signature(img_np, chest_opener_slot)
+        if sig is None:
+            return
+        ref = _thief_ref_load(chest_opener_slot)
+        if ref is None:
+            _thief_ref_save(sig, chest_opener_slot)
+            return
+        if found_slot is not None:
+            return
+        scores = _all_slot_sig_scores(img_np, ref)
+        if max(scores.values()) < THIEF_SIG_TH and not any(dead_map.values()):
+            _thief_ref_save(sig, chest_opener_slot)
+    except Exception:
+        pass
 
 def is_minigame_screen(img_np, height, width):
     """ 미니게임 상단 붉은상자+해골마크 앵커 존재 여부 감지 """
@@ -823,7 +963,14 @@ class _MgStream:
         found = shutil.which("ffmpeg")
         if found:
             return found
-        return _MG_FFMPEG_FALLBACK if os.path.exists(_MG_FFMPEG_FALLBACK) else None
+        if os.path.exists(_MG_FFMPEG_FALLBACK):
+            return _MG_FFMPEG_FALLBACK
+        # [2026-10-01] winget 은 Links 대신 Packages/Gyan.FFmpeg_*/.../bin 에 설치하고 PATH 에 그 폴더를 등록한다 -
+        # PATH 갱신 전에 뜬 콘솔/프로세스는 which 로 못 찾으므로 직접 찾는다(first_setup.find_ffmpeg 와 같은 이유).
+        import glob
+        pats = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "WinGet", "Packages", "Gyan.FFmpeg*", "**", "bin", "ffmpeg.exe")
+        hits = glob.glob(pats, recursive=True)
+        return hits[0] if hits else None
 
     def start(self, device, w, h, y1, y2):
         """띠(y1~y2) 스트림을 띄운다. 성공 True / 실패 False(호출부는 무시하고 폴백으로 진행)."""
@@ -2654,7 +2801,9 @@ def solve_trap_game(device, img_np):
 def select_opener_slot(device, img_np, chest_opener_slot=6, masked_adventurer_slot=4):
     """
     캐릭터 선택창("누가 열 거야?")이 떠 있는 화면(img_np)에서 상자공포를 피해 따개 슬롯을 골라 터치한다.
-    우선순위: 지정 따개 -> 주인공 -> 공포 없는 아무나(1~6번 순) -> 전원 공포면 주인공.
+    우선순위: 따개(기준 서명으로 현재 위치 추적, 못 찾으면 지정 슬롯) -> 주인공 -> 공포 없는 아무나(1~6번 순)
+    -> 전원 공포면 주인공. 🚨 [2026-10-04] 사망 캐릭터(붉은 카드/해골)는 모든 단계에서 후보에서 뺀다.
+    생존 캐릭터가 하나도 없으면 탭 대신 BACK(창 닫기).
     (open_and_disarm_chest 안에 있던 로직을 그대로 옮김 - 매크로가 이 화면에서 시작한 경우에도 재사용하려고 분리)
     """
     # dungeon_bot 메인 루프의 화면은 4채널(RGBA)이라 3채널 상자공포 컬러 도장과 matchTemplate 타입이 안 맞는다
@@ -2663,42 +2812,77 @@ def select_opener_slot(device, img_np, chest_opener_slot=6, masked_adventurer_sl
         img_np = img_np[:, :, :3]
     t_chestfear = load_color_template("templates/chestfear.png")
     chosen_slot = None
-    fear_on_primary = False
 
-    # 1. 1순위: 지정 따개 슬롯에 상자공포 상태이상 검사
-    if t_chestfear is not None:
-        x1, y1, x2, y2 = SLOT_ROIS[chest_opener_slot]
-        if check_color_template_present_in_roi(img_np, t_chestfear, x1, y1, x2, y2, 0.78):
-            print(f"⚠️ [chest_opener] 1순위 따개({chest_opener_slot}번)에 '상자 공포' 상태이상이 발견되었습니다!")
-            fear_on_primary = True
-        else:
-            print(f"✅ [chest_opener] 1순위 따개({chest_opener_slot}번) 상태 정상.")
-            chosen_slot = chest_opener_slot
-    else:
+    # 0. 사망 판정(6칸 전부) + 따개 현재 위치 추적
+    dead = {}
+    for s in (1, 2, 3, 4, 5, 6):
+        red, skull = slot_dead_scores(img_np, s)
+        dead[s] = (red >= DEAD_RED_RATIO_TH) or (skull >= DEAD_SKULL_TH)
+        if dead[s]:
+            print(f"💀 [chest_opener] {s}번 사망 감지(붉은 {red:.2f}/해골 {skull:.2f})")
+    found = find_thief_slot(img_np, chest_opener_slot)
+    thief = found if found is not None else chest_opener_slot
+    if found is not None and found != chest_opener_slot:
+        print(f"🔄 [chest_opener] 따개 위치 이동 감지: 기준 캐릭터는 지금 {found}번 (지정 {chest_opener_slot}번)")
+    _thief_ref_update(img_np, chest_opener_slot, dead, found)
+
+    def _has_fear(slot):
+        if t_chestfear is None:
+            return False
+        x1, y1, x2, y2 = SLOT_ROIS[slot]
+        return check_color_template_present_in_roi(img_np, t_chestfear, x1, y1, x2, y2, 0.78)
+
+    if t_chestfear is None:
         print("⚠️ [chest_opener] templates/chestfear.png 파일이 없어 상태이상 검사를 생략하고 1순위 따개를 선택합니다.")
-        chosen_slot = chest_opener_slot
 
-    # 2. 2순위: 지정 따개에 공포가 걸렸고 주인공 슬롯 검사
-    if fear_on_primary:
-        x1, y1, x2, y2 = SLOT_ROIS[masked_adventurer_slot]
-        if check_color_template_present_in_roi(img_np, t_chestfear, x1, y1, x2, y2, 0.78):
-            print(f"⚠️ [chest_opener] 2순위 주인공({masked_adventurer_slot}번) 역시 '상자 공포'가 검출되었습니다!")
+    alive_slots = [s for s in (1, 2, 3, 4, 5, 6) if not dead[s]]
+    if not alive_slots:
+        print("🚨 [chest_opener] 선택 가능한 생존 캐릭터가 없어 창을 닫습니다")
+        device.shell("input keyevent 4")
+        time.sleep(1.5)
+        return True
 
-            # 3. 3순위: 1~6번 슬롯 순차 스캔하여 공포가 없는 캐릭터 찾기
-            for slot in [1, 2, 3, 4, 5, 6]:
-                sx1, sy1, sx2, sy2 = SLOT_ROIS[slot]
-                if not check_color_template_present_in_roi(img_np, t_chestfear, sx1, sy1, sx2, sy2, 0.78):
+    master_alive = not dead.get(masked_adventurer_slot, True)
+
+    if not dead[thief]:
+        # 1. 1순위: 따개 슬롯(생존)에 상자공포 상태이상 검사
+        if not _has_fear(thief):
+            if t_chestfear is not None:
+                print(f"✅ [chest_opener] 1순위 따개({thief}번) 상태 정상.")
+            chosen_slot = thief
+        else:
+            print(f"⚠️ [chest_opener] 1순위 따개({thief}번)에 '상자 공포' 상태이상이 발견되었습니다!")
+            # 2. 2순위: 주인공 슬롯 검사
+            if master_alive and _has_fear(masked_adventurer_slot):
+                print(f"⚠️ [chest_opener] 2순위 주인공({masked_adventurer_slot}번) 역시 '상자 공포'가 검출되었습니다!")
+            elif master_alive:
+                print(f"🔄 [chest_opener] 대체 슬롯 발견: 주인공({masked_adventurer_slot}번)으로 상자를 개방합니다.")
+                chosen_slot = masked_adventurer_slot
+            if chosen_slot is None:
+                # 3. 3순위: 1~6번 슬롯 순차 스캔(생존자 중 공포 없는 캐릭터)
+                for slot in alive_slots:
+                    if not _has_fear(slot):
+                        print(f"🔄 [chest_opener] 대체 슬롯 발견: {slot}번 캐릭터로 상자 개방을 결정합니다.")
+                        chosen_slot = slot
+                        break
+            if chosen_slot is None:
+                # 전원이 공포 - 최후의 수단(주인공이 생존이면 주인공, 아니면 따개)
+                chosen_slot = masked_adventurer_slot if master_alive else thief
+                print(f"🚨 [chest_opener] 모든 생존 캐릭터가 상자 공포 상태입니다! 최후의 보루로 {chosen_slot}번을 터치합니다.")
+    else:
+        print(f"⚠️ [chest_opener] 따개({thief}번)가 사망 상태라 다른 캐릭터를 고릅니다.")
+        if master_alive and not _has_fear(masked_adventurer_slot):
+            print(f"🔄 [chest_opener] 대체 슬롯 발견: 주인공({masked_adventurer_slot}번)으로 상자를 개방합니다.")
+            chosen_slot = masked_adventurer_slot
+        else:
+            for slot in alive_slots:
+                if not _has_fear(slot):
                     print(f"🔄 [chest_opener] 대체 슬롯 발견: {slot}번 캐릭터로 상자 개방을 결정합니다.")
                     chosen_slot = slot
                     break
-
-            # 만약 전원이 다 공포라면 최후의 수단으로 주인공 강제 선택
             if chosen_slot is None:
-                print("🚨 [chest_opener] 모든 캐릭터가 상자 공포 상태입니다! 최후의 보루로 주인공을 터치합니다.")
-                chosen_slot = masked_adventurer_slot
-        else:
-            print(f"🔄 [chest_opener] 대체 슬롯 발견: 주인공({masked_adventurer_slot}번)으로 상자를 개방합니다.")
-            chosen_slot = masked_adventurer_slot
+                chosen_slot = masked_adventurer_slot if master_alive else alive_slots[0]
+                print(f"🚨 [chest_opener] 생존 캐릭터 전원이 상자 공포 상태입니다! {chosen_slot}번을 터치합니다.")
 
     tx, ty = get_slot_center(chosen_slot)
     print(f"👉 [chest_opener] 최종 결정: {chosen_slot}번 카드 슬롯 ({tx}, {ty}) 터치를 주입합니다.")

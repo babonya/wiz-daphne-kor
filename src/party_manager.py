@@ -4,6 +4,7 @@ from screen_capture import capture_screen
 # 📋 [버전 정보 및 히스토리]
 # - 현재 버전: 1.14.1-hotfix10
 # - 최근 수정일: 2026-07-26 22:45
+#   1.22.2: 힐링 슬롯 탭 뒤 인터럽트가 걸리면 1.2초 후 재캡처해 힐러방이면 오탐으로 계속, 진짜 중단이면 열린 방을 닫기 도장으로 닫음(10/04).
 # - 수정 기록:
 #   1.21.14 (2026-09-25): 블라인드 폴백 직전 '아는 화면'(캠핑 선택지/'열다'/'누가 열 거야?')이면 쏘지 않고 중단.
 #   1.21.14 (2026-09-25): 힐링 중 "열다" 인터럽트 가드가 옛 경로(파일 없음)로 죽어 있던 결함 완치 -
@@ -240,6 +241,19 @@ def get_slot_coords(slot_idx):
     return mapping.get(slot_idx, (733, 2390)) # 기본값 5번 주인공/힐러 슬롯
 
 
+def _close_healer_room_if_open(device):
+    """중단 경로용: 힐러방(상태창)이 열려 있으면 '닫기'를 눌러 닫는다. 안 보이면 아무것도 안 함(블라인드 탭 금지)."""
+    try:
+        img_np = capture_screen(device)
+        close_coords = find_gray_coords(img_np, G_CLOSE_BTN, 0.75)
+        if close_coords:
+            device.shell(f"input tap {close_coords[0]} {close_coords[1]}")
+            time.sleep(1.0)
+            print_log("🚪 [party_manager] 중단 경로에서 열려 있던 힐러방을 닫았습니다.")
+    except Exception:
+        pass
+
+
 def run_party_healing_sequence(device, t_auto_btn, t_close_btn, healer_slot=5, masked_adventurer_slot=5):
     print_log("💊 [party_manager] 정비 레이더 가동... 주변 상황 교차 검증을 시작합니다.")
 
@@ -276,7 +290,19 @@ def run_party_healing_sequence(device, t_auto_btn, t_close_btn, healer_slot=5, m
         # 정비창 진입 시도 도중 몬스터 기습이나 상자가 열려 인터럽트가 발생했다면,
         # 그냥 탈출하지 않고 확실하게 "치료 실패했다(False)"고 보고서를 반환합니다!
         if check_gray_template_present(img_np[_YR[1]:_YR[3], _YR[0]:_YR[2]], G_YEOLDA, YEOLDA_GRAY_THRESHOLD) or check_gray_template_present(img_np, G_AUTO_ON, 0.75) or check_gray_template_present(img_np, G_SPEED_ON, 0.75):
+            if idx > 1:
+                # 슬롯 탭 직후 방이 열리는 전환 프레임(필드 UI가 아직 비침)을 전투로 오판하는 것을 막기 위해 재확인
+                time.sleep(1.2)
+                try:
+                    img_np = capture_screen(device)
+                except Exception:
+                    img_np = None
+                if img_np is not None and (check_gray_template_present(img_np, G_AUTO_BTN, 0.81) or check_gray_template_present(img_np, G_CLOSE_BTN, 0.81)):
+                    print_log("⚠️ [party_manager] 인터럽트로 보였으나 재확인 결과 힐러방이 열려 있습니다 - 전환 중 오탐으로 보고 힐링을 계속합니다.")
+                    enter_success = True
+                    break
             print_log("🚨 [party_manager 인터럽트] 상자 또는 전투 기습 포착!! 시퀀스를 긴급 폐쇄합니다.")
+            _close_healer_room_if_open(device)
             return False
 
         # 진입 완료 확인
@@ -315,6 +341,8 @@ def run_party_healing_sequence(device, t_auto_btn, t_close_btn, healer_slot=5, m
                 known_screen = "상자 캐릭터 선택창"
             if known_screen:
                 print_log(f"🚨 [party_manager 인터럽트] 슬롯 순회 후 '{known_screen}' 화면이 확인되어 블라인드 힐을 쏘지 않고 시퀀스를 중단합니다.")
+                if known_screen != "상자 캐릭터 선택창":
+                    _close_healer_room_if_open(device)
                 return False
         except Exception as e:
             print_log(f"⚠️ [party_manager] 블라인드 전 화면 확인 실패(무시하고 기존대로 진행): {e}")

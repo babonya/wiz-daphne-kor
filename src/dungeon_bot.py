@@ -20,9 +20,14 @@ came_from_chest = False
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.22.1
+# - 현재 버전: 1.22.2
 # - 최근 수정일: 2026-09-27
 # - 수정 기록:
+#   1.22.2:🔎 던전선택 앵커(유령성 FFXI) 이진화 멀티패스 check_dungeon_select_anchor - 콜라보 종료로 배경이 바뀐 던전선택에서 기존 판정 미달 시 상단 ROI 문턱 230/200 0.90 이상이면 인식(10/04).
+#   1.22.2:💀 상자 '누가 열 거야?' 사망 카드 호출부 가드 - 같은 창 10초 내 연속 3회+ 정체 리셋 중단, 6회째 BACK, 12회째 RuntimeError(10/04, chest_opener.slot_is_dead와 짝).
+#   1.22.2:🧭 상자 자동이동 탭 직전 재개 버튼이 비활성이면(구역 이동/재시작 직후) 필드맵 제목으로 목표 구역 확인, 옆 구역이면 귀환 전환(교회구역 한정, check_zone_title_before_chest).
+#   1.22.2:⚔️ 하켄 귀환 루프(trigger_harken_escape)에서 전투 조우 회차는 10회 예산에서 환불(최대 40회/약 150초) - 전투 30초+면 멀쩡해도 탈출 실패 재시작하던 문제(ROADMAP 0-1).
+#   1.22.2:🚧 30초 정체 가드 안에서 하켄 메뉴(귀환/가호)가 보이면 BACK 대신 바로 처리 - 정체 가드가 공용 하켄 가드를 가로막아 BACK만 반복하다 300초 직전 사용자 개입(10/01 16:34).
 #   1.22.1:🏔️ 던전 루프 안에서 마을 외곽(대설 지대 버튼 화면)이 보이면 사령탑으로 퇴장(300초 정체 재시작 2건 방지) + 📸 필드맵/하켄 귀환 실패 직전 증거 스샷(fieldmap_miss/fieldmap_exit_fail/harken_fail) + 🗺️ 미니맵 확장 실패 시 재시작 대신 나가기/하켄 폴백 + 증거 스샷(fieldmap_expand_fail). 🗺️ 필드맵 아이콘 탐색을 구석 몰기+뱀 모양 래스터(끝 판정 diff<12, 최대 30회)로 교체.
 #   1.22.0: 🩸 힐 3번 연속 넣어도 빈사가 안 풀리면(MP 고갈) 마을 귀환 + 🧩 잘린 자동이동 말풍선은 왼쪽(아이콘) 절반으로 검색 + 재시도 전 필드맵 닫기.
 #   1.22.0: 🚫 필드맵 아이콘 명암 가드(표준편차 20 미만 = 흐릿한 얼룩 오탐 제외, 다음 후보 탐색) - 교회 가짜 하켄 헛탭 5회 재시작.
@@ -503,6 +508,40 @@ def check_template_present_dynamic(img_np, thresh_temp, threshold_val=0.68, min_
 
 def check_template_present(img_np, thresh_temp, threshold_val=0.68):
     return check_template_present_dynamic(img_np, thresh_temp, threshold_val, 160)
+
+# 🆕 [2026-10-04 던전선택 앵커 이진화 멀티패스] 콜라보 종료로 던전선택 배경이 바뀌면 FFXI 앵커의 기본 매칭(문턱160)이
+# 0.64로 떨어져 "던전선택 불일치"로 세계지도-여관을 무한 반복했다. 기본 매칭이 실패하면 상단 ROI(y 0~420)에서
+# 문턱 230/200 이진화 패스로 재시도한다(실측: 새 배경 230->0.984/200->0.919, 다른 던전선택 화면 0.18~0.30).
+# src_path = 도장 원본 파일(이진화 문턱을 도장에도 똑같이 적용해야 하므로 필요). None이면 기존 매칭만 수행(다른 던전 도장은 미검증).
+DUNGEON_SEL_BIN_PASSES = (230, 200)
+DUNGEON_SEL_BIN_ROI_Y = (0, 420)
+DUNGEON_SEL_BIN_THR = 0.90
+_dungeon_sel_src_cache = {}
+
+def check_dungeon_select_anchor(img_np, t_anchor, gray_thr, src_path=None):
+    if check_template_present(img_np, t_anchor, gray_thr): return True
+    if src_path is None or img_np is None: return False
+    try:
+        if src_path not in _dungeon_sel_src_cache:
+            _dungeon_sel_src_cache[src_path] = load_grayscale_template(src_path)
+        t_gray = _dungeon_sel_src_cache[src_path]
+        if t_gray is None: return False
+        y1, y2 = DUNGEON_SEL_BIN_ROI_Y
+        roi = img_np[y1:y2, :]
+        if roi.shape[0] < t_gray.shape[0] or roi.shape[1] < t_gray.shape[1]: return False
+        gray_roi = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
+        for thr in DUNGEON_SEL_BIN_PASSES:
+            _, b_img = cv2.threshold(gray_roi, thr, 255, cv2.THRESH_BINARY)
+            _, b_tpl = cv2.threshold(t_gray, thr, 255, cv2.THRESH_BINARY)
+            res = cv2.matchTemplate(b_img, b_tpl, cv2.TM_CCOEFF_NORMED)
+            mv = float(cv2.minMaxLoc(res)[1])
+            if mv >= DUNGEON_SEL_BIN_THR:
+                try: print(f"🔁 [던전선택 앵커] 이진화 패스(문턱{thr}, 점수{mv:.3f})로 인식")
+                except Exception: pass
+                return True
+    except Exception:
+        return False
+    return False
 
 # 🩸 [2026-08-16 피장막(딸피 연출) 관통 다중 이진화 패스]
 # 주인공이 빈사가 되면 화면 전체에 붉은 피안개 연출이 씌워지는데, 이때 흰 글씨(예: "열다")의
@@ -1498,7 +1537,12 @@ def trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessin
     # 이식 과정에서 3회로 축소되어 있었음. 구역이 많이 열린 던전은 하켄 목록 렌더링이 오래 걸려 11.25초 안에 못 뜨는 경우가 있어
     # 폴백 좌표를 허공에 찍고도 성공으로 오판정하던 결함을 완치하기 위해 10회(약 37.5초)로 상향.
     print("⏳ [하켄귀환] 귀환 팝업 대기 및 BGR 컬러 수렴 루프 기동 (간격: 3.75초, 최대 10회)")
-    for h_wait in range(10):  # 3.75초 간격 * 10회 = 약 37.5초
+    # 🚨 [2026-10-01 0-1] 전투 회차는 10회 예산에서 환불한다(9/27 reboot2: 전투 30초+가 3~10회차를 다 먹어 멀쩡한데 실패 처리).
+    # 전투는 자동전투가 끝내므로 기다리면 되고, 먹통 방지로 환불은 최대 40회(약 150초)까지만.
+    h_wait = -1
+    combat_refunds = 0
+    while h_wait < 9:  # 3.75초 간격 * 10회 = 약 37.5초 (전투 회차 제외)
+        h_wait += 1
         time.sleep(3.75)
         try:
             raw_h = capture_screen_bytes(device)
@@ -1514,6 +1558,9 @@ def trigger_harken_escape(device, t_harken_return, t_move_exit, t_harken_blessin
                     harken_first_stuck_time = None
                     harken_recovery_attempted = False
                     prev_minimap = None
+                    if combat_refunds < 40:
+                        combat_refunds += 1
+                        h_wait -= 1  # 전투 회차는 예산 소모 없음
                     continue
 
                 # "아무것도 안 한다" 앵커로 하켄 메뉴 유무를 먼저 확인하고, "귀환" 유무로 귀환목록/가호 팝업을 구분한다.
@@ -1892,6 +1939,8 @@ FIELDMAP_TITLE_TEMPLATES = {"교회구역": "templates/Field/FieldMap_title_chur
                             "6층": "templates/Field/FieldMap_title_6F.png"}
 FIELDMAP_TITLE_ZONE = (0, 40, 1440, 280)   # (x1, y1, x2, y2)
 FIELDMAP_TITLE_THRESHOLD = 0.80
+ZONE_CHECK_BEFORE_CHEST_FLOORS = {"교회구역"}  # 재개 비활성 = 구역 이동/재시작 직후 -> 상자 탭 전 필드맵 제목 확인. 유령성4층 등은 추후
+ZONE_CHECK_COOLDOWN_S = 60.0
 
 
 def fieldmap_title_score(img_np, floor_name):
@@ -1973,6 +2022,51 @@ def _close_fieldmap_before_exit(device):
         time.sleep(1.2)
     print("⚠️ [필드맵 귀환] 필드맵을 닫지 못했습니다 - 그대로 나가기 버튼을 찾아 봅니다.")
     return False
+
+
+def check_zone_title_before_chest(device, floor_name, t_combat_in=None, t_combat_slow=None):
+    """🆕 [2026-10-01] 상자 자동이동 버튼을 누르기 직전, 필드맵을 열어 제목으로 목표 구역인지 확인한다.
+
+    사용자 확정 사실: 재개 버튼(1번 Redo)은 상자/나가기 버튼을 한 번이라도 누르면 활성화된다. 구역을 옮겼거나(옆 구역
+    '경로2'로 새는 사고) 던전 안에서 재시작된 직후에는 비활성이다. 그래서 재개가 비활성일 때만 이 확인을 한다.
+    🚨 실전(logs/2026-10-01-1653 17:13:44): 경로2로 넘어간 줄 모르고 상자파밍을 계속하다 귀환 때에야 발견했다.
+    반환: "match" / "mismatch" / "combat" / "unknown"
+    """
+    try:
+        t_exp = load_grayscale_template("templates/Field/Fieldmap_exit_icon.png")
+        t_close = load_grayscale_template("templates/Field/FieldMap_Anchor.png")
+        ex, ey = FIELDMAP_EXPAND_TAP_COORDS
+        safe_device_shell(device, f"input tap {ex} {ey}")
+        img_np = None
+        expanded = False
+        for _ in range(3):
+            time.sleep(1.0)
+            raw = capture_screen_bytes(device)
+            if not raw:
+                continue
+            img_np = decode_screen_bytes(raw)
+            for t in (t_combat_in, t_combat_slow):
+                if t is not None and check_combat_template_present(img_np, t, 0.70):
+                    return "combat"
+            if _check_fieldmap_expanded(img_np, t_exp, t_close):
+                expanded = True
+                break
+        if not expanded:
+            print("🧭 [필드맵 이름 확인] 필드맵이 펼쳐지지 않았습니다 - 확인 없이 기존대로 상자 버튼을 누릅니다.")
+            _close_fieldmap_before_exit(device)
+            return "unknown"
+        score = fieldmap_title_score(img_np, floor_name)
+        _close_fieldmap_before_exit(device)
+        if score is None:
+            return "unknown"
+        if score >= FIELDMAP_TITLE_THRESHOLD:
+            print(f"🧭 [필드맵 이름 확인] 목표 구역('{floor_name}') 맞음(일치도 {score:.2f}) - 상자 버튼을 누릅니다.")
+            return "match"
+        print(f"🧭 [필드맵 이름 확인] 목표 구역('{floor_name}')이 아닙니다(일치도 {score:.2f}) - 옆 구역으로 넘어온 것으로 보고 귀환(TRIGGER_EXIT, 필드맵 하켄 -> 없으면 나가기)으로 전환합니다.")
+        return "mismatch"
+    except Exception as e:
+        print(f"⚠️ [필드맵 이름 확인] 확인 중 예외({e}) - 확인 없이 기존대로 진행합니다.")
+        return "unknown"
 
 
 def _return_after_camping(device, return_method, t_move_exit, t_field, t_harken_return,
@@ -2712,6 +2806,8 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
         t_dungeon_sel = load_template("templates/FFXI/FFXI_dungeon_Anchor.png")
     else:
         t_dungeon_sel = load_template("templates/WolfCave/dungeon_select.png")
+    # 🆕 [2026-10-04] 이진화 멀티패스는 실측 검증된 FFXI 앵커에만 적용(check_dungeon_select_anchor)
+    dungeon_sel_src = "templates/FFXI/FFXI_dungeon_Anchor.png" if dungeon_name == "북쪽의 유령선" else None
         
     # 📂 [v1.17.0 FFXI 광석 채굴용 전용 템플릿 로딩]
     t_mining_ready = load_color_template("templates/FFXI/mining_ready.png")
@@ -2748,6 +2844,8 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     event_counter = 0
     
     last_state_changed_time = time.time()
+    who_open_streak = 0          # '누가 열 거야?' 선택창 연속 감지 횟수(10초 초과 간격이면 1부터)
+    who_open_last_time = 0.0
     previous_state = "FIELD_WAIT"
     exit_start_time = 0
     prev_minimap_zone = None
@@ -2846,6 +2944,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
 
     cap_fail_counter = 0
     resolution_fail_counter = 0  # 🚨 [v1.14.0-hotfix3] 해상도 미달 가드 연속 카운터 추가
+    last_zone_check_ok_time = 0.0  # 🆕 [2026-10-01] 필드맵 이름 확인 쿨타임(60초)
     last_village_check_time = 0.0  # 🆕 [2026-09-25] 마을 이탈 감지 가드 주기(5초) 관리
     macro_loop_begin_time = time.time()  # 🆕 [2026-09-30] 마을외곽 이탈 감지 유예(진입 직후 외곽 화면 잔상 오탐 방지)용
     while True:
@@ -2903,7 +3002,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
             continue
         is_poisoned = False
 
-        if check_template_present(img_np, t_dungeon_sel, 0.70):
+        if check_dungeon_select_anchor(img_np, t_dungeon_sel, 0.70, dungeon_sel_src):
             print("🚪 [dungeon_bot] 현실 화면이 '던전 선택창'으로 식별되었습니다! 사령탑으로 즉시 퇴장합니다.")
             return False, skill_mission_success_this_combat, need_pickaxe_refill
 
@@ -3076,6 +3175,20 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     save_stuck_evidence_screenshot(img_np, state)
                     last_stuck_screenshot_key = stuck_episode_key
 
+                # 🚨 [2026-10-01 0-D] 이 정체 가드는 매 틱 끝에서 무조건 continue 하므로 아래 공용 하켄 가드(3197)에
+                # 영영 못 간다 - 이동 경로 위 대하켄에서 메뉴가 뜬 채 BACK(하켄 메뉴에 무효)만 반복하다 300초 직전
+                # 사용자가 풀어준 사고(16:34). BACK/재시작 전에 하켄 메뉴부터 처리한다(귀환/가호 처리 시 타이머 리셋은
+                # 공용 가드와 동일 - 진짜 화면이 풀린 것이므로).
+                harken_menu_state_stuck = check_and_handle_harken_menu(
+                    device, t_harken_blessing_donothing, t_harken_return, img_np=img_np, t_yeolda=t_yeolda
+                )
+                if harken_menu_state_stuck in ("returned", "blessing"):
+                    print(f"   ➔ 🚪 [정체 가드 하켄 처리] 정체 중 하켄 메뉴 감지, '{harken_menu_state_stuck}' 처리 완료.")
+                    transition_delay_count = 0
+                    time.sleep(2.0)
+                    last_state_changed_time = time.time()
+                    continue
+
                 # 🛑 [v1.13.5 추가] 일반 상태 5분 이상 정체 시 자동 재부팅 세이프티 가드
                 if stuck_duration >= 300.0:
                     raise RuntimeError(f"던전 필드 정체 한계 초과: '{state}' 상태로 {int(stuck_duration)}초간 정체되어 강제 앱 재시작을 수행합니다.")
@@ -3100,7 +3213,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                 
                 # [독 치료 복구 가드는 1.14.1-hotfix7에서 탈거되었습니다]
 
-                if check_template_present(img_np, t_dungeon_sel, 0.70): return False, skill_mission_success_this_combat, need_pickaxe_refill
+                if check_dungeon_select_anchor(img_np, t_dungeon_sel, 0.70, dungeon_sel_src): return False, skill_mission_success_this_combat, need_pickaxe_refill
                 
                 close_coords_bot = find_and_get_coords(img_np, t_heal_close, 0.70)
                 if close_coords_bot:
@@ -3331,9 +3444,25 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     transition_delay_count = 0
                     minigame_reentry_count = 0
                     print("👤 [메인] 캐릭터 선택창('누가 열 거야?') 감지! 따개 슬롯 선택으로 상자 해제를 이어갑니다.")
+                    # 🚨 [2026-10-04 사망 따개 82분 반복] 같은 선택창이 계속 되풀이되면(10초 이내 연속) 정체 타이머를
+                    # 더는 갱신하지 않아 30초 BACK/300초 재시작 가드가 돌게 한다. 6회째 BACK으로 창을 닫고, 12회째 재시작.
+                    _now_wo = time.time()
+                    if _now_wo - who_open_last_time > 10:
+                        who_open_streak = 1
+                    else:
+                        who_open_streak += 1
+                    who_open_last_time = _now_wo
+                    if who_open_streak >= 12:
+                        raise RuntimeError("누가 열 거야 선택창 12회 반복으로 강제 재시작")
+                    if who_open_streak == 6:
+                        print(f"⚠️ [메인] 같은 캐릭터 선택창이 {who_open_streak}회 반복 - BACK으로 닫고 상자를 포기합니다")
+                        safe_device_shell(device, "input keyevent 4")
+                        time.sleep(1.5)
+                        continue
                     if chest_opener.select_opener_slot(device, img_np, chest_opener_slot=chest_opener_slot, masked_adventurer_slot=masked_adventurer_slot):
                         state = "BRANCH_CHECK"
-                    last_state_changed_time = time.time()
+                    if who_open_streak < 3:
+                        last_state_changed_time = time.time()
                 elif chest_opener.is_minigame_screen(img_np, height, width):
                     transition_delay_count = 0
                     state = "PLAY_MINIGAME"
@@ -4002,15 +4131,37 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                             #    공용 하켄 가드 이후에 하켄에 도착해 메뉴가 떠도 그대로 탭하면 경로2로 순간이동한다. 탭 직전
                             #    화면을 한 번 더 찍어 확인한다(대설지대만 - 하켄 귀환 구역이 있는 던전).
                             raw_hk_pre = capture_screen_bytes(device)
+                            img_hk_pre = decode_screen_bytes(raw_hk_pre) if raw_hk_pre else None
                             if raw_hk_pre:
                                 harken_pre_chest = check_and_handle_harken_menu(device, t_harken_blessing_donothing, t_harken_return,
-                                                                                img_np=decode_screen_bytes(raw_hk_pre), t_yeolda=t_yeolda)
+                                                                                img_np=img_hk_pre, t_yeolda=t_yeolda)
                                 if harken_pre_chest in ("returned", "blessing"):
                                     print(f"🚪 [상자 이동 보류] 탭 직전에 하켄 메뉴가 떴습니다 - 상자 버튼 대신 '{harken_pre_chest}' 처리 완료.")
                                     transition_delay_count = 0
                                     time.sleep(2.0)
                                     last_state_changed_time = time.time()
                                     continue
+                            # 🆕 [2026-10-01] 재개 비활성(구역 이동/재시작 직후) -> 상자 탭 전에 필드맵 제목으로 목표 구역 확인
+                            if (dungeon_floor_name in ZONE_CHECK_BEFORE_CHEST_FLOORS and raw_hk_pre
+                                    and time.time() - last_zone_check_ok_time >= ZONE_CHECK_COOLDOWN_S
+                                    and not is_resume_button_active(img_hk_pre)):
+                                print("🧭 [필드맵 이름 확인] 재개 버튼 비활성(구역 이동/재시작 직후로 추정) - 상자 탭 전에 필드맵 제목을 확인합니다.")
+                                zone_res = check_zone_title_before_chest(device, dungeon_floor_name, t_combat_in, t_combat_slow)
+                                if zone_res == "mismatch":
+                                    state = "TRIGGER_EXIT"
+                                    exit_start_time = time.time()
+                                    exit_clicked_once = False
+                                    exit_stuck_count = 0
+                                    exit_prev_minimap = None
+                                    exit_last_action_was_exit_tap = False
+                                    last_click_time = 0.0
+                                    transition_delay_count = 0
+                                    last_state_changed_time = time.time()
+                                    continue
+                                if zone_res == "combat":
+                                    transition_delay_count = 0
+                                    continue
+                                last_zone_check_ok_time = time.time()
                         # 🚨 [2026-08-28 상자 이동 대기시간 단축] 미니맵 이동 여부와 무관하게 항상 2연타부터
                         # 찍던 걸 1회 탭으로 변경 - 던전 필드에서 멈춰서 확인하는 시간 자체가 가장 위험한
                         # 구간(기습 위험)이라는 사용자 판단에 따라, 1차 탭으로 충분한 대부분의 경우 탭 간격

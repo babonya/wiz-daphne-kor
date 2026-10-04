@@ -9,7 +9,7 @@ import json
 from single_instance import enforce_single_instance_or_exit
 enforce_single_instance_or_exit()
 
-CURRENT_VERSION = "1.22.1" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
+CURRENT_VERSION = "1.22.2" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
 
 # 🧩 [2026-09-28] 처음설정 검사 - 첫 실행이거나 업데이트 직후(setup_done.json 버전 < CURRENT_VERSION)면 게임을 건드리지
 #    않고 "처음설정.bat 을 먼저 실행하세요" 안내 후 종료 코드 3으로 끝난다(배치파일이 3이면 창을 닫지 않고 멈춘다).
@@ -165,10 +165,13 @@ USER_SETTINGS_MESSAGES = user_settings.apply_user_settings(globals(), SETTINGS_P
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.22.1
+# - 현재 버전: 1.22.2
+#   1.22.2: 급한 패치(실기 테스트 전) - 🏠 백아 등 힐링 중 힐러방을 마을 여관으로 오인해 같은 자리만 누르던 문제 + 🔎 유령성 던전선택창 인식 오류(콜라보 종료 배경 변경) + 💀 상자 따개 사망 대응.
 #   1.22.1: 🏔️ 마을 외곽 정체 자동 탈출 + 🗺️ 필드맵 하켄 탐색(구석 몰기+뱀 모양 전체 훑기) + 미니맵 확장 실패 시 재시작 대신 나가기/하켄 폴백 + 📸 귀환 실패 증거 스샷 + 📱 원격 시작/정지 버튼 디자인.
 # - 최근 수정일: 2026-09-27
 # - 수정 기록:
+#   1.22.2:🔎 던전선택 앵커(유령성) 판정을 dungeon_bot.check_dungeon_select_anchor 로 교체(이진화 멀티패스, 1497·2748행) - 콜라보 종료 후 배경 변경 대응(10/04).
+#   1.22.2:🏠 마을 여관 탭 무한반복 가드 - 연속 탭(15초 이내) 8회째 BACK, 16회째 RuntimeError(힐러방 inn.png 오인 제보, 10/04).
 #   1.22.0: 🎯 상자 조준(매크로박스님) 영점 보정 글로벌 설정 CHEST_AIM_CALIBRATION(auto/macrobox/lowspec/manual/none)
 #     + 멘탈 보존 CHEST_AIM_PRESERVE_MENTAL(1=2회 후 포기 기본 / 0=횟수 제한 없이 끝까지).
 #   1.22.0: 🏠 대설지대 여관 경유가 여관 건물을 안 누르고 1초 만에 가짜 숙박하던 결함 - 사령탑 여관 흐름으로 넘김.
@@ -1494,7 +1497,7 @@ def recover_app_startup(device):
         # 재현 2026-09-16 23:28). dungeon_bot.py가 매 전투 틱마다 이미 0.70으로 오탐 없이 써온 값으로
         # 통일한다.
         if (check_field_anchor_present(img_np, t_field, 0.62) or
-            check_template_present(img_np, t_dungeon_sel, 0.70) or
+            dungeon_bot.check_dungeon_select_anchor(img_np, t_dungeon_sel, 0.70, _dungeon_sel_src()) or
             check_grayscale_template_present_in_roi(img_np, t_open_world, 800, 1200, 1480, 1650, 0.85) or
             get_combat_match_score(img_np, t_combat_in) > 0.70 or
             get_combat_match_score(img_np, t_combat_slow) > 0.70 or
@@ -1810,6 +1813,10 @@ def click_dead_template(device, img_np, thresh_temp, threshold_val=0.65):
             return True
         return False
     except: return False
+
+def _dungeon_sel_src():
+    # 🆕 [2026-10-04] 던전선택 앵커 이진화 멀티패스는 실측 검증된 FFXI 앵커에만 적용(dungeon_bot.check_dungeon_select_anchor)
+    return "templates/FFXI/FFXI_dungeon_Anchor.png" if DUNGEON_NAME == "북쪽의 유령선" else None
 
 def check_template_present(img_np, thresh_temp, threshold_val=0.70):
     if thresh_temp is None or img_np is None: return False
@@ -2260,6 +2267,8 @@ def start_grand_orchestrator():
     first_stuck_time_str = ""
     first_stuck_start_time = None
     first_outgame_stuck_time_str = ""
+    inn_tap_streak = 0        # 🆕 [2026-10-04] 마을 여관 도장 탭 연속 횟수(무한반복 가드)
+    inn_tap_last_time = 0.0
     first_outgame_stuck_start_time = None
     last_guess_action_time = None  # 🆕 [2026-09-27] 아래 "모르는 화면 추측 탭"이 찍은 last_action_time 값(정체 타이머 리셋 제외용)
     global_skill_setup_completed = False
@@ -2745,7 +2754,7 @@ def start_grand_orchestrator():
         # 프리셋 전용 도장(t_dungeon_sel)이 안 맞아도 이걸로 "던전선택 화면인데 내 던전이 아니다"를 구분할 수 있다.
         is_any_dungeon_sel = check_grayscale_template_present_in_roi(img_np, t_open_world, 800, 1200, 1480, 1650, 0.85)
 
-        if check_template_present(img_np, t_dungeon_sel, 0.83):
+        if dungeon_bot.check_dungeon_select_anchor(img_np, t_dungeon_sel, 0.83, _dungeon_sel_src()):
             first_stuck_time_str = ""
             if last_logged_status != "DUNGEON_SEL":
                 last_action_time = time.time()
@@ -3137,6 +3146,22 @@ def start_grand_orchestrator():
                 waiting_for_village_dialogue = False
                 last_action_time = time.time()
             if not is_fully_healed:
+                # 🆕 [2026-10-04 마을 여관 무한반복 가드] 이 분기는 매번 last_action_time을 갱신해 30초 정체 블록에 못 들어간다.
+                # 힐러방(캐릭터 상태창) 등 비마을 화면이 inn.png 0.676으로 오인되면(기준 0.65) 같은 탭을 10분 넘게 반복한 실전 사례.
+                # 탭 간격이 15초 이내면 연속으로 보고, 8회째부터 BACK, 16회면 재시작.
+                _now_inn = time.time()
+                if _now_inn - inn_tap_last_time > 15.0:
+                    inn_tap_streak = 1
+                else:
+                    inn_tap_streak += 1
+                inn_tap_last_time = _now_inn
+                if inn_tap_streak >= 16:
+                    raise RuntimeError("마을 여관 탭 무한반복(16회)으로 강제 재시작")
+                if inn_tap_streak >= 8:
+                    print(f"🏠⚠️ [마을 여관 무한반복 가드] 같은 여관 탭이 {inn_tap_streak}회 연속 - 마을이 아닌 화면(캐릭터창 등)을 오인했을 가능성. BACK(ESC)을 보냅니다.")
+                    device.shell("input keyevent 4")
+                    time.sleep(1.5)
+                    continue
                 if find_and_click_grayscale_template(device, img_np, t_village, 0.65):
                     print("🏠 [마을] 여관 도장 인식 및 진입 터치 성공.")
                     last_action_time = time.time()
