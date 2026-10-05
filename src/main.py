@@ -166,6 +166,7 @@ USER_SETTINGS_MESSAGES = user_settings.apply_user_settings(globals(), SETTINGS_P
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
 # - 현재 버전: 1.22.3
+#   (미릴리즈): 🛡️ 앱 기동 복구 루프 heartbeat(Watchdog 오발동 방지) + restart_process 중복 호출 방지(재시작 이중 집계로 상한 조기 도달 방지).
 #   1.22.3: 🔎 유령성 던전선택 층 버튼(2nd~5th)이 콜라보 종료 새 배경에서 인식 실패하던 문제 패치 - 기존 패스 실패 시 화면·도장을 같은 문턱(120)으로 재이진화(find_and_click_template_rebin, 0.92). 실기 테스트 전.
 #   1.22.2: 급한 패치(실기 테스트 전) - 🏠 백아 등 힐링 중 힐러방을 마을 여관으로 오인해 같은 자리만 누르던 문제 + 🔎 유령성 던전선택창 인식 오류(콜라보 종료 배경 변경) + 💀 상자 따개 사망 대응.
 #   1.22.1: 🏔️ 마을 외곽 정체 자동 탈출 + 🗺️ 필드맵 하켄 탐색(구석 몰기+뱀 모양 전체 훑기) + 미니맵 확장 실패 시 재시작 대신 나가기/하켄 폴백 + 📸 귀환 실패 증거 스샷 + 📱 원격 시작/정지 버튼 디자인.
@@ -725,6 +726,10 @@ def sync_screenshots_loop(session_start_ts, log_dir):
 
 # 🛡️ [Watchdog 락 감시 변수 및 함수 정의]
 last_heartbeat_time = time.time()
+import threading
+WATCHDOG_THREAD_NAME = "daphne_watchdog"
+_restart_lock = threading.Lock()
+_restart_in_progress = False
 
 def update_heartbeat():
     global last_heartbeat_time
@@ -823,6 +828,7 @@ def init_main_logger():
         
         threading.Thread(
             target=watchdog_monitor_loop,
+            name=WATCHDOG_THREAD_NAME,
             daemon=True
         ).start()
     except Exception as thread_err:
@@ -1314,6 +1320,10 @@ def recover_app_startup(device):
     startup_cap_fail_counter = 0
     STARTUP_CAP_FAIL_LIMIT = 20  # 0.5초 간격 × 20회 = 약 10초 유예 (240초 워치독보다 24배 빠름)
     while counter < max_try:
+        # 🆕 [2026-10-05] 이 루프는 자체 상한(max_try/유예시간)이 있어 정상 진행 중엔 Watchdog을 깨우지 않는다.
+        #    실전(logs/2026-10-05-0837-000_reboot3.txt): 스킵 가드 35회(약 6.5초씩)만으로 240초를 넘겨 Watchdog이 살아있는
+        #    메인 스레드를 무반응으로 오판 -> 뮤뮤 강제 종료. ADB 호출이 정말 멈추면 여기 못 와서 Watchdog은 그대로 동작한다.
+        update_heartbeat()
         try:
             raw_cap = capture_screen_bytes(device)
             if raw_cap is None:
@@ -1583,6 +1593,19 @@ def take_screencap_backup(device, prefix="start"):
 RESTART_STOP_LIMIT = 5   # 🆕 [2026-09-29] 진전 없는 연속 재시작이 이 횟수에 닿으면 멈춘다(restart_process 주석 참고)
 
 def restart_process(reason):
+    # 🆕 [2026-10-05] 재시작은 한 번에 하나만. Watchdog 스레드가 재시작(뮤뮤 강제 종료)을 도는 동안 메인 스레드가 계속 돌다
+    #    'device not found' 예외 -> 최상단 크래시 복구가 재시작을 또 세어 상한(5회)에 걸리고, 마지막 사유도 엉뚱하게 남았다
+    #    (logs/2026-10-05-0837-000_reboot3.txt 08:41). 진행 중이면 메인/다른 스레드의 호출은 여기서 멈춰 기다린다(진행 중인
+    #    재시작이 반드시 os.execv/os._exit로 프로세스를 바꾼다). 단 Watchdog의 호출은 통과 - 메인 스레드의 재시작 자체가
+    #    ADB에 걸려 멈췄을 때 Watchdog이 다음 단계로 밀어주는 기존 안전망(2026-08-14)을 유지한다.
+    global _restart_in_progress
+    with _restart_lock:
+        already = _restart_in_progress
+        _restart_in_progress = True
+    if already and threading.current_thread().name != WATCHDOG_THREAD_NAME:
+        print(f"\n⏸️ [재시작 중복 방지] 이미 재시작이 진행 중이라 이 요청은 건너뜁니다(세지 않음). 사유: {reason}")
+        while True:
+            time.sleep(60)
     print(f"\n🔄 [프로세스 자가 복구 가동] 사유: {reason}")
 
     # 📸 [스턱 증거 보존] 재시작/리부팅으로 화면이 바뀌기 전, 마지막으로 연결됐던 디바이스 기준으로 현재 화면을 캡처합니다.
@@ -1593,7 +1616,6 @@ def restart_process(reason):
     # 이게 멈추더라도 아래 진짜 복구 절차는 반드시 진행되도록 함 - 실패해도 증거 스샷 하나 못 남기는 것뿐,
     # 복구 자체가 막히는 일은 없어야 함.
     if global_device is not None:
-        import threading
         threading.Thread(
             target=take_screencap_backup, args=(global_device,), kwargs={"prefix": "stuck"}, daemon=True
         ).start()
