@@ -21,6 +21,7 @@ came_from_chest = False
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
 # - 현재 버전: 1.22.3
+#   (미릴리즈): 💀 사망 확인 시 DEATH_RETURN_PENDING(사령탑 여관 강제), ACCEPTED_DEAD_COUNT 이하 사망은 회군 안 함(DEAD_MEMBER_POLICY=2).
 #   1.22.3: 변경 없음(버전 동기화, 층 버튼 재이진화는 main.py)
 # - 최근 수정일: 2026-09-27
 # - 수정 기록:
@@ -587,6 +588,12 @@ def check_yeolda_present(img_np, t_yeolda, threshold_val=0.65, bin_passes=FOG_BI
 # 실측 분포: 빈사/안개 화면 6109·12092픽셀 vs 정상 화면 최대 2114픽셀 -> 그 사이를 넉넉히 잡아 4000으로 설정.
 # (빈사 샘플이 아직 2건뿐이라, 발동 시 실제 픽셀수를 로그로 남겨 추후 조정할 수 있게 한다.)
 DANGER_HP_PIXEL_LIMIT = 4000
+# 🆕 [2026-10-06 ROADMAP 0-B] 사령탑(main.py)과 주고받는 사망 정보.
+#    DEATH_RETURN_PENDING: 던전에서 새 사망을 확인해 마을로 회군했다 -> 사령탑이 여관을 강제하고 숙박 뒤 사망자/대열을 확인한다.
+#    ACCEPTED_DEAD_COUNT: DEAD_MEMBER_POLICY=2(사망자와 계속 진행)로 사령탑이 받아들인 사망자 수. 던전에서 이 수 이하로만
+#    죽어 있으면 회군하지 않고(이미 여관에 다녀와도 안 살아나는 사망자) 빈사 감지만 억제한 채 주회를 계속한다.
+DEATH_RETURN_PENDING = False
+ACCEPTED_DEAD_COUNT = 0
 HEAL_FUTILE_LIMIT = 3   # 🆕 [2026-09-30] 빈사 감지 -> 힐을 이만큼 연속 넣어도 안 풀리면 회복 불가로 보고 마을 귀환(2-1. 빈사 감지 분기 참고)
 
 def count_danger_hp_pixels(img_np):
@@ -2855,7 +2862,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     # 리셋해버려서 5분 하드 리밋이 영원히 도달 못 하는 결함이 있었음(상세는 아래 해당 분기 주석 참고).
     last_blind_poke_time = 0
     
-    global need_heal, came_from_chest
+    global need_heal, came_from_chest, DEATH_RETURN_PENDING
     need_heal = False
     came_from_chest = False
     low_threshold_active_until = 0.0
@@ -3731,7 +3738,13 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                         heal_futile_count = 0
                     if danger_px >= DANGER_HP_PIXEL_LIMIT:
                         dead_slots = find_dead_slots(img_np, t_stat_dead)
-                        if dead_slots:
+                        if dead_slots and len(dead_slots) <= ACCEPTED_DEAD_COUNT:
+                            # 🆕 [2026-10-06] 여관에 다녀와도 안 살아난 사망자(사령탑이 DEAD_MEMBER_POLICY=2로 받아들임) - 회군하지 않는다.
+                            print(f"💀 [사망 확인] {dead_slots}번 슬롯 사망 - 이미 받아들인 사망자({ACCEPTED_DEAD_COUNT}명)라 회군하지 않고 "
+                                  "빈사 감지를 억제한 채 주회를 계속합니다(DEAD_MEMBER_POLICY=2).")
+                            death_confirmed_and_handled = True
+                        elif dead_slots:
+                            DEATH_RETURN_PENDING = True
                             print(f"💀 [사망 확인] {dead_slots}번 슬롯에서 사망(해골) 아이콘 감지 - 힐로는 해결되지 않는 상태입니다. "
                                   f"이후 이 파티 상태에서는 빈사 감지를 억제하고 주회를 계속합니다.")
                             death_confirmed_and_handled = True

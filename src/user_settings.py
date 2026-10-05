@@ -139,17 +139,41 @@ def write_new_my_settings(overrides=None, path=None):
         f.write("\n".join(parts) + "\n")
 
 
-def append_missing_settings(path=None, version=None):
-    """my_settings.py 에 없는 설정만 기본값+주석으로 끝에 추가하고, 추가한 이름 목록을 돌려준다."""
+# 🗳️ [2026-10-06] 새 설정이 내 설정 파일에 없을 때 기본값을 그냥 넣지 않고 처음설정이 직접 물어보는 항목(선택형).
+#    새 선택형 설정을 main.py 에 추가하면 여기에도 등록한다. choices 의 첫 값이 기본값과 같아야 한다.
+ASK_ON_NEW_SETTINGS = {
+    "DEAD_MEMBER_POLICY": {
+        "feature": "파티원 사망 후 처리",
+        "explain": [
+            "마을외곽 던전에서 대하켄이 활성화되어 있는 경우 마을로 복귀하면 캐릭터가 부활하니,",
+            "이 설정은 월드맵에서 진입하는 던전과 대하켄이 비활성화된 던전에서 적용됩니다.",
+            "(사망 회군 -> 여관 숙박 뒤에도 사망자가 남아 있을 때 어떻게 할지)",
+        ],
+        "choices": [(1, "사망 시 매크로 마을에서 멈춤 (기본값)"),
+                    (2, "사망한 캐릭터와 함께 매크로 계속 진행")],
+    },
+}
+
+
+def _with_value(entry, name, value):
+    if value is None or value == entry["value"]:
+        return entry["chunk"]
+    return _replace_value_in_chunk(entry["chunk"], name, value)
+
+
+def append_missing_settings(path=None, version=None, chooser=None):
+    """my_settings.py 에 없는 설정만 끝에 추가하고, 추가한 이름 목록을 돌려준다.
+    chooser(name, entry) 가 값을 돌려주면 그 값으로(ASK_ON_NEW_SETTINGS 항목을 처음설정이 물어볼 때), None 이면 기본값."""
     path = path or MY_SETTINGS
     have = set(load_settings_file(path).keys())
     missing = [(n, e) for n, e in default_setting_entries().items() if n not in have]
     if missing:
         stamp = datetime.datetime.now().strftime("%Y-%m-%d")
+        chunks = [_with_value(e, n, chooser(n, e) if chooser else None) for n, e in missing]
         with open(path, "a", encoding="utf-8") as f:
             f.write(f"\n# ===== [업데이트로 추가된 설정 - v{version or '?'} · {stamp}] 기본값입니다. 필요하면 고치세요 =====\n")
-            for _, e in missing:
-                f.write(e["chunk"] + "\n")
+            for chunk in chunks:
+                f.write(chunk + "\n")
     return [n for n, _ in missing]
 
 

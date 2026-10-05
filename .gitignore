@@ -42,6 +42,7 @@ reboot_mumu_on_start.flag
 aim_calibration.json
 chest_thief_ref.png
 chest_thief_ref.json
+formation_ref/
 mumu_last_port.txt
 my_settings.py
 my_settings_*.py

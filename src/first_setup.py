@@ -165,6 +165,30 @@ def step_ffmpeg():
             return False
 
 
+def ask_new_setting(name, entry):
+    """구형 내 설정에 없는 새 선택형 설정(us.ASK_ON_NEW_SETTINGS)을 사용자에게 묻는다. 등록 안 된 설정은 None(기본값)."""
+    q = us.ASK_ON_NEW_SETTINGS.get(name)
+    if not q:
+        return None
+    print()
+    print(f"  🗳️ 구형 글로벌 설정에 새로 추가된 [{q['feature']}] 기능의 설정({name})이 없습니다. 어떻게 하시겠습니까?")
+    for t in q["explain"]:
+        print(f"     {t}")
+    for v, label in q["choices"]:
+        print(f"       {v}. {label}")
+    valid = {str(v): v for v, _ in q["choices"]}
+    while True:
+        try:
+            ans = input(f"  번호 입력 (그냥 엔터 = {entry['value']}): ").strip()
+        except EOFError:
+            ans = ""
+        if not ans:
+            return entry["value"]
+        if ans in valid:
+            return valid[ans]
+        print("  ❌ 목록에 있는 번호를 넣어 주세요.")
+
+
 def step_settings(version):
     line()
     print("[3단계] 내 설정 파일(my_settings.py)을 준비합니다.")
@@ -175,7 +199,7 @@ def step_settings(version):
             print(f"  ❌ my_settings.py 에 문법 오류가 있어 읽을 수 없습니다: {e}")
             print("     해결 방법: 노트패드++ 로 열어 오류 줄을 고치거나, 파일 이름을 바꿔 두고 처음설정을 다시 실행하면 새로 만듭니다.")
             return False, []
-        added = us.append_missing_settings(us.MY_SETTINGS, version)
+        added = us.append_missing_settings(us.MY_SETTINGS, version, chooser=ask_new_setting)
         if added:
             print(f"  🆕 이번 버전에서 새로 생긴 설정 {len(added)}개를 my_settings.py 끝에 기본값으로 추가했습니다:")
             for n in added:
@@ -211,12 +235,19 @@ def step_settings(version):
         except Exception as e:
             print(f"  ❌ 옛 설정을 읽지 못했습니다({e}). 다른 경로를 넣거나 엔터로 기본값을 쓰세요.")
     defaults = us.default_setting_entries()
+    migrated = set(overrides)
+    if overrides:   # 옛 설정을 옮길 때, 옛 설정에 없던 새 선택형 설정은 직접 묻는다
+        for k in defaults:
+            if k not in overrides:
+                v = ask_new_setting(k, defaults[k])
+                if v is not None:
+                    overrides[k] = v
     us.write_new_my_settings({k: v for k, v in overrides.items() if k in defaults})
     changed = [k for k, v in overrides.items() if k in defaults and defaults[k]["value"] != v]
     print(f"  ✅ my_settings.py 를 만들었습니다(기본값과 다른 옮긴 값 {len(changed)}개).")
     for k in changed:
         print(f"       - {k} = {overrides[k]!r}")
-    new_keys = [k for k in defaults if overrides and k not in overrides]
+    new_keys = [k for k in defaults if migrated and k not in migrated]
     if new_keys:
         print(f"  🆕 이전 버전에 없던 새 설정 {len(new_keys)}개는 기본값으로 넣었습니다: {', '.join(new_keys)}")
     return True, new_keys

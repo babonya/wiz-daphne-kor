@@ -48,6 +48,13 @@ HEALER_SLOT = 5                         # 💊 [힐러 캐릭터 슬롯 번호] 
 MASKED_ADVENTURER_SLOT = 3              # 👤 [주인공 캐릭터 슬롯 번호] 1번~6번 슬롯 중 주인공의 배치 슬롯 (2번 사망 시 주인공이 앞으로 밀릴 수 있음)
 CHEST_OPENER_SLOT = 6                   # 🔑 [상자 해제 따개 슬롯] 1번~6번 슬롯 중 상자 따기(함정 해제)를 기본 담당할 캐릭터 슬롯
 
+# 💀 [파티원 사망 후 처리] (2026-10-06) 사망 회군 -> 마을 -> 여관 숙박 뒤 던전선택 화면 파티바에 사망자가 남아 있을 때
+#    마을외곽 던전에서 대하켄이 활성화돼 있으면 마을 복귀 때 캐릭터가 부활하므로, 이 설정은 월드맵에서 들어가는 던전과
+#    대하켄이 비활성화된 마을외곽 던전에만 적용된다. 부활한 경우는 아래 FORMATION_RESTORE 로 대열만 원래대로 되돌린다.
+DEAD_MEMBER_POLICY = 1                  # 1: 사망자가 남아 있으면 마을(던전선택 화면)에서 매크로 멈춤 / 2: 사망한 캐릭터와 함께 계속 진행
+FORMATION_RESTORE = 1                   # 🔀 [대열 원복] 사망으로 밀린 대열을 마을외곽 던전선택 화면에서 순서변경(드래그)으로 원래대로 (0: Off, 1: On)
+                                        #    기준 대열은 매크로를 직접 켠 뒤 처음 본 "사망자 없는" 마을외곽 파티바로 자동 저장(formation_ref/)
+
 # 🎯 [상자 미니게임 조준 영점 보정] (매크로박스님의 상자 조준법 - ffmpeg 설치 필수, README 참고)
 #    PC마다 탭이 먹히는 지연이 달라 "막대가 탭 후 얼마나 더 미끄러지는지"가 다르다. 영점이 안 맞으면 빗나간다.
 CHEST_AIM_CALIBRATION = "auto"          # "auto"     = 기본. 쏠 때마다 실측을 aim_calibration.json에 쌓아 10발부터 이 PC에 자동으로 맞춤
@@ -166,6 +173,7 @@ USER_SETTINGS_MESSAGES = user_settings.apply_user_settings(globals(), SETTINGS_P
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
 # - 현재 버전: 1.22.3
+#   (미릴리즈): 💀🔀 사망 후 처리(ROADMAP 0-B) - 사망 회군이면 여관 강제 -> 던전선택 파티바에서 사망자 확인(DEAD_MEMBER_POLICY 1=멈춤/2=계속) -> 부활했으면 마을외곽에서 대열 원복(FORMATION_RESTORE, party_formation.py, 드래그 실기 미검증).
 #   (미릴리즈): 🛡️ 앱 기동 복구 루프 heartbeat(Watchdog 오발동 방지) + restart_process 중복 호출 방지(재시작 이중 집계로 상한 조기 도달 방지).
 #   1.22.3: 🔎 유령성 던전선택 층 버튼(2nd~5th)이 콜라보 종료 새 배경에서 인식 실패하던 문제 패치 - 기존 패스 실패 시 화면·도장을 같은 문턱(120)으로 재이진화(find_and_click_template_rebin, 0.92). 실기 테스트 전.
 #   1.22.2: 급한 패치(실기 테스트 전) - 🏠 백아 등 힐링 중 힐러방을 마을 여관으로 오인해 같은 자리만 누르던 문제 + 🔎 유령성 던전선택창 인식 오류(콜라보 종료 배경 변경) + 💀 상자 따개 사망 대응.
@@ -939,6 +947,7 @@ from mumu_display_check import check_display_configuration
 import dungeon_bot
 import inn_manager
 import chest_opener
+import party_formation
 # 🎯 [2026-09-28] 상자 조준 영점 보정 적용(dungeon_bot 도 같은 chest_opener 모듈 객체를 쓰므로 여기서 한 번이면 된다)
 chest_opener.set_aim_calibration(CHEST_AIM_CALIBRATION, CHEST_AIM_MANUAL_GLIDE_PX,
                                  CHEST_AIM_MANUAL_LATENCY_MS, CHEST_AIM_MANUAL_JITTER_MS)
@@ -2267,6 +2276,82 @@ def start_grand_orchestrator():
     heavysnow_resupply_attempts = 0     # 🆕 후처리가 막혔을 때 주회 자체가 멈추지 않도록 하는 포기 카운터
     heavysnow_force_inn_this_cycle = False  # 🆕 [2026-09-08] inn_visit_loop_interval 조건으로 이번 주회만 여관 강제
 
+    # 💀🔀 [2026-10-06 ROADMAP 0-B] 사망 회군 -> 여관 -> 던전선택 화면에서 사망자/대열 확인
+    death_inn_needed = False          # 던전에서 새 사망 확인(또는 던전선택에서 사망자 발견) -> 재진입 전에 여관부터
+    inn_done_after_death = False      # 이번 실행에서 (마지막 사망 이후) 여관 숙박을 마쳤는가 - 그 뒤에도 사망자면 DEAD_MEMBER_POLICY 적용
+    formation_ref_checked = False     # 직접 시작 후 첫 기준 대열 확인을 했는가(party_formation.check_reference)
+    formation_tried_this_visit = False  # 이번 던전선택 방문에서 대열 원복을 이미 시도했는가(실패해도 같은 방문에서 반복하지 않음)
+
+    def consume_death_return():
+        """start_main_macro() 가 끝난 직후 호출(3곳 공통). 던전이 사망으로 회군했으면 여관을 강제한다."""
+        nonlocal death_inn_needed, inn_done_after_death, heavysnow_force_inn_this_cycle, is_fully_healed, formation_tried_this_visit
+        formation_tried_this_visit = False
+        if not dungeon_bot.DEATH_RETURN_PENDING:
+            return
+        dungeon_bot.DEATH_RETURN_PENDING = False
+        death_inn_needed = True
+        inn_done_after_death = False
+        is_fully_healed = False
+        if DUNGEON_NAME == "대설지대" and heavysnow_resupply_pending:
+            heavysnow_force_inn_this_cycle = True   # items_only 라도 이번엔 마을외곽 후처리에서 여관으로
+        print("💀🏠 [사망 회군] 던전에서 사망을 확인하고 돌아왔습니다 - 재진입 전에 여관을 들릅니다(마을 복귀 부활 + 숙박 후 사망자 확인).")
+
+    def on_inn_done():
+        nonlocal death_inn_needed, inn_done_after_death
+        if death_inn_needed:
+            print("💀🏨 [사망 회군] 여관 숙박 완료 - 던전선택 화면에서 사망자/대열을 확인합니다.")
+        death_inn_needed = False
+        inn_done_after_death = True
+
+    def stop_macro_for_dead(dead):
+        print("\n==========================================================")
+        print(f"🛑 [사망자 남음] 여관 숙박 뒤에도 {dead}번 슬롯 캐릭터가 사망 상태입니다(월드맵 던전/대하켄 비활성 던전은 마을 복귀로 부활하지 않음).")
+        print("   DEAD_MEMBER_POLICY=1(사망 시 마을에서 멈춤) 설정이라 매크로를 종료합니다. 뮤뮤 화면은 그대로 두었습니다.")
+        print("   부활시킨 뒤 배치파일로 다시 켜 주세요. 사망자와 계속 돌리려면 my_settings.py 에서 DEAD_MEMBER_POLICY = 2.")
+        print("==========================================================")
+        try:
+            take_screencap_backup(device, prefix="dead_stop")
+        except Exception:
+            pass
+        try:
+            sys.stdout.flush()
+        except Exception:
+            pass
+        os._exit(6)
+
+    def party_check_before_entry(img_np, outskirts):
+        """던전 재진입 직전 파티바 확인. "enter"=진입 / "inn"=여관부터(재진입 보류) / "recheck"=대열을 바꿨으니 화면 다시 보기.
+        사망자가 남아 있고 DEAD_MEMBER_POLICY=1 이면 여기서 매크로를 종료한다."""
+        nonlocal death_inn_needed, is_fully_healed, formation_ref_checked, formation_tried_this_visit
+        if death_inn_needed:
+            return "inn"
+        dead = party_formation.dead_slots(img_np)
+        if dead:
+            if not inn_done_after_death:
+                print(f"💀 [던전선택 파티 확인] {dead}번 슬롯 사망 - 아직 여관을 안 들렀으니 여관부터 갑니다.")
+                death_inn_needed = True
+                is_fully_healed = False
+                return "inn"
+            if DEAD_MEMBER_POLICY == 2:
+                if dungeon_bot.ACCEPTED_DEAD_COUNT != len(dead):
+                    print(f"💀▶️ [던전선택 파티 확인] 여관 뒤에도 {dead}번 슬롯 사망 - DEAD_MEMBER_POLICY=2: 사망자와 함께 계속 진행합니다"
+                          "(던전에서 이 인원 이하로만 죽어 있으면 회군하지 않음).")
+                dungeon_bot.ACCEPTED_DEAD_COUNT = len(dead)
+                return "enter"
+            stop_macro_for_dead(dead)
+        dungeon_bot.ACCEPTED_DEAD_COUNT = 0
+        if outskirts and FORMATION_RESTORE and not formation_tried_this_visit:
+            refs = party_formation.check_reference(img_np, chest_opener._FRESH_START and not formation_ref_checked)
+            formation_ref_checked = True
+            if refs is not None:
+                pos = party_formation.current_positions(img_np, refs)
+                if pos is not None and any(pos[k] != k for k in pos):
+                    formation_tried_this_visit = True
+                    party_formation.restore_formation(
+                        device, lambda: decode_screen_bytes(capture_screen_bytes(device)), refs)
+                    return "recheck"
+        return "enter"
+
     def mark_heavysnow_resupply_pending():
         """대설지대 던전 1회차가 끝났을 때 마을외곽 후처리(인벤정리/여관)를 예약한다.
 
@@ -2719,6 +2804,7 @@ def start_grand_orchestrator():
                     is_fully_healed = True
                     dungeon_run_count = 0
                     need_pickaxe_refill = False
+                    on_inn_done()
                 
                 last_action_time = time.time()
                 continue
@@ -2747,6 +2833,7 @@ def start_grand_orchestrator():
                     else: 
                         last_action_time = time.time()
                     mark_heavysnow_resupply_pending()
+                    consume_death_return()
                 except Exception as bot_err:
                     restart_process(f"던전 내부 동작 중 ADB 통신 치명적 예외 발생: {bot_err}")
                 continue
@@ -2813,6 +2900,8 @@ def start_grand_orchestrator():
                 should_reenter = not need_pickaxe_refill
             else:
                 should_reenter = (LIMIT_DUNGEON_LOOPS == 0) or (dungeon_run_count < LIMIT_DUNGEON_LOOPS)
+            if should_reenter and party_check_before_entry(img_np, outskirts=False) != "enter":
+                should_reenter = False   # 💀 사망 회군 -> 여관부터(아래 else: 세계지도로 나가 마을행)
 
             if should_reenter:
                 click_success = False
@@ -2890,6 +2979,7 @@ def start_grand_orchestrator():
                         clear_restart_counter()
                         is_fully_healed = False
                         mark_heavysnow_resupply_pending()
+                        consume_death_return()
                     except Exception as bot_err:
                         restart_process(f"던전 진입 시퀀스 중 ADB 통신 치명적 예외 발생: {bot_err}")
             else:
@@ -2997,6 +3087,14 @@ def start_grand_orchestrator():
             # 25회 시도 내에 못 끝나 포기하는 예외 상황 등 대비로 여기서도 한 번 더 확인한다 - 한도
             # 도달 상태면 재진입 대신 "마을로 돌아가기"를 눌러 여관행을 다시 시도한다.
             should_reenter = (LIMIT_DUNGEON_LOOPS == 0) or (dungeon_run_count < LIMIT_DUNGEON_LOOPS)
+            if should_reenter:
+                # 💀🔀 [2026-10-06] 재진입 직전 파티바 확인: 사망자 -> 여관부터/정책 적용, 대열이 섞였으면 원복
+                pc = party_check_before_entry(img_np, outskirts=True)
+                if pc == "recheck":
+                    last_action_time = time.time()
+                    continue
+                if pc == "inn":
+                    should_reenter = False
             if not should_reenter:
                 if find_and_click_template(device, img_np, t_back_to_village, 0.70):
                     print("🏠 [마을외곽] 주회 한도 도달 상태 - 재진입 대신 '마을로 돌아가기' 터치.")
@@ -3025,7 +3123,7 @@ def start_grand_orchestrator():
                 last_logged_status = "HEAVYSNOW_ROUTE_SEL"
                 print(f"🚪 [대설지대 경로선택 도달] '{DUNGEON_FLOOR_NAME}' 경로 목록 확인.")
 
-            should_reenter = (LIMIT_DUNGEON_LOOPS == 0) or (dungeon_run_count < LIMIT_DUNGEON_LOOPS)
+            should_reenter = ((LIMIT_DUNGEON_LOOPS == 0) or (dungeon_run_count < LIMIT_DUNGEON_LOOPS)) and not death_inn_needed
             if not should_reenter:
                 print("      ⚠️ [주회 한도 도달] 대설지대 재진입을 보류하고 뒤로가기로 마을외곽으로 복귀합니다.")
                 device.shell("input keyevent 4")
@@ -3064,6 +3162,7 @@ def start_grand_orchestrator():
                     clear_restart_counter()
                     is_fully_healed = False
                     mark_heavysnow_resupply_pending()
+                    consume_death_return()
                 except Exception as bot_err:
                     restart_process(f"대설지대 진입 시퀀스 중 ADB 통신 치명적 예외 발생: {bot_err}")
             else:
@@ -3088,6 +3187,8 @@ def start_grand_orchestrator():
                 should_go_town = need_pickaxe_refill
             else:
                 should_go_town = (dungeon_run_count >= LIMIT_DUNGEON_LOOPS and not is_fully_healed)
+            if death_inn_needed:
+                should_go_town = True   # 💀 [2026-10-06] 사망 회군 -> 여관부터
 
             # 🚨 [2026-09-09 실전 확인] 예전엔 이 스와이프 탐색이 is_ffxi_worldmap(유령성/노던할로우 목표일
             # 때만)로 잠겨 있었다. 그런데 이 스와이프 방향/좌표 자체는 유령성 전용이 아니라 지도 전체를
@@ -3256,6 +3357,7 @@ def start_grand_orchestrator():
             is_fully_healed = True
             dungeon_run_count = 0
             need_pickaxe_refill = False
+            on_inn_done()
             clear_restart_counter()
             last_action_time = time.time()
             time.sleep(1.0)

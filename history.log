@@ -3,6 +3,21 @@
 =============================================================================
 
 [미릴리즈 - 다음 버전에 포함]
+- 내용(💀🔀 사망 후 처리 + 대열 원복 - ROADMAP 0-B, 2026-10-06):
+  이전=던전에서 사망 확인 시 TRIGGER_EXIT로 마을 회군만 하고 사령탑은 사망 회군인지 몰랐다(무한 주회면 여관을 안 들르고 곧장 재진입,
+  대설지대 items_only도 여관 안 감). 부활해도 섞인 대열이 그대로라 HEALER/MASKED/CHEST_OPENER 슬롯 설정이 엉뚱한 캐릭터를 가리켰다.
+  이후=(1) dungeon_bot 사망 확인 -> DEATH_RETURN_PENDING -> 사령탑 consume_death_return()이 여관 강제(death_inn_needed: 던전선택/마을외곽/
+  경로선택 재진입 보류, 세계지도 마을행, 대설지대 마을외곽 후처리 inn). (2) 여관 숙박(on_inn_done) 뒤 재진입 직전 party_check_before_entry():
+  파티바 사망자(이름 줄 주황 글자, party_formation.dead_slots)가 남아 있으면 DEAD_MEMBER_POLICY 1=로그+스샷(dead_stop) 후 종료코드 6,
+  2=그 인원을 dungeon_bot.ACCEPTED_DEAD_COUNT로 받아들여 계속(던전에서 그 인원 이하 사망이면 회군 안 하고 빈사 감지만 억제).
+  여관을 아직 안 들렀는데 사망자가 보이면(재시작 등으로 플래그 유실) 여관부터. (3) 사망자 없고 마을외곽이면 FORMATION_RESTORE: 기준 대열
+  (formation_ref/slot1~6.png 이름 크롭, 직접 시작 후 첫 '사망자 없는' 마을외곽에서 저장/다르면 재저장)과 비교해 섞였으면 순서변경 버튼을 켜고
+  카드를 끌어 원복(motionevent 꾹누르기 -> draganddrop -> 긴 swipe 순, 매번 재캡처 검증, 방문당 1회 시도, 실패해도 그대로 진행).
+  (4) 처음설정: 구형 my_settings.py에 없는 선택형 새 설정(user_settings.ASK_ON_NEW_SETTINGS)은 기본값 대신 번호로 물어봄.
+  실측: 카드 격자 x 45/499/954, y 1971/2259, 437x272(필드 HUD와 같은 자리). 사망 주황 글자 432~638px vs 생존 0(마을외곽/백아/유령성/
+  루크나리아/필드 11장). 이름 대조 같은 캐릭 0.94~1.00 vs 다른 캐릭 최고 0.38. 순서변경 버튼 노랑>무채색=켜짐(루크나리아 모래 배경 오판 없음).
+  미검증: 드래그 입력이 실제로 먹는지(라이브 미실험), 월드맵 던전선택 화면에서의 사망자 표시(스샷 없음, 생존 화면만 확인), 대하켄 부활 흐름 실기.
+  적용 파일: src/party_formation.py(신규), src/main.py, src/dungeon_bot.py, src/user_settings.py, src/first_setup.py, README.md, .gitignore(formation_ref/).
 - 내용(🧬 따개 교체 자동 반영 - ROADMAP 00-A, 2026-10-05): 이전=chest_thief_ref 기준이 있으면 유지(옛 따개가 파티에서 빠졌을 때만 재저장)라,
   슬롯 번호는 그대로 두고 그 칸 캐릭터를 바꾸면 옛 따개를 계속 추적(우회: 파일 삭제). 이후=사람이 .bat(원격 시작 포함)으로 켠 프로세스
   (restart_counter.txt 없음/0 = 로그 파일명 start 와 같은 기준)의 첫 '누가 열 거야?' 창에서, 따개 칸이 생존·사망자 없음·서명이 기준과 0.80 미만이면
