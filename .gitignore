@@ -40,6 +40,8 @@ combat_strategy.json
 reboot_mumu_on_start.flag
 상자조준 테스트.bat
 aim_calibration.json
+chest_thief_ref.png
+chest_thief_ref.json
 mumu_last_port.txt
 my_settings.py
 my_settings_*.py

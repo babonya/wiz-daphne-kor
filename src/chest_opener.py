@@ -3,6 +3,7 @@
 # - 현재 버전: 1.16.0
 # - 최근 수정일: 2026-07-29 08:05
 # - 수정 기록:
+#   (미릴리즈): 따개 교체 자동 반영 - 직접 시작(.bat) 후 첫 선택창에서 따개 칸 캐릭터가 기준과 다르고 사망자가 없으면 기준 재저장(10/05).
 #   1.22.2: 사망 카드 판별(slot_is_dead, dead_skull.png) + 따개 기준 서명 추적(chest_thief_ref) + 선택 순서 따개->주인공->첫 생존자, 전원 사망이면 BACK(10/04).
 #   1.22.2: _ffmpeg_path() 탐색 보강 - which/Links 에 더해 WinGet Packages\Gyan.FFmpeg* glob(PATH 갱신 전 콘솔의 매크로도 ffmpeg 를 찾게).
 #   1.22.0 (2026-09-28): 🎯 상자 미니게임 "예측 조준" - 매크로박스님이 v1.21.14를 바탕으로 만든 조준 버전을
@@ -267,6 +268,24 @@ _THIEF_MARGIN_PX = 6
 _THIEF_REF_PNG = os.path.join(os.path.dirname(os.path.abspath("aim_calibration.json")), "chest_thief_ref.png")
 _THIEF_REF_JSON = os.path.join(os.path.dirname(os.path.abspath("aim_calibration.json")), "chest_thief_ref.json")
 
+def _read_fresh_start():
+    """ 사람이 .bat(원격 시작 포함)으로 켠 프로세스인가. .bat이 restart_counter.txt를 지우고, 자체 재시작은 지우기 전에
+        1 이상을 써 두므로 '없음/0' = 직접 시작(로그 파일명 start 와 같은 기준 - main.init_main_logger). 못 읽으면 False(안전). """
+    try:
+        p = os.path.abspath("restart_counter.txt")
+        if not os.path.exists(p):
+            return True
+        with open(p, "r", encoding="utf-8") as f:
+            return int(f.read().strip() or 0) == 0
+    except Exception:
+        return False
+
+# 🆕 [2026-10-05 ROADMAP 00-A] 따개 교체 자동 반영은 '직접 시작한 프로세스의 첫 캐릭터 선택창'에서만 한다.
+#    파티를 바꾸는 건 사용자가 매크로를 끄고 직접 하고 다시 켤 때, 사망으로 대열이 섞이는 건 주행 중(자체 재시작 포함) -
+#    부활해도 섞인 대열은 그대로 남아서(사용자 확인) 주행 중엔 '따개 칸에 다른 캐릭터'만으로 교체/사망을 구분할 수 없다.
+_FRESH_START = _read_fresh_start()
+_fresh_ref_checked = False
+
 def _card_signature(img_np, slot):
     """ 카드 상단 서명(uint8, 128 중심). 실패 시 None """
     try:
@@ -342,8 +361,12 @@ def find_thief_slot(img_np, chest_opener_slot):
 
 def _thief_ref_update(img_np, chest_opener_slot, dead_map, found_slot):
     """ 따개 슬롯이 생존일 때만: 기준이 없으면 저장. 있으면 유지(일치하든 아니든).
-        단 어느 슬롯도 기준과 안 맞고(=파티 교체) 사망자가 없을 때만 새로 만든다. """
+        단 어느 슬롯도 기준과 안 맞고(=파티 교체) 사망자가 없을 때만 새로 만든다.
+        + 직접 시작한 프로세스의 첫 선택창에서는, 따개 칸 캐릭터가 기준과 다르고 사망자가 없으면 '사용자가 따개를 바꿈'으로 보고 새로 저장. """
+    global _fresh_ref_checked
     try:
+        fresh_first = _FRESH_START and not _fresh_ref_checked
+        _fresh_ref_checked = True  # 첫 선택창 한 번만 본다(따개 칸이 사망이어도 소모 - 대열이 섞였을 수 있음)
         if dead_map.get(chest_opener_slot, True):
             return
         sig = _card_signature(img_np, chest_opener_slot)
@@ -351,6 +374,10 @@ def _thief_ref_update(img_np, chest_opener_slot, dead_map, found_slot):
             return
         ref = _thief_ref_load(chest_opener_slot)
         if ref is None:
+            _thief_ref_save(sig, chest_opener_slot)
+            return
+        if fresh_first and not any(dead_map.values()) and _sig_score(sig, ref) < THIEF_SIG_TH:
+            print(f"🧬 [chest_opener] 직접 시작 후 첫 상자: 따개 칸({chest_opener_slot}번) 캐릭터가 저장된 기준과 달라 따개를 바꾼 것으로 보고 새로 저장합니다.")
             _thief_ref_save(sig, chest_opener_slot)
             return
         if found_slot is not None:
