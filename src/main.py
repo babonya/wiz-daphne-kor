@@ -63,6 +63,8 @@ CHEST_AIM_CALIBRATION = "auto"          # "auto"     = 기본. 쏠 때마다 실
                                         # "manual"   = 아래 세 값을 직접 입력 (로그의 "📏 활공 실측" 줄을 보고 판단)
                                         # "none"     = 조준 끔. 예전처럼 해제 버튼 무지성 연타(횟수 제한 없음, ffmpeg 불필요)
                                         #              - 따개 스펙이 높아 노란 칸이 넓으면 이쪽이 더 나을 수 있음
+                                        #              - ⚠️ 저사양 PC: 상자 미니게임에서 ffmpeg 녹화를 시작하며 PC가 버벅이면(랙) 조준이
+                                        #                작동하지 않습니다. 상자 열 때 렉이 생기면 "none"으로 꺼 주세요(2026-10 사용자 제보).
 CHEST_AIM_MANUAL_GLIDE_PX = 86.0        #    manual 전용: 고정 활공(px)
 CHEST_AIM_MANUAL_LATENCY_MS = 184.0     #    manual 전용: 속도 비례 지연(ms) - 활공 = GLIDE + LATENCY x |속도|
 CHEST_AIM_MANUAL_JITTER_MS = 28.0       #    manual 전용: 흔들림 바닥값(ms) - 클수록 애매한 판에서 안 쏜다

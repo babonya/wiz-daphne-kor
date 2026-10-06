@@ -3,6 +3,8 @@
 =============================================================================
 
 [미릴리즈 - 다음 버전에 포함]
+- 내용(📝 저사양 PC 상자 조준 안내, 2026-10-06): 사용자 제보 - 느린 PC에서 상자 미니게임 진입 시 ffmpeg 녹화 시작으로 렉이 생겨 조준이 작동 안 함.
+  README(ffmpeg 절 경고 + CHEST_AIM_CALIBRATION 표)와 main.py 설정 주석에 '렉이 생기면 CHEST_AIM_CALIBRATION="none"' 안내 추가(코드 동작 변경 없음).
 - 내용(🧩 프리셋별 프로필 이름 고정 + 내 설정 주석 정리, 2026-10-06 사용자 지시): 이전=settings_profile 은 사용자가 presets.json 에 직접 넣어야 했고
   배포 프리셋에 연결하면 파일 없는 사람에게 ⚠️ 경고. 이후=기본 프리셋 5개에 이름 고정(wolf_1F / ghost_2F_mine / ghost_4F_chest / heavysnow_6F /
   heavysnow_church) - my_settings_<이름>.py 만 만들면 적용, 없으면 ℹ️ 안내만(정상). my_settings 머리말 주석을 예시 중심으로(없는 값은 범용 값 사용,
