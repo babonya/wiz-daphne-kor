@@ -133,23 +133,42 @@ def save_reference(img_np):
         cv2.imencode(".png", _name_gray(img_np, slot))[1].tofile(_ref_path(slot))
 
 
-def current_positions(img_np, refs):
-    """{기준 슬롯: 지금 그 캐릭터가 있는 슬롯}. 한 명이라도 못 찾거나 겹치면 None."""
-    cur = {s: _name_gray(img_np, s) for s in range(1, 7)}
+def current_positions(img_np, refs, dead=None):
+    """{기준 슬롯: 지금 그 캐릭터가 있는 슬롯}. dead(사망 카드 슬롯 목록)를 주면 사망 카드는 대조하지 않고
+    (주황 글자라 생존 때 찍은 기준과 모양이 다름) 생존 카드만 기준에 맞춘다 - 못 찾은 기준 캐릭터 = 사망자로 보고 None.
+    생존 카드가 하나라도 기준에 안 맞거나 겹치거나, 못 찾은 수가 사망자 수와 다르면 None(멤버 교체 등)."""
+    dead = set(dead or [])
+    alive = [s for s in range(1, 7) if s not in dead]
+    cur = {s: _name_gray(img_np, s) for s in alive}
     pos = {}
     for rs in range(1, 7):
-        scores = {cs: _score(cur[cs], refs[rs]) for cs in range(1, 7)}
-        best = max(scores, key=scores.get)
-        if scores[best] < NAME_MATCH_TH:
-            return None
-        pos[rs] = best
-    if len(set(pos.values())) != 6:
+        scores = {cs: _score(cur[cs], refs[rs]) for cs in alive}
+        best = max(scores, key=scores.get) if scores else None
+        pos[rs] = best if best is not None and scores[best] >= NAME_MATCH_TH else None
+    found = [v for v in pos.values() if v is not None]
+    if len(found) != len(alive) or len(set(found)) != len(found):
         return None
     return pos
 
 
+def next_swap(pos, dead=None):
+    """기준 대열로 가기 위한 다음 끌기 (src, dst) 또는 None(더 할 것 없음).
+    사망자는 자기 자리로 옮기지 않고, 끌기 결과 사망자가 전열(1~3번)로 가게 되는 교환도 하지 않는다."""
+    if pos is None:
+        return None
+    dead = set(dead or [])
+    for dst in range(1, 7):
+        src = pos[dst]
+        if src is None or src == dst:
+            continue
+        if dst in dead and src <= 3:   # dst 자리의 사망자가 src(전열)로 밀려 나간다
+            continue
+        return src, dst
+    return None
+
+
 def check_reference(img_np, fresh_start, log=print):
-    """마을외곽 화면에서 기준 대열을 준비한다. 사망자가 없을 때만 저장.
+    """던전선택(월드맵/마을외곽) 화면에서 기준 대열을 준비한다. 사망자가 없을 때만 저장.
     기준이 없으면 저장하고, 매크로를 직접 켠 뒤 첫 확인에서 지금 대열이 기준과 다르면(사용자가 대열/멤버를 바꿈) 새로 저장.
     반환: 기준(dict) 또는 None."""
     refs = load_reference()
@@ -190,15 +209,18 @@ DRAG_METHODS = ("motionevent", "draganddrop", "swipe")
 
 def restore_formation(device, capture, refs, log=print):
     """순서변경 버튼을 켜고 카드를 끌어 기준 대열로 되돌린다. capture() -> 최신 화면(RGB).
-    반환: "ok"(원복 완료/이미 같음) / "fail"(입력이 안 먹거나 판정 불가 - 그대로 진행)."""
+    사망자가 있으면 생존 캐릭터만 되돌린다(사망자는 그대로, 사망자를 전열로 보내는 교환은 안 함).
+    반환: "ok"(원복 완료/할 것 없음) / "fail"(입력이 안 먹거나 판정 불가 - 그대로 진행)."""
     img = capture()
-    pos = current_positions(img, refs)
+    dead = dead_slots(img)
+    pos = current_positions(img, refs, dead)
     if pos is None:
         log("⚠️ [대열 원복] 지금 파티바에서 기준 캐릭터를 다 찾지 못했습니다(멤버 교체?) - 원복하지 않습니다.")
         return "fail"
-    if all(pos[s] == s for s in pos):
+    if next_swap(pos, dead) is None:
         return "ok"
-    log(f"🔀 [대열 원복] 대열이 기준과 다릅니다(기준 슬롯->지금 슬롯 {pos}). 순서변경으로 되돌립니다.")
+    log(f"🔀 [대열 원복] 대열이 기준과 다릅니다(기준 슬롯->지금 슬롯 {pos}" + (f", 사망 {dead}번은 그대로" if dead else "")
+        + "). 순서변경으로 되돌립니다.")
     result = "fail"
     method_i = 0
     for _ in range(12):
@@ -210,22 +232,23 @@ def restore_formation(device, capture, refs, log=print):
             if not reorder_button_on(img):
                 log("⚠️ [대열 원복] 순서변경 버튼이 켜지지 않습니다 - 원복을 중단합니다.")
                 break
-        pos = current_positions(img, refs)
+        dead = dead_slots(img)
+        pos = current_positions(img, refs, dead)
         if pos is None:
             log("⚠️ [대열 원복] 끌기 도중 캐릭터 판정 실패 - 원복을 중단합니다.")
             break
-        wrong = [s for s in range(1, 7) if pos[s] != s]
-        if not wrong:
-            log("✅ [대열 원복] 기준 대열로 되돌렸습니다.")
+        mv = next_swap(pos, dead)
+        if mv is None:
+            log("✅ [대열 원복] 기준 대열로 되돌렸습니다." + (f"(사망 {dead}번은 그대로)" if dead else ""))
             result = "ok"
             break
-        dst = wrong[0]
-        src = pos[dst]
+        src, dst = mv
         method = DRAG_METHODS[method_i]
         log(f"   👉 [대열 원복] {src}번 카드 -> {dst}번 자리로 끌기({method})")
         _drag(device, src, dst, method)
         time.sleep(1.2)
-        after = current_positions(capture(), refs)
+        after_img = capture()
+        after = current_positions(after_img, refs, dead_slots(after_img))
         if after == pos:   # 아무 변화 없음 -> 다음 입력 방식
             method_i += 1
             if method_i >= len(DRAG_METHODS):
@@ -241,3 +264,8 @@ def restore_formation(device, capture, refs, log=print):
         device.shell(f"input tap {REORDER_BTN_CENTER[0]} {REORDER_BTN_CENTER[1]}")
         time.sleep(1.0)
     return result
+
+
+def needs_restore(img_np, refs):
+    dead = dead_slots(img_np)
+    return next_swap(current_positions(img_np, refs, dead), dead) is not None

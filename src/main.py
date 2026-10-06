@@ -53,8 +53,8 @@ CHEST_OPENER_SLOT = 6                   # 🔑 [상자 해제 따개 슬롯] 1�
 #    마을외곽 던전에서 대하켄이 활성화돼 있으면 마을 복귀 때 캐릭터가 부활하므로, 이 설정은 월드맵에서 들어가는 던전과
 #    대하켄이 비활성화된 마을외곽 던전에만 적용된다. 부활한 경우는 아래 FORMATION_RESTORE 로 대열만 원래대로 되돌린다.
 DEAD_MEMBER_POLICY = 1                  # 1: 사망자가 남아 있으면 마을(던전선택 화면)에서 매크로 멈춤 / 2: 사망한 캐릭터와 함께 계속 진행
-FORMATION_RESTORE = 1                   # 🔀 [대열 원복] 사망으로 밀린 대열을 마을외곽 던전선택 화면에서 순서변경(드래그)으로 원래대로 (0: Off, 1: On)
-                                        #    기준 대열은 매크로를 직접 켠 뒤 처음 본 "사망자 없는" 마을외곽 파티바로 자동 저장(formation_ref/)
+FORMATION_RESTORE = 1                   # 🔀 [대열 원복] 사망/포지션 변경 몹으로 섞인 대열을 던전선택 화면(월드맵/마을외곽)에서 순서변경(드래그)으로 원래대로 (0: Off, 1: On)
+                                        #    기준 대열은 매크로를 직접 켠 뒤 처음 본 "사망자 없는" 던전선택 파티바로 자동 저장(formation_ref/). 사망자는 옮기지 않음
 
 # 🎯 [상자 미니게임 조준 영점 보정] (매크로박스님의 상자 조준법 - ffmpeg 설치 필수, README 참고)
 #    PC마다 탭이 먹히는 지연이 달라 "막대가 탭 후 얼마나 더 미끄러지는지"가 다르다. 영점이 안 맞으면 빗나간다.
@@ -176,7 +176,7 @@ USER_SETTINGS_MESSAGES = user_settings.apply_user_settings(globals(), SETTINGS_P
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
 # - 현재 버전: 1.22.3
-#   (미릴리즈): 💀🔀 사망 후 처리(ROADMAP 0-B) - 사망 회군이면 여관 강제 -> 던전선택 파티바에서 사망자 확인(DEAD_MEMBER_POLICY 1=멈춤/2=계속) -> 부활했으면 마을외곽에서 대열 원복(FORMATION_RESTORE, party_formation.py, 드래그 실기 미검증).
+#   (미릴리즈): 💀🔀 사망 후 처리(ROADMAP 0-B) - 사망 회군이면 여관 강제 -> 던전선택 파티바에서 사망자 확인(DEAD_MEMBER_POLICY 1=멈춤/2=계속) -> 부활했으면 던전선택(월드맵/마을외곽)에서 대열 원복(FORMATION_RESTORE, party_formation.py, 사망자 제외 생존 캐릭터만).
 #   (미릴리즈): 🛡️ 앱 기동 복구 루프 heartbeat(Watchdog 오발동 방지) + restart_process 중복 호출 방지(재시작 이중 집계로 상한 조기 도달 방지).
 #   1.22.3: 🔎 유령성 던전선택 층 버튼(2nd~5th)이 콜라보 종료 새 배경에서 인식 실패하던 문제 패치 - 기존 패스 실패 시 화면·도장을 같은 문턱(120)으로 재이진화(find_and_click_template_rebin, 0.92). 실기 테스트 전.
 #   1.22.2: 급한 패치(실기 테스트 전) - 🏠 백아 등 힐링 중 힐러방을 마을 여관으로 오인해 같은 자리만 누르던 문제 + 🔎 유령성 던전선택창 인식 오류(콜라보 종료 배경 변경) + 💀 상자 따개 사망 대응.
@@ -2322,7 +2322,7 @@ def start_grand_orchestrator():
             pass
         os._exit(6)
 
-    def party_check_before_entry(img_np, outskirts):
+    def party_check_before_entry(img_np):
         """던전 재진입 직전 파티바 확인. "enter"=진입 / "inn"=여관부터(재진입 보류) / "recheck"=대열을 바꿨으니 화면 다시 보기.
         사망자가 남아 있고 DEAD_MEMBER_POLICY=1 이면 여기서 매크로를 종료한다."""
         nonlocal death_inn_needed, is_fully_healed, formation_ref_checked, formation_tried_this_visit
@@ -2335,24 +2335,25 @@ def start_grand_orchestrator():
                 death_inn_needed = True
                 is_fully_healed = False
                 return "inn"
-            if DEAD_MEMBER_POLICY == 2:
-                if dungeon_bot.ACCEPTED_DEAD_COUNT != len(dead):
-                    print(f"💀▶️ [던전선택 파티 확인] 여관 뒤에도 {dead}번 슬롯 사망 - DEAD_MEMBER_POLICY=2: 사망자와 함께 계속 진행합니다"
-                          "(던전에서 이 인원 이하로만 죽어 있으면 회군하지 않음).")
-                dungeon_bot.ACCEPTED_DEAD_COUNT = len(dead)
-                return "enter"
-            stop_macro_for_dead(dead)
-        dungeon_bot.ACCEPTED_DEAD_COUNT = 0
-        if outskirts and FORMATION_RESTORE and not formation_tried_this_visit:
+            if DEAD_MEMBER_POLICY != 2:
+                stop_macro_for_dead(dead)
+            if dungeon_bot.ACCEPTED_DEAD_COUNT != len(dead):
+                print(f"💀▶️ [던전선택 파티 확인] 여관 뒤에도 {dead}번 슬롯 사망 - DEAD_MEMBER_POLICY=2: 사망자와 함께 계속 진행합니다"
+                      "(던전에서 이 인원 이하로만 죽어 있으면 회군하지 않음, 대열 원복은 생존 캐릭터만).")
+            dungeon_bot.ACCEPTED_DEAD_COUNT = len(dead)
+        else:
+            dungeon_bot.ACCEPTED_DEAD_COUNT = 0
+        # 🔀 대열 원복 - 월드맵 던전선택/마을외곽 공통(10/06 사용자 지시: 백아에는 포지션을 바꾸는 몹이 있음).
+        #    기준 저장은 사망자 없을 때만, 원복은 사망자를 빼고 생존 캐릭터만(party_formation.next_swap).
+        if FORMATION_RESTORE and not formation_tried_this_visit:
             refs = party_formation.check_reference(img_np, chest_opener._FRESH_START and not formation_ref_checked)
-            formation_ref_checked = True
-            if refs is not None:
-                pos = party_formation.current_positions(img_np, refs)
-                if pos is not None and any(pos[k] != k for k in pos):
-                    formation_tried_this_visit = True
-                    party_formation.restore_formation(
-                        device, lambda: decode_screen_bytes(capture_screen_bytes(device)), refs)
-                    return "recheck"
+            if not dead:
+                formation_ref_checked = True   # 직접 시작 후 '사망자 없는' 첫 확인에서만 기준 재저장 기회를 쓴다
+            if refs is not None and party_formation.needs_restore(img_np, refs):
+                formation_tried_this_visit = True
+                party_formation.restore_formation(
+                    device, lambda: decode_screen_bytes(capture_screen_bytes(device)), refs)
+                return "recheck"
         return "enter"
 
     def mark_heavysnow_resupply_pending():
@@ -2903,8 +2904,13 @@ def start_grand_orchestrator():
                 should_reenter = not need_pickaxe_refill
             else:
                 should_reenter = (LIMIT_DUNGEON_LOOPS == 0) or (dungeon_run_count < LIMIT_DUNGEON_LOOPS)
-            if should_reenter and party_check_before_entry(img_np, outskirts=False) != "enter":
-                should_reenter = False   # 💀 사망 회군 -> 여관부터(아래 else: 세계지도로 나가 마을행)
+            if should_reenter:
+                pc = party_check_before_entry(img_np)
+                if pc == "recheck":   # 🔀 대열을 바꿨으니 화면을 다시 보고 진입
+                    last_action_time = time.time()
+                    continue
+                if pc == "inn":
+                    should_reenter = False   # 💀 사망 회군 -> 여관부터(아래 else: 세계지도로 나가 마을행)
 
             if should_reenter:
                 click_success = False
@@ -3092,7 +3098,7 @@ def start_grand_orchestrator():
             should_reenter = (LIMIT_DUNGEON_LOOPS == 0) or (dungeon_run_count < LIMIT_DUNGEON_LOOPS)
             if should_reenter:
                 # 💀🔀 [2026-10-06] 재진입 직전 파티바 확인: 사망자 -> 여관부터/정책 적용, 대열이 섞였으면 원복
-                pc = party_check_before_entry(img_np, outskirts=True)
+                pc = party_check_before_entry(img_np)
                 if pc == "recheck":
                     last_action_time = time.time()
                     continue
