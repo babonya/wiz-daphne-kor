@@ -33,7 +33,7 @@
     "프리셋 동작 설명 (참고용)": {
       "이스벨크 대설지대 6층 상자파밍": "대설지대에 들어가서 자동전투 모드로 상자파밍을 진행하고, 상자가 없으면 필드맵을 확장해 캠프(우물)에서 캠핑한 뒤 하켄으로 던전선택 화면까지 복귀한다. 복귀 후에는 여관에 들르지 않고(resupply_mode=\"items_only\"), 마을외곽의 '소지품 보충' 버튼으로 인벤정리만 하고 곧바로 재진입한다. ⚠️ 캠핑은 HP/MP만 회복시키고 캐릭터 레벨업은 실제 여관 취침으로만 적용되므로, 이 프리셋 그대로 계속 돌리면 파티 레벨이 올라가지 않는다(inn_visit_loop_interval이 기본값 0=비활성이라 강제 여관 경유도 없음). 레벨업이 필요하면 이 값을 0보다 크게 설정해 N주회마다 한 번 여관을 강제로 경유하게 해야 한다."
     },
-    "settings_profile (내 설정 프로필) - 선택, 모든 던전 공통": "문자열. 넣으면 이 프리셋으로 켤 때 프로젝트 폴더의 my_settings_<이 값>.py 를 my_settings.py 다음에 한 번 더 덮어써서 적용한다(그 파일에는 이 던전에서만 다른 값만 적으면 됨). 예: \"settings_profile\": \"6층\" -> my_settings_6층.py. 없으면 my_settings.py 까지만 적용."
+    "settings_profile (내 설정 프로필) - 선택, 모든 던전 공통": "문자열. 넣으면 이 프리셋으로 켤 때 프로젝트 폴더의 my_settings_<이 값>.py 를 my_settings.py 다음에 한 번 더 덮어써서 적용한다(그 파일에는 이 던전에서만 다른 값만 적으면 됨). 예: 백아1층 프리셋 \"settings_profile\": \"wolf_1F\" -> my_settings_wolf_1F.py. 그 파일이 없으면 my_settings.py 까지만 적용(정상). 기본 프리셋은 전부 이름이 정해져 있다."
   },
   "active_preset": "유령성 2층 채굴",
   "presets": {
@@ -42,19 +42,22 @@
       "dungeon": "백아의 동굴",
       "floor": "백아1층",
       "farming_method": "상자파밍",
-      "return_method": "exit_button"
+      "return_method": "exit_button",
+      "settings_profile": "wolf_1F"
     },
     "유령성 2층 채굴": {
       "town": "노던할로우",
       "dungeon": "북쪽의 유령선",
       "floor": "2nd",
-      "farming_method": "광석파밍"
+      "farming_method": "광석파밍",
+      "settings_profile": "ghost_2F_mine"
     },
     "유령성 4층 상자파밍": {
       "town": "노던할로우",
       "dungeon": "북쪽의 유령선",
       "floor": "3rd",
-      "farming_method": "상자파밍"
+      "farming_method": "상자파밍",
+      "settings_profile": "ghost_4F_chest"
     },
     "이스벨크 대설지대 6층 상자파밍": {
       "town": "이스벨크",
@@ -63,7 +66,8 @@
       "farming_method": "상자파밍",
       "return_method": "camp_then_harken",
       "resupply_mode": "items_only",
-      "inn_visit_loop_interval": 0
+      "inn_visit_loop_interval": 0,
+      "settings_profile": "heavysnow_6F"
     },
     "이스벨크 대설지대 교회구역 상자파밍": {
       "town": "이스벨크",
@@ -72,7 +76,8 @@
       "farming_method": "상자파밍",
       "return_method": "harken_only",
       "resupply_mode": "inn",
-      "inn_visit_loop_interval": 0
+      "inn_visit_loop_interval": 0,
+      "settings_profile": "heavysnow_church"
     }
   }
 }

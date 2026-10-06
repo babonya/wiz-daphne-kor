@@ -6,7 +6,8 @@
 개인 설정이 날아갔다. 이제 main.py의 설정 구역은 "기본값"일 뿐이고, 사용자는 프로젝트 루트의 my_settings.py를 고친다.
   1) main.py 설정 구역(배포 기본값)  ->  2) my_settings.py(내 공통 설정)  ->  3) my_settings_<프로필>.py(그 프리셋에서만 다른 값)
   순서로 덮어쓴다. 2)·3)과 setup_done.json 은 git/릴리즈 zip 에서 빠지므로 업데이트로 절대 덮이지 않는다.
-- 프로필은 presets.json 의 프리셋 항목에 "settings_profile": "이름" 을 넣으면 my_settings_이름.py 를 추가로 읽는다.
+- 프로필은 presets.json 의 프리셋 항목 "settings_profile": "이름" 으로 정한다(기본 프리셋은 전부 이름이 정해져 있음) -> my_settings_이름.py 가
+  있으면 추가로 읽고, 없으면 my_settings.py 까지만(정상).
 - setup_done.json 에는 "처음설정.bat 을 마지막으로 끝낸 버전"이 들어 있다. main.py 의 CURRENT_VERSION 보다 옛날이거나
   없으면(첫 실행·업데이트 직후) 매크로는 시작하지 않고 처음설정을 안내한다.
 """
@@ -119,8 +120,14 @@ HEADER = '''# -*- coding: utf-8 -*-
 #    - 업데이트(새 zip 덮어쓰기)를 해도 이 파일은 바뀌지 않습니다. 개인 설정은 여기서 관리합니다.
 #    - src/main.py 맨 위의 같은 이름 값은 "기본값"일 뿐이라, 거기를 고쳐도 이 파일 값이 우선합니다.
 #    - 업데이트로 새 설정이 생기면 "처음설정.bat"이 이 파일 끝에 기본값으로 자동 추가합니다.
-#    - 특정 던전에서만 값을 바꾸고 싶으면 my_settings_<이름>.py 를 만들고, presets.json 의 그 프리셋에
-#      "settings_profile": "<이름>" 을 넣으세요(그 파일에는 다른 값만 적으면 됩니다). README 참고.
+#    - 특정 던전에서만 값을 바꾸고 싶으면 그 프리셋의 프로필 파일을 만드세요. 프리셋마다 이름이 정해져 있습니다
+#      (src/presets.json 의 "settings_profile"):
+#        ex) 백아1층 프리셋에 "settings_profile": "wolf_1F"  ->  따라서 my_settings_wolf_1F.py
+#        (유령성 2층 채굴 = ghost_2F_mine, 유령성 4층 상자파밍 = ghost_4F_chest,
+#         대설지대 6층 = heavysnow_6F, 대설지대 교회구역 = heavysnow_church)
+#      프로필 파일에 없는 글로벌 설정값은 범용 my_settings.py 의 값을 기본으로 사용합니다.
+#        ex) 마을 회군 기준만 다르게 하고 싶으면 LIMIT_DUNGEON_LOOPS = 2 처럼 그 한 줄만 적어 주세요.
+#      프로필 파일이 없으면 my_settings.py 만 씁니다(정상). README 참고.
 # ==============================================================================
 '''
 
@@ -188,7 +195,7 @@ def apply_user_settings(g, profile=None):
     for label, path in layers:
         if not os.path.exists(path):
             if label != "my_settings.py":
-                msgs.append(f"⚠️ [내 설정] 프로필 파일 {label} 이 없어 공통 설정만 씁니다.")
+                msgs.append(f"ℹ️ [내 설정] 이 프리셋의 프로필 파일 {label} 이 없어 my_settings.py 만 씁니다(정상).")
             continue
         try:
             vals = load_settings_file(path)

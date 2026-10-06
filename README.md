@@ -260,7 +260,7 @@
    - 앱/에뮬레이터 프리징 시 프로세스를 강제 종료하고 콜드 리부트(Cold Boot)를 수행합니다.
    - 재기동 시 인게임 점검, 다운로드, 네트워크 오류, 주의 경고창, 기동 공지 팝업, 가로 화면 이상 상태를 무인으로 자동 돌파하여 다시 정상 순회로 이행합니다.
 5. **내 설정 + 던전(프리셋)마다 다른 설정**: 개인 설정은 `my_settings.py`에 따로 저장돼 업데이트로 덮어써도 남습니다.
-   여기에 더해 `my_settings_<이름>.py`(바꿀 값만 적은 파일)를 만들고 프리셋에 `"settings_profile"`로 연결하면,
+   여기에 더해 프리셋마다 정해진 프로필 파일 `my_settings_<이름>.py`(예: 백아1층 = `my_settings_wolf_1F.py`, 바꿀 값만 적음)를 만들면,
    그 배치파일로 켤 때만 다른 값을 씁니다(예: 6층은 무한 주회, 교회구역은 2전투마다 힐링). 자세한 방법은 아래 "4. 내 설정" 참고.
 
 > [!WARNING]
@@ -452,12 +452,21 @@ pip install opencv-python pillow numpy pure-python-adb
 > `aim_calibration.json`을 지워서** 처음부터 다시 모으게 하세요.
 
 > [!TIP]
-> **던전마다 다른 설정 쓰기 (프리셋별 프로필)**: 예를 들어 6층에서는 무한 주회, 교회구역에서는 힐링을 2전투마다 하고 싶다면
-> 1. 프로젝트 폴더에 `my_settings_6층.py`처럼 **바꾸고 싶은 값만** 적은 파일을 만듭니다(예: `LIMIT_DUNGEON_LOOPS = 0` 한 줄).
-> 2. `src/presets.json`의 해당 프리셋에 `"settings_profile": "6층"`을 추가합니다.
+> **던전마다 다른 설정 쓰기 (프리셋별 프로필)**: 프리셋마다 프로필 이름이 미리 정해져 있습니다(`src/presets.json`의 `"settings_profile"`).
+> 그 이름으로 `my_settings_<이름>.py` 파일을 만들면, 그 프리셋의 배치파일로 켤 때만 추가로 적용됩니다.
 >
-> 그러면 그 배치파일로 켤 때만 `main.py 기본값 -> my_settings.py -> my_settings_6층.py` 순서로 덮어써서 적용됩니다.
-> 같은 던전을 설정만 바꿔 여러 벌 쓰고 싶으면, 프리셋을 하나 더 만들어 다른 프로필을 가리키게 하면 됩니다. 프로필 파일도 업데이트로 덮이지 않습니다.
+> | 프리셋 | `settings_profile` | 만들 파일 |
+> | :--- | :--- | :--- |
+> | 백아1층 파밍 | `wolf_1F` | `my_settings_wolf_1F.py` |
+> | 유령성 2층 채굴 | `ghost_2F_mine` | `my_settings_ghost_2F_mine.py` |
+> | 유령성 4층 상자파밍 | `ghost_4F_chest` | `my_settings_ghost_4F_chest.py` |
+> | 이스벨크 대설지대 6층 상자파밍 | `heavysnow_6F` | `my_settings_heavysnow_6F.py` |
+> | 이스벨크 대설지대 교회구역 상자파밍 | `heavysnow_church` | `my_settings_heavysnow_church.py` |
+>
+> 프로필 파일에 없는 글로벌 설정값은 범용 `my_settings.py`의 값을 기본으로 사용합니다. 예를 들어 백아1층에서만 마을 회군 기준을
+> 다르게 하고 싶으면 `my_settings_wolf_1F.py`에 `LIMIT_DUNGEON_LOOPS = 2` 한 줄만 적으면 됩니다. 프로필 파일이 없으면 `my_settings.py`만 씁니다(정상).
+> 켤 때 로그 맨 위 `🧩 [내 설정] 적용 순서: main.py 기본값 -> my_settings.py -> my_settings_wolf_1F.py`로 실제 적용을 확인할 수 있습니다.
+> 같은 던전을 설정만 바꿔 여러 벌 쓰고 싶으면, 프리셋을 하나 더 만들어 다른 프로필 이름을 넣으면 됩니다. 프로필 파일도 업데이트로 덮이지 않습니다.
 
 > [!NOTE]
 > `ACTIVE_PRESET_NAME`/`TOWN_NAME`/`DUNGEON_NAME`/`DUNGEON_FLOOR_NAME`/`FARMING_METHOD`도 코드에 보이지만, 이는 **`.bat` 파일 없이 `python src/main.py`를 직접 실행할 때만 쓰이는 비상용 로컬 폴백**이라 직접 수정할 필요가 없습니다. 던전 선택은 항상 위 "3. 프리셋 설정"에 안내된 `.bat` 파일로 하세요.

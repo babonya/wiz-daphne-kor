@@ -3,6 +3,11 @@
 =============================================================================
 
 [미릴리즈 - 다음 버전에 포함]
+- 내용(🧩 프리셋별 프로필 이름 고정 + 내 설정 주석 정리, 2026-10-06 사용자 지시): 이전=settings_profile 은 사용자가 presets.json 에 직접 넣어야 했고
+  배포 프리셋에 연결하면 파일 없는 사람에게 ⚠️ 경고. 이후=기본 프리셋 5개에 이름 고정(wolf_1F / ghost_2F_mine / ghost_4F_chest / heavysnow_6F /
+  heavysnow_church) - my_settings_<이름>.py 만 만들면 적용, 없으면 ℹ️ 안내만(정상). my_settings 머리말 주석을 예시 중심으로(없는 값은 범용 값 사용,
+  한 줄만 적으면 됨). LIMIT_DUNGEON_LOOPS 의 개발 경위 주석을 설정 줄 위 0열 주석으로 옮겨 my_settings.py 로 복사되지 않게 함(사용자 파일에서도 제거).
+  적용 파일: src/presets.json, src/user_settings.py, src/main.py, README.md (+ 사용자 my_settings.py 머리말).
 - 내용(💀🔀 사망 후 처리 + 대열 원복 - ROADMAP 0-B, 2026-10-06):
   이전=던전에서 사망 확인 시 TRIGGER_EXIT로 마을 회군만 하고 사령탑은 사망 회군인지 몰랐다(무한 주회면 여관을 안 들르고 곧장 재진입,
   대설지대 items_only도 여관 안 감). 부활해도 섞인 대열이 그대로라 HEALER/MASKED/CHEST_OPENER 슬롯 설정이 엉뚱한 캐릭터를 가리켰다.
