@@ -4,6 +4,7 @@
 # - 최근 수정일: 2026-07-29 08:05
 # - 수정 기록:
 #   (미릴리즈): 따개 교체 자동 반영 - 직접 시작(.bat) 후 첫 선택창에서 따개 칸 캐릭터가 기준과 다르고 사망자가 없으면 기준 재저장(10/05).
+#   (미릴리즈): 따개 기준 파일(chest_thief_ref.png/json)을 formation_ref/ 폴더로 이동(옛 위치 파일 자동 이전, 10/08).
 #   1.22.2: 사망 카드 판별(slot_is_dead, dead_skull.png) + 따개 기준 서명 추적(chest_thief_ref) + 선택 순서 따개->주인공->첫 생존자, 전원 사망이면 BACK(10/04).
 #   1.22.2: _ffmpeg_path() 탐색 보강 - which/Links 에 더해 WinGet Packages\Gyan.FFmpeg* glob(PATH 갱신 전 콘솔의 매크로도 ffmpeg 를 찾게).
 #   1.22.0 (2026-09-28): 🎯 상자 미니게임 "예측 조준" - 매크로박스님이 v1.21.14를 바탕으로 만든 조준 버전을
@@ -265,8 +266,24 @@ def slot_is_dead(img_np, slot):
 THIEF_SIG_TH = 0.80
 THIEF_SIG_MARGIN = 0.10
 _THIEF_MARGIN_PX = 6
-_THIEF_REF_PNG = os.path.join(os.path.dirname(os.path.abspath("aim_calibration.json")), "chest_thief_ref.png")
-_THIEF_REF_JSON = os.path.join(os.path.dirname(os.path.abspath("aim_calibration.json")), "chest_thief_ref.json")
+# 🆕 [2026-10-08 사용자 요청] 따개 기준도 대열 기준(party_formation)과 같은 formation_ref/ 폴더에 둔다(메인 폴더 정리).
+#    예전 위치(메인 폴더)에 파일이 있으면 처음 한 번 옮긴다.
+_REF_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "formation_ref")
+_THIEF_REF_PNG = os.path.join(_REF_DIR, "chest_thief_ref.png")
+_THIEF_REF_JSON = os.path.join(_REF_DIR, "chest_thief_ref.json")
+
+def _migrate_thief_ref():
+    try:
+        old_dir = os.path.dirname(_REF_DIR)
+        for name in ("chest_thief_ref.png", "chest_thief_ref.json"):
+            old, new = os.path.join(old_dir, name), os.path.join(_REF_DIR, name)
+            if os.path.exists(old) and not os.path.exists(new):
+                os.makedirs(_REF_DIR, exist_ok=True)
+                os.replace(old, new)
+    except Exception:
+        pass
+
+_migrate_thief_ref()
 
 def _read_fresh_start():
     """ 사람이 .bat(원격 시작 포함)으로 켠 프로세스인가. .bat이 restart_counter.txt를 지우고, 자체 재시작은 지우기 전에
@@ -329,6 +346,7 @@ def _thief_ref_save(sig, chest_opener_slot):
         ok, buf = cv2.imencode(".png", sig)
         if not ok:
             return
+        os.makedirs(_REF_DIR, exist_ok=True)
         buf.tofile(_THIEF_REF_PNG)
         with open(_THIEF_REF_JSON, "w", encoding="utf-8") as f:
             json.dump({"slot": int(chest_opener_slot)}, f)

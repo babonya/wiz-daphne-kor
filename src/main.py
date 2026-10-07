@@ -176,6 +176,7 @@ USER_SETTINGS_MESSAGES = user_settings.apply_user_settings(globals(), SETTINGS_P
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
 # - 현재 버전: 1.22.3
+#   (미릴리즈): 🧠 멘탈 20 미만 경고 팝업('던전으로', templates/Dungeon_select/mental_ill_goahead.png) 자동 진행.
 #   (미릴리즈): 💀🔀 사망 후 처리(ROADMAP 0-B) - 사망 회군이면 여관 강제 -> 던전선택 파티바에서 사망자 확인(DEAD_MEMBER_POLICY 1=멈춤/2=계속) -> 부활했으면 던전선택(월드맵/마을외곽)에서 대열 원복(FORMATION_RESTORE, party_formation.py, 사망자 제외 생존 캐릭터만).
 #   (미릴리즈): 🛡️ 앱 기동 복구 루프 heartbeat(Watchdog 오발동 방지) + restart_process 중복 호출 방지(재시작 이중 집계로 상한 조기 도달 방지).
 #   1.22.3: 🔎 유령성 던전선택 층 버튼(2nd~5th)이 콜라보 종료 새 배경에서 인식 실패하던 문제 패치 - 기존 패스 실패 시 화면·도장을 같은 문턱(120)으로 재이진화(find_and_click_template_rebin, 0.92). 실기 테스트 전.
@@ -2203,6 +2204,9 @@ def start_grand_orchestrator():
     t_heavysnow_floor = load_template(f"templates/Vill_Isberg/{HEAVYSNOW_FLOOR_FILE_MAP.get(DUNGEON_FLOOR_NAME, 'Heavysnow_6F')}.png")
     t_inven_cleanup_btn = load_template("templates/Dungeon_select/inven_cleanup_btn.png")
     t_inven_cleanup_refill = load_template("templates/Dungeon_select/inven_cleanup_refill.png")
+    # 🆕 [2026-10-08] 멘탈 20 미만 캐릭터가 있으면 던전 선택 직후 "OO의 멘탈이 약해지고 있습니다" 확인 팝업 -> '던전으로'.
+    #    그레이스케일(불투명 팝업 버튼). 실측: 정답 1.000 vs 다른 스샷 616장 최고 0.793 -> 0.90.
+    t_mental_goahead = load_grayscale_template("templates/Dungeon_select/mental_ill_goahead.png")
     t_back_to_village = load_template("templates/Vill_Isberg/back_to_village.png")
 
     # 🚨 [2026-08-18 하켄 메뉴 시작 인식 결함 완치] 매크로를 하켄 메뉴(귀환목록/가호팝업)가 떠 있는 상태에서
@@ -2890,6 +2894,13 @@ def start_grand_orchestrator():
         # 프리셋 전용 도장(t_dungeon_sel)이 안 맞아도 이걸로 "던전선택 화면인데 내 던전이 아니다"를 구분할 수 있다.
         is_any_dungeon_sel = check_grayscale_template_present_in_roi(img_np, t_open_world, 800, 1200, 1480, 1650, 0.85)
 
+        # 🧠 [2026-10-08] 멘탈 약화 경고 팝업이 진입 폴링 밖에서 보일 때(재시작 직후 등)도 '던전으로'로 넘긴다.
+        if find_and_click_grayscale_template(device, img_np, t_mental_goahead, 0.90):
+            print("🧠 [멘탈 약화 경고] 확인 팝업 - '던전으로' 터치.")
+            last_action_time = time.time()
+            time.sleep(2.0)
+            continue
+
         if dungeon_bot.check_dungeon_select_anchor(img_np, t_dungeon_sel, 0.83, _dungeon_sel_src()):
             first_stuck_time_str = ""
             if last_logged_status != "DUNGEON_SEL":
@@ -2966,6 +2977,10 @@ def start_grand_orchestrator():
                             raw_poll = capture_screen_bytes(device)
                             if raw_poll:
                                 img_np_poll = decode_screen_bytes(raw_poll)
+                                if find_and_click_grayscale_template(device, img_np_poll, t_mental_goahead, 0.90):
+                                    print("      🧠 [멘탈 약화 경고] 확인 팝업 - '던전으로' 터치, 필드 안착 대기를 다시 시작합니다.")
+                                    poll_start = time.time()
+                                    continue
                                 if check_field_anchor_present(img_np_poll, t_field, 0.65):
                                     print(f"      ✅ [던전 진입 확인] 필드 안착 확인 (대기 {time.time()-poll_start:.1f}초)")
                                     entered = True
@@ -3153,6 +3168,10 @@ def start_grand_orchestrator():
                         raw_poll = capture_screen_bytes(device)
                         if raw_poll:
                             img_np_poll = decode_screen_bytes(raw_poll)
+                            if find_and_click_grayscale_template(device, img_np_poll, t_mental_goahead, 0.90):
+                                print("      🧠 [멘탈 약화 경고] 확인 팝업 - '던전으로' 터치, 필드 안착 대기를 다시 시작합니다.")
+                                poll_start = time.time()
+                                continue
                             if check_field_anchor_present(img_np_poll, t_field, 0.65):
                                 print(f"      ✅ [던전 진입 확인] 필드 안착 확인 (대기 {time.time()-poll_start:.1f}초)")
                                 entered = True

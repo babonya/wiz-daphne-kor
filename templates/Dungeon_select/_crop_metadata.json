@@ -18,5 +18,15 @@
       "y2": 2339
     },
     "roi_name": "inven_refill_btn"
+  },
+  "mental_ill_goahead": {
+    "source_image": "던전셀렉_포메이션/던전셀렉_멘탈약화경고.png",
+    "roi": {
+      "x1": 776,
+      "y1": 1447,
+      "x2": 1170,
+      "y2": 1572
+    },
+    "roi_name": "mental_warning_go_dungeon_btn"
   }
 }
