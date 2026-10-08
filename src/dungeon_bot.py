@@ -21,6 +21,7 @@ came_from_chest = False
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
 # - 현재 버전: 1.22.3
+#   (미릴리즈): 📦 필드맵 귀환 루틴 3개 루프에 '열다' 체크 -> "chest" 반환, TRIGGER_EXIT 가 공용 상자 경로로 넘김(10/08 상자 화면에서 재시작).
 #   (미릴리즈): 🗺️ 필드맵 탐색 끝 판정 = 가장자리 화살표(FieldMap_edge_arrow_right.png 회전) + 배경 흔들림 맞춤 diff 기준(10/08, 배경 움직임에 속아 몰기 30회).
 #   (미릴리즈): 💀 사망 확인 시 DEATH_RETURN_PENDING(사령탑 여관 강제), ACCEPTED_DEAD_COUNT 이하 사망은 회군 안 함(DEAD_MEMBER_POLICY=2).
 #   1.22.3: 변경 없음(버전 동기화, 층 버튼 재이진화는 main.py)
@@ -2319,7 +2320,8 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
     필드맵을 확장해 캠프/대하켄 아이콘을 찾아 자동이동으로 복귀하는 범용 귀환 루틴.
     return_method: "camp_then_exit_button" | "camp_then_harken" | "harken_only" ("exit_button"은 호출 안 함).
     반환: "returned"(귀환 완료) / "combat"(전투 조우 - 호출부가 메인 루프의 IN_COMBAT으로 넘기고, 전투가
-          끝나면 이 루틴을 처음부터 다시 태운다) / "retry"(자동이동이 멈춰 재개/상자 사다리까지 태웠으나
+          끝나면 이 루틴을 처음부터 다시 태운다) / "chest"(상자 '열다' 화면 - 호출부가 TRIGGER_EXIT를 유지한 채
+          다음 틱의 공용 '열다' 경로로 상자를 열게 한다) / "retry"(자동이동이 멈춰 재개/상자 사다리까지 태웠으나
           여전히 진행이 없음 - 필드맵을 다시 열어 명령을 새로 내려야 함) / "failed"(실패 - 호출부가
           재시도/앱재시작 판단).
 
@@ -2456,6 +2458,11 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
             if check_combat_template_present(img_np, t_combat_in, 0.70) or check_combat_template_present(img_np, t_combat_slow, 0.70):
                 print("⚔️ [필드맵 귀환] 전투 조우 - 메인 루프의 전투 처리로 넘깁니다(전투 종료 후 귀환 재시도).")
                 return "combat"
+            if check_yeolda_present(img_np, t_yeolda, 0.65):
+                # 🚨 [2026-10-09 실전 확인] 상자 최우선 철칙 - 귀환 중 상자 화면을 못 알아보고 커서 대기/확장 탭만 반복하다
+                # 재시작한 사고(10/08 21:22). 상자는 메인 루프 공용 '열다' 경로가 열고, 상자 없음 판정이 나면 귀환을 다시 탄다.
+                print("📦 [필드맵 귀환] 커서 대기 중 상자('열다') 감지 - 메인 루프의 상자 처리로 넘깁니다(상자 처리 후 귀환 재시도).")
+                return "chest"
             # 커서가 안 보이는 정상 사유가 하나 더 있다 - 맵이 이미 확장돼서 압축 미니맵 자체가 사라진
             # 경우. 탭 직후 폴링이 확장을 놓쳤을 때 여기서 건져내지 않으면, 다시 탭하지도(재탭하면 오히려
             # 맵이 닫힘) 확장을 확정하지도 못한 채 워치독까지 대기하게 된다.
@@ -2496,6 +2503,11 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
             if check_combat_template_present(img_np, t_combat_in, 0.70) or check_combat_template_present(img_np, t_combat_slow, 0.70):
                 print("⚔️ [필드맵 귀환] 탭 직후 전투 조우 - 메인 루프의 전투 처리로 넘깁니다(전투 종료 후 귀환 재시도).")
                 return "combat"
+            if check_yeolda_present(img_np, t_yeolda, 0.65):
+                # 🚨 [2026-10-09 실전 확인] 상자 최우선 철칙 - 귀환 중 상자 화면을 못 알아보고 커서 대기/확장 탭만 반복하다
+                # 재시작한 사고(10/08 21:22). 상자는 메인 루프 공용 '열다' 경로가 열고, 상자 없음 판정이 나면 귀환을 다시 탄다.
+                print("📦 [필드맵 귀환] 탭 직후 상자('열다') 감지 - 메인 루프의 상자 처리로 넘깁니다(상자 처리 후 귀환 재시도).")
+                return "chest"
             if _check_fieldmap_expanded(img_np, t_field_expanded, t_fieldmap_close):
                 expanded = True
                 break
@@ -2701,6 +2713,11 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
             # 🚨 여기서도 기다리지 않는다 - 메인 루프의 IN_COMBAT이 전투를 몰아야 자동전투가 깨져도 복구된다.
             print("⚔️ [필드맵 귀환] 자동이동 중 전투 조우 - 메인 루프의 전투 처리로 넘깁니다(전투 종료 후 귀환 재시도).")
             return "combat"
+        if check_yeolda_present(img_np, t_yeolda, 0.65):
+            # 🚨 [2026-10-09 실전 확인] 상자 최우선 철칙 - 귀환 중 상자 화면을 못 알아보고 커서 대기/확장 탭만 반복하다
+            # 재시작한 사고(10/08 21:22). 상자는 메인 루프 공용 '열다' 경로가 열고, 상자 없음 판정이 나면 귀환을 다시 탄다.
+            print("📦 [필드맵 귀환] 자동이동 중 상자('열다') 감지 - 메인 루프의 상자 처리로 넘깁니다(상자 처리 후 귀환 재시도).")
+            return "chest"
 
         # 🚨 [2026-09-09 실측 확정 - 화살표가 도착 판정을 가로채는 결함 완치] 이 체크를 예전엔
         # _handle_dungeon_interrupt() 뒤(아래)에 뒀는데, "생명의 우물이 말라버렸다" 화면은 화살표
@@ -4439,6 +4456,14 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     combat_entry_start_time = time.time()
                     last_empty_shortcut_detected_time = 0
                     last_state_changed_time = time.time()
+                    transition_delay_count = 0
+                    continue
+                if fieldmap_return_result == "chest":
+                    # 🚨 [2026-10-09] 상자 최우선 철칙 - state 를 TRIGGER_EXIT 로 둔 채 continue 하면 다음 틱 공용 전처리의
+                    # '열다' 경로가 상자를 열고(BRANCH_CHECK), 이후 상자 없음 판정이 나면 이 귀환 루틴을 처음부터 다시 탄다.
+                    # 재시도 횟수(fieldmap_return_retry_count)는 쓰지 않는다 - 상자는 실패가 아니라 정상 조우다.
+                    print("📦 [TRIGGER_EXIT] 필드맵 귀환 중 상자 조우 - 다음 틱에 상자를 먼저 엽니다.")
+                    exit_first_start_time = None
                     transition_delay_count = 0
                     continue
                 if fieldmap_return_result == "retry":
