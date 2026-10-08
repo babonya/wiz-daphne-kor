@@ -78,5 +78,15 @@
       "y2": 187
     },
     "roi_name": "[필드맵 제목]경로6 -호반 (남)-"
+  },
+  "FieldMap_edge_arrow_right": {
+    "source_image": "fieldmap_edge_arrow/2026-10-08-2034-003_screenshot.png",
+    "roi": {
+      "x1": 1366,
+      "y1": 1003,
+      "x2": 1438,
+      "y2": 1135
+    },
+    "roi_name": "fieldmap_edge_arrow_right"
   }
 }

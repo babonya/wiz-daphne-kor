@@ -21,6 +21,7 @@ came_from_chest = False
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
 # - 현재 버전: 1.22.3
+#   (미릴리즈): 🗺️ 필드맵 탐색 끝 판정 = 가장자리 화살표(FieldMap_edge_arrow_right.png 회전) + 배경 흔들림 맞춤 diff 기준(10/08, 배경 움직임에 속아 몰기 30회).
 #   (미릴리즈): 💀 사망 확인 시 DEATH_RETURN_PENDING(사령탑 여관 강제), ACCEPTED_DEAD_COUNT 이하 사망은 회군 안 함(DEAD_MEMBER_POLICY=2).
 #   1.22.3: 변경 없음(버전 동기화, 층 버튼 재이진화는 main.py)
 # - 최근 수정일: 2026-09-27
@@ -2212,6 +2213,61 @@ def _fieldmap_view_moved(prev_gray, cur_gray):
     return diff >= FIELDMAP_EDGE_DIFF, diff
 
 
+# 🆕 [2026-10-08 실전 확인] 위 diff 끝 판정이 배경(눈 덮인 나무 등) 움직임에 속는 문제 - 맵이 왼쪽 위 끝에 닿아 있는데도
+#    격자 영역 diff 가 11~17(끝인데 기준 12 초과)로 나와 '몰기 ↑'를 22번, '몰기 ←'를 7번 하다 30회 한도로 하켄을 못 찾음
+#    (logs/2026-10-08-2026-000_start.txt 20:33~20:34, 같은 자리 두 장 비교: 맵 이동 0.8px, 밝은 배경 diff 17.9 / 어두운 통로 5.0
+#    -> 맵 용수철 반동이 아니라 배경 움직임). 10/05~10/07 에도 한 번에 30회 몰기가 3번 있었음.
+#    해법 1(기본): 필드맵은 더 갈 수 있는 방향 가장자리에만 금색 화살표를 띄운다 -> 그 방향 화살표가 없으면 끝.
+#      도장 = 오른쪽 화살표 흰 심(이진화 215), 나머지는 회전/뒤집기. 실측(필드맵 17장 + 증거 스샷 14장): 있음 0.96~1.00 / 없음 최고 0.45.
+#    해법 2(보조): 탐색 시작 때 스와이프 없이 두 번 찍어 배경 흔들림을 재고, 화살표가 있는데 흔들림보다 확실히 덜 움직이면
+#      2번 연속일 때 끝으로 본다(화살표 오탐/다른 던전 UI 대비).
+FIELDMAP_ARROW_BIN_TH = 215
+FIELDMAP_ARROW_TH = 0.80
+FIELDMAP_ARROW_ROIS = {   # 보기 방향 -> (x1, y1, x2, y2)
+    "up": (520, 180, 920, 420), "down": (520, 1900, 920, 2160),
+    "left": (0, 900, 220, 1240), "right": (1220, 900, 1440, 1240),
+}
+_fieldmap_arrow_templates = None
+
+
+def _fieldmap_arrow_tpls():
+    global _fieldmap_arrow_templates
+    if _fieldmap_arrow_templates is None:
+        g = load_grayscale_template("templates/Field/FieldMap_edge_arrow_right.png")
+        if g is None:
+            _fieldmap_arrow_templates = {}
+        else:
+            r = ((g > FIELDMAP_ARROW_BIN_TH) * 255).astype(np.uint8)
+            _fieldmap_arrow_templates = {"right": r, "left": cv2.flip(r, 1),
+                                         "down": cv2.rotate(r, cv2.ROTATE_90_CLOCKWISE),
+                                         "up": cv2.rotate(r, cv2.ROTATE_90_COUNTERCLOCKWISE)}
+    return _fieldmap_arrow_templates
+
+
+def fieldmap_edge_arrows(gray):
+    """필드맵 가장자리 화살표 {보기 방향: 있음?}. 도장이 없으면 None(화살표 판정 못 함 -> diff 판정만)."""
+    tpls = _fieldmap_arrow_tpls()
+    if not tpls or gray is None or gray.shape[0] < 2560 or gray.shape[1] < 1440:
+        return None
+    out = {}
+    for d, (x1, y1, x2, y2) in FIELDMAP_ARROW_ROIS.items():
+        r = ((gray[y1:y2, x1:x2] > FIELDMAP_ARROW_BIN_TH) * 255).astype(np.uint8)
+        v = float(cv2.matchTemplate(r, tpls[d], cv2.TM_CCOEFF_NORMED).max())
+        out[d] = v >= FIELDMAP_ARROW_TH
+    return out
+
+
+# 스와이프(손가락 방향) -> 보기가 움직이는 방향(위 실측 주석 참고)
+FIELDMAP_SWIPE_VIEW_DIR = {FIELDMAP_SWIPE_DRAG_DOWN: "up", FIELDMAP_SWIPE_DRAG_UP: "down",
+                           FIELDMAP_SWIPE_DRAG_RIGHT: "left", FIELDMAP_SWIPE_DRAG_LEFT: "right"}
+FIELDMAP_ARROW_STUCK_LIMIT = 2   # 화살표는 있는데 안 움직인 연속 횟수 -> 끝으로 본다
+
+
+def fieldmap_noise_threshold(noise):
+    """배경 흔들림(스와이프 없이 두 번 찍은 diff)에 맞춘 '움직임' 기준. 평소(4~6) 12, 눈 배경(12~15) 약 26~30."""
+    return max(FIELDMAP_EDGE_DIFF, noise * 1.5 + 8.0)
+
+
 class FieldmapScanPlanner:
     """탐색 스와이프 순서 생성기(상태 기계). next_swipe() -> (단계, 이름, (x1,y1,x2,y2)) 또는 종료 시 None.
     스와이프 후 report(moved)로 "움직였나"를 알려주면 다음 방향을 정한다.
@@ -2496,6 +2552,19 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
     # 화살표 폴백도 억제한다(사유는 위 탭 직후 폴링과 동일 - 확장 화면 UI 삼각형이 0.76~0.81로 근접 매칭).
     attempt = 0
     planner = FieldmapScanPlanner()
+    # 🆕 [2026-10-08] 배경 흔들림 측정(해법 2) - 스와이프 없이 0.5초 간격 두 장
+    move_th = FIELDMAP_EDGE_DIFF
+    try:
+        g0 = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY) if len(img_np.shape) == 3 else img_np
+        time.sleep(0.5)
+        raw_n = capture_screen_bytes(device)
+        if raw_n:
+            _, noise = _fieldmap_view_moved(g0, cv2.cvtColor(decode_screen_bytes(raw_n), cv2.COLOR_RGB2GRAY))
+            move_th = fieldmap_noise_threshold(noise)
+            print(f"🗺️ [필드맵 탐색] 배경 흔들림 {noise:.1f} -> 움직임 기준 {move_th:.1f}")
+    except Exception:
+        pass
+    arrow_stuck = 0
     # 🚨 인터럽트 처리는 이제 attempt를 안 까먹으므로 이론상 무한정 반복될 수 있다(실제 진행 없이
     # 인터럽트만 계속 뜨는 이상 상황 대비) - 절대시간 워치독을 추가한다(다른 루프들과 동일 패턴).
     # 스와이프가 최대 30회로 늘었으므로(회당 ~1.5초) 워치독도 120초 유지 - 넘으면 기존 "못 찾음" 경로.
@@ -2515,6 +2584,14 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
             break
         phase_name, label, wp = plan
         prev_gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY) if len(img_np.shape) == 3 else img_np
+        # 🆕 [2026-10-08 해법 1] 그 방향 가장자리 화살표가 없으면 이미 끝 - 밀지 않고 다음 단계로(횟수도 안 씀)
+        arrows = fieldmap_edge_arrows(prev_gray)
+        view_dir = FIELDMAP_SWIPE_VIEW_DIR.get(wp)
+        if arrows is not None and view_dir and not arrows[view_dir]:
+            print(f"🗺️ [필드맵 탐색] {label} - '{view_dir}' 화살표 없음 = 끝(밀지 않음)")
+            planner.report(False)
+            arrow_stuck = 0
+            continue
         safe_device_shell(device, f"input swipe {wp[0]} {wp[1]} {wp[2]} {wp[3]} {FIELDMAP_SWIPE_MS}")
         time.sleep(1.0)
         attempt += 1
@@ -2524,8 +2601,15 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
             continue
         img_np = decode_screen_bytes(raw)
         cur_gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY) if len(img_np.shape) == 3 else img_np
-        moved, diff = _fieldmap_view_moved(prev_gray, cur_gray)
-        print(f"🗺️ [필드맵 탐색] {label} {attempt}/{FIELDMAP_SCAN_MAX_SWIPES} diff={diff:.1f} {'이동' if moved else '끝'}")
+        _, diff = _fieldmap_view_moved(prev_gray, cur_gray)
+        moved = diff >= move_th
+        if arrows is not None and view_dir:
+            # 화살표가 있었으니 밀 수 있는 방향 - 단, 흔들림 기준보다 덜 움직인 게 연속되면(화살표 오탐 등) 끝으로 본다(해법 2)
+            arrow_stuck = 0 if moved else arrow_stuck + 1
+            moved = arrow_stuck < FIELDMAP_ARROW_STUCK_LIMIT
+            if not moved:
+                arrow_stuck = 0
+        print(f"🗺️ [필드맵 탐색] {label} {attempt}/{FIELDMAP_SCAN_MAX_SWIPES} diff={diff:.1f}(기준 {move_th:.1f}) {'이동' if moved else '끝'}")
         planner.report(moved)
 
     if not icon_coords:
