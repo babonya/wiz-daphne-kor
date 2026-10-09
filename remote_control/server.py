@@ -6,6 +6,8 @@
 # - 이 폴더(remote_control/)를 통째로 지워도 매크로 본체(src/main.py) 동작에는 전혀 지장이 없습니다.
 # - 현재 버전: 1.23.0
 #   1.23.0: 변경 없음(버전 동기화)
+#   (미릴리즈): 🧩 대시보드 "처음설정" 버튼(/setup) - 업데이트 후 처음설정을 폰에서 실행(입력 없이 기본값, 라이브러리/ffmpeg
+#     없으면 실패 안내). /api/state 에 setup_required, 처음설정이 필요하면 /start 를 막고 안내.
 #   1.22.3: 변경 없음(버전 동기화)
 #   1.22.2: 변경 없음(버전 동기화)
 #   1.22.1: 시작/정지 버튼 디자인 - 박스 가운데 큰 반투명 정지(■)/재생(▶) 아이콘을 배경으로 깔고 글씨는 가로·세로 정중앙에 크게.
@@ -349,6 +351,36 @@ def stop_background_server():
         print(f"⚠️ 종료 실패: {e}")
 
 
+def get_setup_status():
+    """(처음설정이 필요한가, 사유). 매크로 시작 차단과 같은 판정(src/user_settings.setup_required)을 그대로 쓴다.
+    매 요청마다 main.py 의 CURRENT_VERSION 을 다시 읽으므로 업데이트를 덮어쓴 직후에도 서버 재시작 없이 맞다."""
+    try:
+        src_dir = os.path.join(PROJECT_ROOT, "src")
+        if src_dir not in sys.path:
+            sys.path.insert(0, src_dir)
+        import user_settings as us
+        return us.setup_required(us.read_current_version())
+    except Exception as e:
+        return False, f"처음설정 상태 확인 실패: {e}"
+
+
+def run_first_setup():
+    """🆕 [2026-10-09] 처음설정(src/first_setup.py)을 입력 없이 실행하고 (종료코드, 출력)을 돌려준다.
+    stdin 이 비어 있으면 first_setup 은 설치 질문엔 '아니오'(-> 그 단계에서 실패 안내), 새 선택형 설정엔 기본값,
+    옛 폴더 경로는 건너뛰기로 끝난다 - 폰에서 답할 방법이 없으니 이 동작 그대로 쓴다.
+    서버는 pythonw.exe 로 돌기 때문에 같은 폴더의 python.exe 를 쓴다(처음설정.bat 은 PATH 의 python)."""
+    exe = sys.executable
+    if os.path.basename(exe).lower() == "pythonw.exe":
+        cand = os.path.join(os.path.dirname(exe), "python.exe")
+        exe = cand if os.path.exists(cand) else "python"
+    env = dict(os.environ, PYTHONIOENCODING="utf-8")
+    result = subprocess.run([exe, os.path.join(PROJECT_ROOT, "src", "first_setup.py")], cwd=PROJECT_ROOT,
+                            stdin=subprocess.DEVNULL, capture_output=True, timeout=180, env=env,
+                            creationflags=NO_WINDOW)
+    out = (result.stdout or b"").decode("utf-8", errors="replace") + (result.stderr or b"").decode("utf-8", errors="replace")
+    return result.returncode, out
+
+
 def get_recent_log_lines(n=15):
     # 💡 logs/ 안의 파일명은 "YYYY-MM-DD-HHMM-0SS_접미사.txt" 형태라, 문자열 정렬 = 시간순 정렬이 그대로 성립함.
     try:
@@ -475,6 +507,17 @@ def render_dashboard_html(token):
   .btn-toggle.is-pending { background: var(--line); color: var(--ink-dim); cursor: default; }
   .btn-toggle.is-start:hover, .btn-toggle.is-stop:hover { filter: brightness(1.08); }
   .controls.locked select, .controls.locked input { opacity: 0.55; }
+  .setup-card { display: none; background: var(--bg-raised); border: 1px solid var(--amber); border-radius: var(--radius);
+    padding: 12px; flex-direction: column; gap: 8px; }
+  .setup-card.show { display: flex; }
+  .setup-card .reason { font-size: 0.82rem; font-weight: 700; color: var(--amber); }
+  .setup-card .hint { font-size: 0.74rem; color: var(--ink-dim); line-height: 1.45; }
+  .setup-card button { min-height: 44px; background: var(--amber); color: var(--bg); border: none; }
+  .setup-card button:disabled { background: var(--line); color: var(--ink-dim); }
+  .setup-card pre { display: none; margin: 0; max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-all;
+    font-family: ui-monospace, "Cascadia Mono", Consolas, "D2Coding", monospace; font-size: 0.68rem; line-height: 1.4;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 8px; color: var(--ink); }
+  .setup-card pre.show { display: block; }
   .toast { font-size: 0.74rem; color: var(--ink-dim); text-align: center; min-height: 1em; }
   .footer-note { font-size: 0.66rem; color: var(--ink-faint); text-align: center; letter-spacing: 0.02em; }
 </style>
@@ -494,6 +537,14 @@ def render_dashboard_html(token):
       <span class="live-tag" id="liveTag"><span class="dot"></span>LIVE</span>
     </div>
     <div class="log-body" id="logBody"><div class="log-empty"><div class="msg">불러오는 중…</div></div></div>
+  </div>
+
+  <div class="setup-card" id="setupCard">
+    <div class="reason" id="setupReason">처음설정이 필요합니다</div>
+    <div class="hint">업데이트 뒤에는 처음설정을 한 번 실행해야 매크로가 시작됩니다. 여기서 실행하면 묻는 항목은 기본값으로 넣고,
+      라이브러리/ffmpeg 가 없으면 실패로 끝납니다(그때는 PC 에서 처음설정.bat 을 직접 실행).</div>
+    <button id="btnSetup">🧩 처음설정 실행</button>
+    <pre id="setupOut"></pre>
   </div>
 
   <div class="controls" id="controls">
@@ -633,6 +684,7 @@ def render_dashboard_html(token):
       if (!res.ok) { toast.textContent = '상태 조회 실패 (토큰 확인 필요)'; return; }
       const data = await res.json();
       setRunning(data.running, data.pid);
+      renderSetup(data);
       renderLogs(data.log_file, data.log_lines);
       renderUptime(data);
     } catch (e) {
@@ -684,6 +736,44 @@ def render_dashboard_html(token):
     renderToggle();
     clearTimeout(confirmTimer);
     confirmTimer = setTimeout(renderToggle, 3050);
+  });
+
+  // 🆕 [2026-10-09] 처음설정 카드 - 필요할 때만 보이고, 실행 결과를 보는 동안에는 (필요 없어져도) 계속 보인다.
+  const setupCard = document.getElementById('setupCard');
+  const btnSetup = document.getElementById('btnSetup');
+  const setupOut = document.getElementById('setupOut');
+  let setupBusy = false;
+  function renderSetup(data) {
+    if (data.setup_required) {
+      document.getElementById('setupReason').textContent = data.setup_reason || '처음설정이 필요합니다';
+      setupCard.classList.add('show');
+    } else if (!setupOut.classList.contains('show')) {
+      setupCard.classList.remove('show');
+    } else {
+      // 실행 결과를 보여주는 중인데 이제 필요 없음 = 성공. 버튼은 숨기고 완료 문구로 바꾼다.
+      document.getElementById('setupReason').textContent = '✅ 처음설정 완료 - 이제 시작할 수 있습니다';
+      btnSetup.style.display = 'none';
+    }
+    btnSetup.disabled = setupBusy || !!data.running;
+    if (!setupBusy) btnSetup.textContent = data.running ? '매크로 실행 중에는 못 합니다' : '🧩 처음설정 실행';
+  }
+  btnSetup.addEventListener('click', async () => {
+    if (setupBusy) return;
+    setupBusy = true;
+    btnSetup.disabled = true;
+    btnSetup.textContent = '처음설정 실행 중… (최대 3분)';
+    setupOut.textContent = '';
+    try {
+      const res = await fetch(`/setup?token=${encodeURIComponent(TOKEN)}`);
+      const data = await res.json();
+      setupOut.textContent = data.output || data.message || '';
+      setupOut.classList.add('show');
+      toast.textContent = data.message || '';
+    } catch (e) {
+      toast.textContent = '처음설정 요청 실패';
+    }
+    setupBusy = false;
+    refresh();
   });
 
   function startPolling() {
@@ -750,6 +840,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._respond(200, f"이미 실행 중입니다 (PID {pid}).")
                 return
 
+            need_setup, setup_reason = get_setup_status()
+            if need_setup:
+                self._respond(409, f"{setup_reason} - 먼저 위의 '처음설정 실행'을 눌러 주세요.")
+                return
+
             bat_path = targets[target]
             if not os.path.exists(bat_path):
                 self._respond(500, f"배치파일을 찾을 수 없습니다: {bat_path}")
@@ -797,6 +892,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except Exception as e:
                 self._respond(500, f"정지 실패: {e}")
 
+        elif parsed.path == "/setup":
+            running, pid = is_macro_running()
+            if running:
+                self._respond_json(409, {"ok": False, "message": f"매크로가 실행 중입니다(PID {pid}). 정지한 뒤 실행하세요."})
+                return
+            try:
+                code, out = run_first_setup()
+            except subprocess.TimeoutExpired:
+                self._respond_json(500, {"ok": False, "message": "처음설정이 3분 안에 끝나지 않았습니다. PC 에서 처음설정.bat 을 직접 실행해 주세요."})
+                return
+            except Exception as e:
+                self._respond_json(500, {"ok": False, "message": f"처음설정 실행 실패: {e}"})
+                return
+            ok = code == 0
+            print(f"🧩 [원격 처음설정] 종료코드 {code}")
+            self._respond_json(200, {"ok": ok, "code": code, "output": out[-6000:],
+                                     "message": "✅ 처음설정 완료 - 이제 시작할 수 있습니다." if ok
+                                     else f"❌ 처음설정 실패(코드 {code}) - 아래 내용을 보고 PC 에서 처음설정.bat 을 직접 실행해 주세요."})
+
         elif parsed.path == "/status":
             running, pid = is_macro_running()
             self._respond(200, f"실행 중 (PID {pid})" if running else "정지 상태")
@@ -807,12 +921,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif parsed.path == "/api/state":
             running, pid = is_macro_running()
             log_file, log_lines, log_started_at = get_recent_log_lines(15)
+            need_setup, setup_reason = get_setup_status()
             self._respond_json(200, {
                 "running": running,
                 "pid": pid,
                 "log_file": log_file,
                 "log_lines": log_lines,
                 "log_started_at": log_started_at,
+                "setup_required": need_setup,
+                "setup_reason": setup_reason,
             })
 
         else:
