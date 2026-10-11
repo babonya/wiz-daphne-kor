@@ -22,6 +22,7 @@ came_from_chest = False
 # 📋 [버전 정보 및 히스토리]
 # - 현재 버전: 1.23.0
 #   1.23.1(미릴리즈): 🚪 TRIGGER_EXIT 탈출 성공 오판 수정 - 전투 UI 확인 + 1초 간격 2회 재확인 후에만 성공(10/11 컷인/연출이 앵커를 가려 즉시 성공 판정하던 문제).
+#   1.23.1(미릴리즈): 🔓 정체 블록에서 전투 UI/상자 '열다'가 보이면 공용 가드로 우회 + '정체 탈출 가드'(0.45 완화) 제거 - 30초 정체 continue 구조 탓에 전투 진입이 60초 완화 가드에 의존하던 문제(10/11).
 #   1.23.0: 📦 필드맵 귀환 루틴 3개 루프에 '열다' 체크 -> "chest" 반환, TRIGGER_EXIT 가 공용 상자 경로로 넘김(10/08 상자 화면에서 재시작).
 #   1.23.0: 🗺️ 필드맵 탐색 끝 판정 = 가장자리 화살표(FieldMap_edge_arrow_right.png 회전) + 배경 흔들림 맞춤 diff 기준(10/08, 배경 움직임에 속아 몰기 30회).
 #   1.23.0: 💀 사망 확인 시 DEATH_RETURN_PENDING(사령탑 여관 강제), ACCEPTED_DEAD_COUNT 이하 사망은 회군 안 함(DEAD_MEMBER_POLICY=2).
@@ -2967,9 +2968,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     global need_heal, came_from_chest, DEATH_RETURN_PENDING
     need_heal = False
     came_from_chest = False
-    low_threshold_active_until = 0.0
-    low_threshold_reset_count = 0
-    low_threshold_last_hit_time = 0.0
+    stuck_bypass_logged_key = None  # 🆕 [2026-10-11] '🔓 [정체 가드]' 로그를 정체 에피소드당 1회만 찍기 위한 키
     # 🆕 [2026-09-18] "블랙박스 경고"(정체 감지) 최초 발생 시 그 순간 화면을 증거로 남기기 위한
     # 중복 방지 키 - 이 경고는 정체가 풀릴 때까지 1~2초 간격으로 계속 재출력되는데, 매번 스샷을
     # 찍으면 거의 동일한 사진이 수십~수백 장 쌓인다. 같은 정체 에피소드(같은 last_state_changed_time)
@@ -3059,20 +3058,16 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     macro_loop_begin_time = time.time()  # 🆕 [2026-09-30] 마을외곽 이탈 감지 유예(진입 직후 외곽 화면 잔상 오탐 방지)용
     while True:
         current_time = time.time()
-        if current_time < low_threshold_active_until:
-            field_threshold = 0.45
-            combat_threshold = 0.50
-            yeolda_threshold = 0.45
-        else:
-            field_threshold = 0.65
-            # 🚨 [2026-09-16 전수점검] 0.80 → 0.70 하향 - 동결(freeze) 상태이상 시각효과가 배속 버튼
-            # 인식 점수를 0.75 안팎으로 떨어뜨려, 이 값을 쓰는 전투 진입 1차 게이트(combat_active
-            # 판정, ~2860줄)가 명백한 전투 화면을 60초 넘게 못 알아채던 실전 사고 완치. 이 앵커를
-            # 8초 간격 배속체크(0.70)/main.py 두 곳(0.70)에 이미 검증된 값과 통일 - CLAUDE.md "도장
-            # 인식 방식을 고칠 때" 규칙 2에 따라 dungeon_bot.py 안의 같은 앵커 다른 호출부(1458/2018/
-            # 2058/2195/3200/3820줄 부근)도 전부 같이 0.70으로 맞췄다.
-            combat_threshold = 0.70
-            yeolda_threshold = 0.65
+        # 🗑️ [2026-10-11] 0.45 완화 임계값 분기 제거(고정 임계값) - 사유는 정체 블록 위 주석/history.log 참고.
+        field_threshold = 0.65
+        # 🚨 [2026-09-16 전수점검] 0.80 → 0.70 하향 - 동결(freeze) 상태이상 시각효과가 배속 버튼
+        # 인식 점수를 0.75 안팎으로 떨어뜨려, 이 값을 쓰는 전투 진입 1차 게이트(combat_active
+        # 판정, ~2860줄)가 명백한 전투 화면을 60초 넘게 못 알아채던 실전 사고 완치. 이 앵커를
+        # 8초 간격 배속체크(0.70)/main.py 두 곳(0.70)에 이미 검증된 값과 통일 - CLAUDE.md "도장
+        # 인식 방식을 고칠 때" 규칙 2에 따라 dungeon_bot.py 안의 같은 앵커 다른 호출부(1458/2018/
+        # 2058/2195/3200/3820줄 부근)도 전부 같이 0.70으로 맞췄다.
+        combat_threshold = 0.70
+        yeolda_threshold = 0.65
 
         try:
             import sys
@@ -3217,62 +3212,24 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
             stuck_duration = time.time() - last_state_changed_time
             stuck_limit = 180.0 if state == "IN_COMBAT" else 30.0
             
-            # 🚨 [v1.13.20-hotfix4] 60초 이상 앵커 미인식 정체 시 임계값 하향 완화 검증
-            if stuck_duration >= 60.0 and current_time >= low_threshold_active_until:
-                temp_thresh_f = 0.45
-                temp_thresh_c = 0.50
-                temp_thresh_y = 0.45
-                
-                field_matched_low = check_field_anchor_present(img_np, t_field, temp_thresh_f)
-                combat_matched_low = check_combat_template_present(img_np, t_combat_in, temp_thresh_c) or check_combat_template_present(img_np, t_combat_slow, temp_thresh_c)
-                yeolda_matched_low = check_yeolda_present(img_np, t_yeolda, temp_thresh_y, bin_passes=(160,))
-                
-                if field_matched_low or combat_matched_low or yeolda_matched_low:
-                    print(f"🚨 [정체 탈출 가드] 임계값 0.45 완화 시 앵커 매칭 성공! (필드:{field_matched_low}, 전투:{combat_matched_low}, 상자:{yeolda_matched_low})")
-                    # 🚨 [2026-09-16 재설계] 예전엔 이 완화 매칭이 성공할 때마다 최대 3회까지 "빈사(딸피)
-                    # 장막"으로 간주해 힐 재시도 + 타이머 리셋을 반복했다. 사용자 지적: 힐링을 세 번씩이나
-                    # 할 필요는 없다 - 한 번 힐링하고 돌아왔는데도 또 같은 완화 매칭이 걸린다면, 그건 이미
-                    # 진짜 빈사가 아니라 다른 원인(예: 완화 임계값 0.45가 전혀 무관한 화면에서 우연히
-                    # 걸린 오탐)일 가능성이 높다. 그래서 힐 시도는 1회로 줄이고, 그 이후엔 힐 대신 곧장
-                    # 나가기 버튼을 눌러 던전을 이탈 시도한다(대설지대 눈보라구간에 적용한 것과 동일한
-                    # "안 되면 나가기" 패턴을 이 공용 블록에도 적용 - 모든 던전이 공유하는 t_move_exit
-                    # 도장을 그대로 재사용하므로 던전 종류를 안 가림). check_field_anchor_present()/
-                    # check_combat_template_present()는 둘 다 작은 고정 ROI(우상단 필드앵커, 좌상단 배속
-                    # 버튼)만 크롭해서 매칭하므로 전체화면 오탐 위험은 이미 낮지만(사용자 확인: "필드앵커의
-                    # roi값 지정하고 그랬던 것" 그대로), 그래도 완전히 무관한 화면에서 그 좁은 영역만
-                    # 우연히 걸릴 가능성 자체는 남아있어 이 안전장치가 여전히 필요하다.
-                    low_threshold_active_until = current_time + 60.0
-                    # 🚨 [2026-09-24 실전 확인 - 완치] 이 카운터가 아래 3117번째 줄 부근의 "상태 전환 시
-                    # 공용 리셋" 블록에 물려 있어서, "길 잃음 복구"(10초 무인식 시 ESC 주입)가 유발하는
-                    # FIELD_WAIT<->IN_COMBAT 허상 왕복(진짜 전투 조우가 아니라 피안개로 화면인식이
-                    # 튀는 것뿐)마다 매번 0으로 리셋되어, 같은 빈사 에피소드 안에서도 "1/1"을 절대
-                    # 못 넘고 힐 재시도만 무한 반복하는 사고가 있었다(실전 로그: 8시간 동안 400회,
-                    # 전부 "(1/1)"만 찍힘 - "진성 정체로 간주해 나가기" 분기가 단 한 번도 실행 안 됨).
-                    # 이제 그 공용 리셋에서는 빼고, 여기서 "직전 완화매칭 이후 5분 넘게 조용했다면 별개
-                    # 에피소드로 본다"는 자체 판단으로만 리셋한다 - 같은 에피소드 안에서의 반복 왕복(보통
-                    # 수십 초~2~3분 간격)은 카운터를 이어가고, 정말 한참 뒤(5분+)에 다시 걸리면 새
-                    # 에피소드로 보고 힐 재시도 기회를 다시 준다.
-                    if current_time - low_threshold_last_hit_time > 300.0:
-                        low_threshold_reset_count = 0
-                    low_threshold_last_hit_time = current_time
-                    if low_threshold_reset_count < 1:
-                        need_heal = True
-                        last_state_changed_time = current_time  # 정체 타이머 리셋
-                        low_threshold_reset_count += 1
-                        print(f"🔴 빈사(딸피) 장막 간섭 판정: 완화 모드 리셋 적용 ({low_threshold_reset_count}/1) - 힐링 1회 시도 후에도 또 걸리면 진성 정체로 간주해 나가기를 시도합니다.")
-                    else:
-                        need_heal = False  # 더 이상 빈사로 보지 않음 - 힐 재시도 대신 탈출 시도로 전환
-                        print("🔴 빈사(딸피) 완화 리셋 한계(1회) 도달! 힐링으로도 안 풀리는 진성 정체로 판단해 나가기 버튼을 시도합니다.")
-                        exit_coords_lowthresh = find_and_get_field_btn_coords(img_np, t_move_exit, 0.70)
-                        if exit_coords_lowthresh:
-                            print(f"🚪 [정체 탈출 가드] 나가기 버튼 탭: {exit_coords_lowthresh}")
-                            safe_device_shell(device, f"input tap {exit_coords_lowthresh[0]} {exit_coords_lowthresh[1]}")
-                            time.sleep(1.5)
-                        else:
-                            print("🚪 [정체 탈출 가드] 나가기 버튼 미검출 - 다음 정체 사이클(60초 후)에 재시도합니다.")
-                        continue  # 위에서 이미 조치했으므로 아래 블랙박스 경고/KEYCODE_BACK과 중복 작동하지 않도록 다음 틱으로.
+            # 🗑️ [2026-10-11] '정체 탈출 가드'(60초 정체 시 0.45/0.50 완화 재매칭 + 힐 강제 + 타이머 리셋) 제거 - 로그 51건 전부 피장막 무관(정체 블록 continue 구조 탓), 피장막에서도 원래 임계값으로 앵커 인식 실측. 상세 history.log.
 
-            if stuck_duration > stuck_limit:
+            # 🚨 [2026-10-11 실전 확인] 정체 블록은 30초(전투 180초) 초과 시 매 틱 끝에서 무조건 continue 하므로 아래 공용 가드
+            # (전투 진입/상자 '열다'/사망)가 영영 안 돈다 - 파티카드 팝업 BACK 후 전투 화면이 보여도 FIELD_WAIT에 갇혀 60초 완화 가드가
+            # 타이머를 리셋해야만 진입했다. 정상 전투 UI/'열다'가 보이면 정체 처리 대신 공용 가드로 넘긴다(타이머는 진짜 전이 분기가 리셋).
+            #    단 300초 하드리밋(아래 RuntimeError 재시작)은 우회하지 않는다 - '열다' 오탐/상자 경로 실패가 반복돼도 안전망이 남도록.
+            stuck_bypass_to_guards = False
+            if stuck_limit < stuck_duration < 300.0:
+                stuck_bypass_to_guards = (
+                    (state != "IN_COMBAT" and (check_combat_template_present(img_np, t_combat_in, combat_threshold)
+                                              or check_combat_template_present(img_np, t_combat_slow, combat_threshold)))
+                    or check_yeolda_present(img_np, t_yeolda, yeolda_threshold)
+                )
+                if stuck_bypass_to_guards and stuck_bypass_logged_key != (state, last_state_changed_time):
+                    stuck_bypass_logged_key = (state, last_state_changed_time)
+                    print(f"🔓 [정체 가드] 정체 {int(stuck_duration)}초인데 전투 UI/상자 '열다'가 보임 - 정체 처리 대신 공용 가드로 넘깁니다.")
+
+            if stuck_duration > stuck_limit and not stuck_bypass_to_guards:
                 if state == "TRIGGER_EXIT":
                     last_state_changed_time = time.time()
                     continue
@@ -3699,10 +3656,6 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
             previous_state = state
             last_state_changed_time = time.time()
             yeolda_stuck_retry_count = 0
-            # 🚨 [2026-09-24] low_threshold_reset_count는 여기서 더 이상 리셋하지 않는다 - 위 2716번째
-            # 줄 부근의 자체 5분 시간창 리셋으로 옮겼다(사유는 그 위치의 주석 참고). 상태가 바뀔 때마다
-            # 무조건 리셋하면 "길 잃음 복구" ESC가 유발하는 허상의 상태 왕복에도 매번 걸려 카운터가
-            # 절대 escalation 문턱을 못 넘던 8시간짜리 실전 사고가 있었다.
         # 🎮 [미니게임 즉각 돌입 가드] 화면이 미니게임 해제 창인 경우 30초 정체 대기 없이 즉시 전이
         if state in ["FIELD_WAIT", "AUTO_MOVING"] and chest_opener.is_minigame_screen(img_np, height, width):
             # 🆕 [2026-09-19 사용자 확정] last_state_changed_time과 무관한 전용 카운터로 진성 정체를
@@ -3909,7 +3862,6 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                             # 2026-09-09 17:55:56~17:56:27 - 그 뒤로가기가 마침 새로 뜬 상자 화면을 건드려
                             # 정상 스캔 기회를 날림). 힐링 완료는 명백한 화면 진행이므로 여기서 리셋한다.
                             last_state_changed_time = time.time()
-                            low_threshold_active_until = 0.0
                             event_counter = 0
                             need_heal = False
                             # 🚨 [2026-08-28 이동 재개 최적화] 상자파밍은 정비 직후 "재개(1번 Redo)" 버튼으로
