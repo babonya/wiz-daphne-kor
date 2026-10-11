@@ -21,6 +21,7 @@ came_from_chest = False
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
 # - 현재 버전: 1.23.0
+#   1.23.1(미릴리즈): 🚪 TRIGGER_EXIT 탈출 성공 오판 수정 - 전투 UI 확인 + 1초 간격 2회 재확인 후에만 성공(10/11 컷인/연출이 앵커를 가려 즉시 성공 판정하던 문제).
 #   1.23.0: 📦 필드맵 귀환 루틴 3개 루프에 '열다' 체크 -> "chest" 반환, TRIGGER_EXIT 가 공용 상자 경로로 넘김(10/08 상자 화면에서 재시작).
 #   1.23.0: 🗺️ 필드맵 탐색 끝 판정 = 가장자리 화살표(FieldMap_edge_arrow_right.png 회전) + 배경 흔들림 맞춤 diff 기준(10/08, 배경 움직임에 속아 몰기 30회).
 #   1.23.0: 💀 사망 확인 시 DEATH_RETURN_PENDING(사령탑 여관 강제), ACCEPTED_DEAD_COUNT 이하 사망은 회군 안 함(DEAD_MEMBER_POLICY=2).
@@ -4725,6 +4726,45 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                 if check_yeolda_present(img_np, t_yeolda, 0.65) or chest_opener.is_minigame_screen(img_np, height, width):
                     print("⚠️ [탈출 감시] 필드가 미검출되었으나, 상자 선택창('열다') 또는 미니게임 화면이 감지되었습니다. 탈출 복귀를 취소하고 상자 해제로 이행합니다.")
                 else:
+                    # 🚨 [2026-10-11 실전 확인] 0857 로그 10건: 출구 이동 중 전투가 걸려 캐릭터 컷인/전투 연출/데미지
+                    # 이펙트가 필드 앵커를 가린 "한 프레임"만 보고 탈출 성공으로 판정 -> 사령탑이 던전 밖으로 착각해
+                    # 약 14초 왕복 후 재진입. 전투 UI 확인 + 1초 간격 2회 재확인 후에만 성공으로 친다.
+                    if check_combat_template_present(img_np, t_combat_in, 0.70) or check_combat_template_present(img_np, t_combat_slow, 0.70):
+                        print("⚔️ [탈출 감시] 필드 앵커 소실은 전투 화면 때문 - 탈출 판정 취소, 전투 대기로 전환합니다.")
+                        transition_delay_count = 0
+                        state = "IN_COMBAT"
+                        yuzuna_done = False
+                        milana_done = False
+                        guksu_done = False
+                        auto_combat_paused_for_skill = False
+                        combat_entry_start_time = time.time()
+                        last_empty_shortcut_detected_time = 0
+                        last_state_changed_time = time.time()
+                        continue
+
+                    exit_recheck_seen = False
+                    for _recheck_i in range(2):
+                        time.sleep(1.0)
+                        try:
+                            _raw_rc = capture_screen_bytes(device)
+                            if _raw_rc is None:
+                                raise RuntimeError("Screencap returned None")
+                            _img_rc = decode_screen_bytes(_raw_rc)
+                        except Exception as _rc_err:
+                            print(f"⚠️ [탈출 감시] 재확인 캡처 실패({_rc_err}) - 이 회차는 판정 보류로 취급합니다.")
+                            exit_recheck_seen = True
+                            break
+                        if (check_field_anchor_present(_img_rc, t_field, 0.62)
+                                or check_yeolda_present(_img_rc, t_yeolda, 0.65)
+                                or chest_opener.is_minigame_screen(_img_rc, height, width)
+                                or check_combat_template_present(_img_rc, t_combat_in, 0.70)
+                                or check_combat_template_present(_img_rc, t_combat_slow, 0.70)):
+                            exit_recheck_seen = True
+                            break
+                    if exit_recheck_seen:
+                        print("🔁 [탈출 감시] 재확인 중 던전 화면 재검출 - 탈출 판정 취소(컷인/연출로 앵커가 잠깐 가려진 것)")
+                        continue
+
                     print("🎉 [탈출 무결점 성공] 던전 필드 화면이 완전히 소멸되었습니다! 사령탑 무대로 복귀합니다.")
                     exit_clicked_once = False             # 🚨 [v1.14.0-hotfix2] 다음 판을 위한 변수 초기화
                     exit_first_start_time = None          # 🚨 [v1.14.0-hotfix2] 다음 판을 위한 변수 초기화

@@ -176,6 +176,7 @@ USER_SETTINGS_MESSAGES = user_settings.apply_user_settings(globals(), SETTINGS_P
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
 # - 현재 버전: 1.23.0
+#   1.23.1(미릴리즈): 💀🔀 대설지대 경로선택 화면에서도 진입 직전 party_check_before_entry 호출(마을외곽 미경유 시작/재시작에서 사망 확인·대열 원복 누락).
 #   1.23.0: 🧠 멘탈 20 미만 경고 팝업('던전으로', templates/Dungeon_select/mental_ill_goahead.png) 자동 진행.
 #   1.23.0: 💀🔀 사망 후 처리(ROADMAP 0-B) - 사망 회군이면 여관 강제 -> 던전선택 파티바에서 사망자 확인(DEAD_MEMBER_POLICY 1=멈춤/2=계속) -> 부활했으면 던전선택(월드맵/마을외곽)에서 대열 원복(FORMATION_RESTORE, party_formation.py, 사망자 제외 생존 캐릭터만).
 #   1.23.0: 🛡️ 앱 기동 복구 루프 heartbeat(Watchdog 오발동 방지) + restart_process 중복 호출 방지(재시작 이중 집계로 상한 조기 도달 방지).
@@ -3150,6 +3151,20 @@ def start_grand_orchestrator():
             should_reenter = ((LIMIT_DUNGEON_LOOPS == 0) or (dungeon_run_count < LIMIT_DUNGEON_LOOPS)) and not death_inn_needed
             if not should_reenter:
                 print("      ⚠️ [주회 한도 도달] 대설지대 재진입을 보류하고 뒤로가기로 마을외곽으로 복귀합니다.")
+                device.shell("input keyevent 4")
+                last_action_time = time.time()
+                time.sleep(2.0)
+                continue
+
+            # 💀🔀 [2026-10-11] 경로선택 화면에서도 진입 직전 파티바 확인 - 마을외곽 목록을 안 거친 직접 시작/재시작이면
+            #    사망 확인·대열 원복이 한 번도 안 돌았다. 카드 좌표는 마을외곽과 같음(dev/ROI_check/이스벨크-대설지대 (4).png 실측).
+            #    마을외곽에서 이미 원복했으면 formation_tried_this_visit 로 다시 하지 않는다. "inn"이면 뒤로가기 -> 마을외곽이 여관행 처리.
+            pc = party_check_before_entry(img_np)
+            if pc == "recheck":
+                last_action_time = time.time()
+                continue
+            if pc == "inn":
+                print("      💀 [대설지대 경로선택] 여관부터 들러야 해서 진입을 보류하고 뒤로가기로 마을외곽으로 복귀합니다.")
                 device.shell("input keyevent 4")
                 last_action_time = time.time()
                 time.sleep(2.0)
