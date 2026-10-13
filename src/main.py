@@ -9,7 +9,7 @@ import json
 from single_instance import enforce_single_instance_or_exit
 enforce_single_instance_or_exit()
 
-CURRENT_VERSION = "1.23.0" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
+CURRENT_VERSION = "1.23.1" # 📋 [시스템 버전 변수] 업데이트 시 이 버전 수치만 수정하시면 일괄 동기화됩니다.
 
 # 🧩 [2026-09-28] 처음설정 검사 - 첫 실행이거나 업데이트 직후(setup_done.json 버전 < CURRENT_VERSION)면 게임을 건드리지
 #    않고 "처음설정.bat 을 먼저 실행하세요" 안내 후 종료 코드 3으로 끝난다(배치파일이 3이면 창을 닫지 않고 멈춘다).
@@ -175,8 +175,8 @@ USER_SETTINGS_MESSAGES = user_settings.apply_user_settings(globals(), SETTINGS_P
 
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
-# - 현재 버전: 1.23.0
-#   1.23.1(미릴리즈): 💀🔀 대설지대 경로선택 화면에서도 진입 직전 party_check_before_entry 호출(마을외곽 미경유 시작/재시작에서 사망 확인·대열 원복 누락).
+# - 현재 버전: 1.23.1
+#   1.23.1: 💀🔀 대설지대 경로선택 화면에서도 진입 직전 party_check_before_entry 호출(마을외곽 미경유 시작/재시작에서 사망 확인·대열 원복 누락).
 #   1.23.0: 🧠 멘탈 20 미만 경고 팝업('던전으로', templates/Dungeon_select/mental_ill_goahead.png) 자동 진행.
 #   1.23.0: 💀🔀 사망 후 처리(ROADMAP 0-B) - 사망 회군이면 여관 강제 -> 던전선택 파티바에서 사망자 확인(DEAD_MEMBER_POLICY 1=멈춤/2=계속) -> 부활했으면 던전선택(월드맵/마을외곽)에서 대열 원복(FORMATION_RESTORE, party_formation.py, 사망자 제외 생존 캐릭터만).
 #   1.23.0: 🛡️ 앱 기동 복구 루프 heartbeat(Watchdog 오발동 방지) + restart_process 중복 호출 방지(재시작 이중 집계로 상한 조기 도달 방지).
