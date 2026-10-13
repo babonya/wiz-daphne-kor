@@ -24,6 +24,7 @@ came_from_chest = False
 #   1.23.1(미릴리즈): 🧓 대설지대 6층 NPC 선택지 '자리를 떠난다'(Dun_HS6_npc_leave.png) 고정 선택 추가(10/13 미인식 -> 재시작 5회 정지).
 #   1.23.1(미릴리즈): 🚪 TRIGGER_EXIT 탈출 성공 오판 수정 - 전투 UI 확인 + 1초 간격 2회 재확인 후에만 성공(10/11 컷인/연출이 앵커를 가려 즉시 성공 판정하던 문제).
 #   1.23.1(미릴리즈): 🔓 정체 블록에서 전투 UI/상자 '열다'가 보이면 공용 가드로 우회 + '정체 탈출 가드'(0.45 완화) 제거 - 30초 정체 continue 구조 탓에 전투 진입이 60초 완화 가드에 의존하던 문제(10/11).
+#   1.23.1(미릴리즈): 🗺️ 필드맵 아이콘 탭 전 위치 안정 확인(0.5초 재검출 ±8px) - 스와이프 관성 중 탭으로 캠프 옆 6층 노인 NPC가 목적지가 되던 문제(10/13).
 #   1.23.0: 📦 필드맵 귀환 루틴 3개 루프에 '열다' 체크 -> "chest" 반환, TRIGGER_EXIT 가 공용 상자 경로로 넘김(10/08 상자 화면에서 재시작).
 #   1.23.0: 🗺️ 필드맵 탐색 끝 판정 = 가장자리 화살표(FieldMap_edge_arrow_right.png 회전) + 배경 흔들림 맞춤 diff 기준(10/08, 배경 움직임에 속아 몰기 30회).
 #   1.23.0: 💀 사망 확인 시 DEATH_RETURN_PENDING(사령탑 여관 강제), ACCEPTED_DEAD_COUNT 이하 사망은 회군 안 함(DEAD_MEMBER_POLICY=2).
@@ -2656,6 +2657,23 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
 
     # 4. 아이콘 탭 → 자동이동 버튼 확인(전체검색). 가장자리를 탭하면 버튼이 아예 안 뜨므로 재탐색한다.
     tap_x, tap_y = icon_coords
+    # 🚨 [2026-10-13 실전 확인] 스와이프 직후(01:55:55 diff 53) 1초 만에 찾은 위치를 바로 탭 -> 맵이 관성으로 아직
+    # 미끄러지던 중이라 캠프 한 칸 위 6층 노인 NPC가 목적지가 됨(도착해도 캠핑 화면 없음, 노인 대화 -> 재시작 5회 정지).
+    # 0.5초 간격으로 다시 찾아 위치가 그대로(±8px)일 때만 탭한다. 움직였으면 새 위치로 갱신해 다시 확인(최대 4회).
+    for _settle_i in range(4):
+        time.sleep(0.5)
+        raw_settle = capture_screen_bytes(device)
+        if not raw_settle:
+            break
+        img_settle = decode_screen_bytes(raw_settle)
+        settle_coords = _find_first_icon(img_settle, target_icons, min_y=FIELDMAP_CAMP_ICON_MIN_Y if is_camp_branch else None)
+        if not settle_coords:
+            break
+        if abs(settle_coords[0] - tap_x) <= 8 and abs(settle_coords[1] - tap_y) <= 8:
+            break
+        print(f"🗺️ [필드맵 귀환] 아이콘 위치가 아직 움직이는 중({tap_x},{tap_y})->({settle_coords[0]},{settle_coords[1]}) - 맵이 멈출 때까지 다시 확인합니다.")
+        tap_x, tap_y = settle_coords
+        img_np = img_settle
     automove_coords = None
     # 🚨 [2026-09-09] 여기도 스와이프 탐색 루프와 동일한 종류의 결함이 있었다(for range + continue가
     # 인터럽트 처리만으로 예산을 까먹음) - while + 실제 탭했을 때만 증가하는 카운터로 통일. 화살표
