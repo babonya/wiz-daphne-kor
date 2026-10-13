@@ -143,7 +143,8 @@ PYTHONIOENCODING=utf-8 python dev/tools/make_release_zip.py   # 릴리즈 zip(�
   개가 돼 screencap이 깨지고 탭이 엉뚱한 디스플레이로 샌다(확인: `adb shell dumpsys SurfaceFlinger --display-id`).
   `mumu_display_check.py`가 2개 이상이면 정지 - **캡처만 우회하지 말 것**(화면은 읽는데 클릭은 홈으로 새는 더 위험한 상태).
 - **코드로 설명 안 되는 "화면 멈춤"은 GPU 드라이버 크래시(TDR)부터 의심** - 이벤트 뷰어 `nvlddmkm` / ID 4101을 며칠 범위로.
-  안정 설정: 안드15 + 30fps + **OpenGL** + GPU "메모리 사용 감소"(Vulkan/DirectX 실패, 안드12 지원 중단).
+  안정 설정: 안드15 + **30fps**(상자 조준 필수 - 120fps면 고사양 PC도 타임아웃) + GPU "메모리 사용 감소"(안드12 지원 중단).
+  그래픽 렌더러는 무엇이든 상관없음(2026-10-13 사용자 확인 - 예전 "OpenGL만 안정" 기록은 폐기).
 - **`src/main.py`와 `src/presets.json`은 UTF-8 + BOM**(노트패드++ ANSI 오인 방지). 코드로 읽을 땐 `encoding="utf-8-sig"`,
   편집 후 BOM을 지우지 말 것.
 - **도장 파일명은 ASCII만**(`cv2.imread`는 한글 경로면 조용히 `None`). 측정 스크립트에서 한글 경로 스샷은
