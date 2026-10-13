@@ -119,6 +119,16 @@
     },
     "roi_name": null
   },
+  "Dun_HS6_npc_leave": {
+    "source_image": "Heavysnow6F_npc_trout_leave (1).png",
+    "roi": {
+      "x1": 540,
+      "y1": 1710,
+      "x2": 902,
+      "y2": 1776
+    },
+    "roi_name": null
+  },
   "Dun_dilog_bone": {
     "source_image": "대설지대-뼈상인.png",
     "roi": {

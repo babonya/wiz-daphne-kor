@@ -1249,6 +1249,7 @@ def recover_app_startup(device):
     # (1,1) 탭으로 다 쓰고서야 사령탑이 처리했다(logs/2026-09-26-0053-000_reboot3.txt, 울타리 구멍에서 3분 26초 허비).
     t_rc_dilog_fight = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_dilog_fight.png")
     t_rc_doghole = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_HS6_doghole.png")
+    t_rc_npc_leave = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_HS6_npc_leave.png")
     t_rc_dilog_bone = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_dilog_bone.png")
     t_rc_dilog_oil = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_dilog_oil.png")
     t_rc_dilog_elixir = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_dilog_elixir.png")
@@ -1503,7 +1504,7 @@ def recover_app_startup(device):
         # 끔 - 대화창 저격과 같은 방식, 알려진 선택지만 가로챈다).
         if dungeon_bot._handle_dungeon_interrupt(
             device, img_np, t_rc_dilog_fight, t_rc_seller_label, t_rc_seller_let_me_see, t_rc_seller_hammer,
-            None, t_field, t_doghole=t_rc_doghole, t_dilog_bone=t_rc_dilog_bone, t_dilog_oil=t_rc_dilog_oil,
+            None, t_field, t_doghole=t_rc_doghole, t_npc_leave=t_rc_npc_leave, t_dilog_bone=t_rc_dilog_bone, t_dilog_oil=t_rc_dilog_oil,
             t_dilog_elixir=t_rc_dilog_elixir, t_dilog_bonegoblin_name=t_rc_dilog_bonegoblin_name
         ):
             print("✨ [앱 기동 복구 성공] 던전 안 선택지 화면에서 재시작된 것을 인지해 선택지를 처리했습니다. 매크로를 복구합니다.")
@@ -2227,6 +2228,7 @@ def start_grand_orchestrator():
     # 8시간+ 무의미하게 탭만 하고 "빠져나간다"를 한 번도 선택 못 함(16,661회 반복).
     t_dilog_fight = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_dilog_fight.png")
     t_doghole = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_HS6_doghole.png")
+    t_npc_leave = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_HS6_npc_leave.png")
     t_dilog_bone = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_dilog_bone.png")
     t_dilog_oil = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_dilog_oil.png")
     t_dilog_elixir = dungeon_bot.load_template("templates/Dungeon_dialogue/Dun_dilog_elixir.png")
@@ -2600,7 +2602,7 @@ def start_grand_orchestrator():
         if not is_box_menu_present and not is_get_item_present:
             if dungeon_bot._handle_dungeon_interrupt(
                 device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer,
-                None, t_field, t_doghole=t_doghole, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil,
+                None, t_field, t_doghole=t_doghole, t_npc_leave=t_npc_leave, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil,
                 t_dilog_elixir=t_dilog_elixir, t_dilog_bonegoblin_name=t_dilog_bonegoblin_name
             ):
                 print("👑 [대화창 저격 - 선택지 우선 처리] 알려진 선택지 화면을 감지해 화살표 대신 선택지를 눌렀습니다.")

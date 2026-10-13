@@ -21,6 +21,7 @@ came_from_chest = False
 # ==============================================================================
 # 📋 [버전 정보 및 히스토리]
 # - 현재 버전: 1.23.0
+#   1.23.1(미릴리즈): 🧓 대설지대 6층 NPC 선택지 '자리를 떠난다'(Dun_HS6_npc_leave.png) 고정 선택 추가(10/13 미인식 -> 재시작 5회 정지).
 #   1.23.1(미릴리즈): 🚪 TRIGGER_EXIT 탈출 성공 오판 수정 - 전투 UI 확인 + 1초 간격 2회 재확인 후에만 성공(10/11 컷인/연출이 앵커를 가려 즉시 성공 판정하던 문제).
 #   1.23.1(미릴리즈): 🔓 정체 블록에서 전투 UI/상자 '열다'가 보이면 공용 가드로 우회 + '정체 탈출 가드'(0.45 완화) 제거 - 30초 정체 continue 구조 탓에 전투 진입이 60초 완화 가드에 의존하던 문제(10/11).
 #   1.23.0: 📦 필드맵 귀환 루틴 3개 루프에 '열다' 체크 -> "chest" 반환, TRIGGER_EXIT 가 공용 상자 경로로 넘김(10/08 상자 화면에서 재시작).
@@ -1784,7 +1785,7 @@ def _find_automove_button(img_np, t_automove_primary, t_automove_fallback, thres
 # "전투 시작 전" 대사/선택지 화면이라 t_combat_in/slow 도장에 안 걸린다. 이 헬퍼를 각 폴링 루프 안에서
 # 호출해 감지되면 처리하고 True를 반환한다 - 호출부는 재시도 예산을 소모하지 않고 다시 스크린샷부터
 # 진행해야 한다(전투 감지와 동일한 방침).
-def _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=None, t_dilog_bone=None, t_dilog_oil=None, t_dilog_elixir=None, t_dilog_bonegoblin_name=None):
+def _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=None, t_dilog_bone=None, t_dilog_oil=None, t_dilog_elixir=None, t_dilog_bonegoblin_name=None, t_npc_leave=None):
     if img_np is None:
         return False
     if t_dilog_fight is not None:
@@ -1801,6 +1802,15 @@ def _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_s
         if doghole_coords:
             print(f"🕳️ [필드맵 귀환 - 울타리 구멍] '빠져나간다' 선택지 발견 - 고정 선택 탭: {doghole_coords}")
             safe_device_shell(device, f"input tap {doghole_coords[0]} {doghole_coords[1]}")
+            time.sleep(1.0)
+            return True
+    # 🆕 [2026-10-13 대설지대 6층] 고정 NPC(노인) 대화 "겨울 송어에 대하여"/"자리를 떠난다" 2택 - 항상 '자리를 떠난다'
+    # 고정 선택(사용자 확정). 미인식으로 귀환 실패 -> 재시작 5회 정지(10/13 02:00~02:58). 오탐 검증: 양성 1.000 vs 음성 최고 0.398.
+    if t_npc_leave is not None:
+        npc_leave_coords = find_and_get_coords(img_np, t_npc_leave, 0.70)
+        if npc_leave_coords:
+            print(f"🧓 [필드맵 귀환 - 대설지대 6층 NPC] '자리를 떠난다' 선택지 발견 - 고정 선택 탭: {npc_leave_coords}")
+            safe_device_shell(device, f"input tap {npc_leave_coords[0]} {npc_leave_coords[1]}")
             time.sleep(1.0)
             return True
     # 🆕 [2026-09-10 대설지대] "뼈 줍는 고블린"(뼈상인) 조우 - 4지선다(유해를 부르는 기름(10,000골드)/
@@ -2371,6 +2381,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
     t_seller_let_me_see = load_template("templates/Dungeon_dialogue/Dun_seller_let_me_see.png")
     t_seller_hammer = load_template("templates/Dungeon_dialogue/Dun_seller_hammer.png")
     t_doghole = load_template("templates/Dungeon_dialogue/Dun_HS6_doghole.png")  # "울타리 구멍으로 빠져나간다"
+    t_npc_leave = load_template("templates/Dungeon_dialogue/Dun_HS6_npc_leave.png")  # 6층 NPC "자리를 떠난다"
     t_dilog_bone = load_template("templates/Dungeon_dialogue/Dun_dilog_bone.png")  # "뼈상인" 1순위: "모험가의 뼈"
     t_dilog_oil = load_template("templates/Dungeon_dialogue/Dun_dilog_oil.png")  # "뼈상인" 2순위: "기름"("유해를 부르는 기름")
     t_dilog_elixir = load_template("templates/Dungeon_dialogue/Dun_dilog_elixir.png")  # "뼈상인" 3순위: "비약"
@@ -2423,7 +2434,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
             time.sleep(1.0)
             continue
         img_np = decode_screen_bytes(raw)
-        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=t_doghole, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil, t_dilog_elixir=t_dilog_elixir, t_dilog_bonegoblin_name=t_dilog_bonegoblin_name):
+        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=t_doghole, t_npc_leave=t_npc_leave, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil, t_dilog_elixir=t_dilog_elixir, t_dilog_bonegoblin_name=t_dilog_bonegoblin_name):
             continue
         # 🚨 [2026-09-09 실전 확인] 이 함수엔 캠핑 화면("쉰다") 감지가 아예 없었다 - 상자를 찾아 이동하던
         # 캐릭터가 마침 캠프 지점(우물) 위에 서 있으면, 맵을 열지 않아도 게임이 자동으로 캠핑 선택창을
@@ -2497,7 +2508,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
             # 캡처 노이즈로 이 근접치가 0.82를 넘어 오탐이 실제로 발생함을 확인(2026-09-09 17:16 로그 -
             # 화살표 감지가 4회 연속 찍히며 스와이프 예산을 대신 소모). 구체적 선택지(싸운다/행상인/
             # 빠져나간다)는 그대로 처리한다 - 오탐 위험은 오직 "화살표만 있고 아무 선택지도 안 걸리는" 폴백 경로에만 있다.
-            if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, None, t_field, t_doghole=t_doghole, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil, t_dilog_elixir=t_dilog_elixir, t_dilog_bonegoblin_name=t_dilog_bonegoblin_name):
+            if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, None, t_field, t_doghole=t_doghole, t_npc_leave=t_npc_leave, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil, t_dilog_elixir=t_dilog_elixir, t_dilog_bonegoblin_name=t_dilog_bonegoblin_name):
                 print("⚠️ [필드맵 귀환] 탭 직후 중립몹/행상인 조우 처리 - 이번 시도는 재시도 횟수에서 제외합니다.")
                 combat_interrupted = True
                 expand_attempts_used -= 1  # 조우로 무산된 시도는 예산에서 다시 돌려준다
@@ -2584,7 +2595,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
     # 스와이프가 최대 30회로 늘었으므로(회당 ~1.5초) 워치독도 120초 유지 - 넘으면 기존 "못 찾음" 경로.
     swipe_search_deadline = time.time() + 120.0
     while attempt < FIELDMAP_SCAN_MAX_SWIPES and time.time() < swipe_search_deadline:
-        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, None, t_field, t_doghole=t_doghole, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil, t_dilog_elixir=t_dilog_elixir, t_dilog_bonegoblin_name=t_dilog_bonegoblin_name):
+        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, None, t_field, t_doghole=t_doghole, t_npc_leave=t_npc_leave, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil, t_dilog_elixir=t_dilog_elixir, t_dilog_bonegoblin_name=t_dilog_bonegoblin_name):
             raw = capture_screen_bytes(device)
             if raw:
                 img_np = decode_screen_bytes(raw)
@@ -2659,7 +2670,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
         if not raw:
             continue
         img_np = decode_screen_bytes(raw)
-        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, None, t_field, t_doghole=t_doghole, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil, t_dilog_elixir=t_dilog_elixir, t_dilog_bonegoblin_name=t_dilog_bonegoblin_name):
+        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, None, t_field, t_doghole=t_doghole, t_npc_leave=t_npc_leave, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil, t_dilog_elixir=t_dilog_elixir, t_dilog_bonegoblin_name=t_dilog_bonegoblin_name):
             continue
         automove_coords = _find_automove_button(img_np, automove_primary, automove_fallback)
         if automove_coords:
@@ -2734,7 +2745,7 @@ def return_to_town_via_fieldmap_icon(device, return_method, t_combat_in=None, t_
             arrived = True
             break
 
-        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=t_doghole, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil, t_dilog_elixir=t_dilog_elixir, t_dilog_bonegoblin_name=t_dilog_bonegoblin_name):
+        if _handle_dungeon_interrupt(device, img_np, t_dilog_fight, t_seller_label, t_seller_let_me_see, t_seller_hammer, t_dialogue_arrow, t_field, t_doghole=t_doghole, t_npc_leave=t_npc_leave, t_dilog_bone=t_dilog_bone, t_dilog_oil=t_dilog_oil, t_dilog_elixir=t_dilog_elixir, t_dilog_bonegoblin_name=t_dilog_bonegoblin_name):
             interrupted = True  # 조우 처리 후에도 자동이동이 끊겼을 수 있으니 재개 버튼 대상으로 취급
             last_cursor_change_time = time.time()  # 조우 처리에 쓴 시간은 정지 시간으로 치지 않는다
             continue
@@ -2865,6 +2876,7 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
     t_seller_let_me_see = load_template("templates/Dungeon_dialogue/Dun_seller_let_me_see.png")
     t_seller_hammer = load_template("templates/Dungeon_dialogue/Dun_seller_hammer.png")
     t_doghole_common = load_template("templates/Dungeon_dialogue/Dun_HS6_doghole.png")  # "울타리 구멍으로 빠져나간다"
+    t_npc_leave_common = load_template("templates/Dungeon_dialogue/Dun_HS6_npc_leave.png")  # 6층 NPC "자리를 떠난다"
     t_dilog_bone_common = load_template("templates/Dungeon_dialogue/Dun_dilog_bone.png")  # "뼈상인" 1순위: "모험가의 뼈"
     t_dilog_oil_common = load_template("templates/Dungeon_dialogue/Dun_dilog_oil.png")  # "뼈상인" 2순위: "기름"
     t_dilog_elixir_common = load_template("templates/Dungeon_dialogue/Dun_dilog_elixir.png")  # "뼈상인" 3순위: "비약"
@@ -3417,6 +3429,16 @@ def start_main_macro(device, run_skill_logic=False, healing_loops=1, heal_after_
                     if doghole_coords:
                         print(f"🕳️ [울타리 구멍] '빠져나간다' 선택지 발견 - 고정 선택 탭: {doghole_coords}")
                         safe_device_shell(device, f"input tap {doghole_coords[0]} {doghole_coords[1]}")
+                        transition_delay_count = 0
+                        last_state_changed_time = time.time()
+                        time.sleep(1.0)
+                        continue
+
+                    # 🆕 [2026-10-13 대설지대 6층] NPC "겨울 송어에 대하여"/"자리를 떠난다" - '자리를 떠난다' 고정 선택(오탐: 양성 1.000 vs 음성 최고 0.398)
+                    npc_leave_coords = find_and_get_coords(img_np, t_npc_leave_common, 0.70)
+                    if npc_leave_coords:
+                        print(f"🧓 [대설지대 6층 NPC] '자리를 떠난다' 선택지 발견 - 고정 선택 탭: {npc_leave_coords}")
+                        safe_device_shell(device, f"input tap {npc_leave_coords[0]} {npc_leave_coords[1]}")
                         transition_delay_count = 0
                         last_state_changed_time = time.time()
                         time.sleep(1.0)
